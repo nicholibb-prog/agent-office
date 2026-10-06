@@ -221,7 +221,7 @@ export function openCharacter(first: boolean, onSave: (p: Profile) => void) {
   const finish = (name: string) => {
     done = true;
     store.profile = { name, color: pick.color, look: { ...pick.look } };
-    saveProfile(store.profile);
+    saveProfile(store.profile, store.me.account?.name);
     modal.close();
     onSave(store.profile);
   };
@@ -241,4 +241,13 @@ export function openCharacter(first: boolean, onSave: (p: Profile) => void) {
     finish(typedName());
   });
   if (!account) setTimeout(() => input.focus(), 30);
+}
+
+/** A small control on the top bar. Closing the picker returns to mouse-look. */
+export function mountChangeCharacter(edit: () => void) {
+  const dock = document.getElementById('dock');
+  if (!dock || document.getElementById('change-character')) return;
+  const btn = h('button.btn', { id: 'change-character', type: 'button', title: 'Change character' }, '🧍');
+  btn.addEventListener('click', () => edit());
+  dock.append(btn);
 }
