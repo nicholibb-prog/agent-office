@@ -12,23 +12,50 @@ export interface Profile {
 const PROFILE_KEY = 'agent-office.profile';
 export const AVATAR_COLORS = ['#ff8a5b', '#4f86f7', '#06d6a0', '#ef476f', '#ffd166', '#9d4edd', '#00b4d8', '#f77f00'];
 
-/** Your saved profile. `look` is missing if you joined before there was a character select screen. */
-export function loadProfile(): (Omit<Profile, 'look'> & { look?: Look }) | null {
+/** One saved character per account name. A shared browser with no account uses `shared`. */
+export function profileStorageKey(user?: string | null): string {
+  const name = (user ?? '').trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+  return `agent-office.profile.v2:${name || 'shared'}`;
+}
+
+function readProfile(raw: string | null): (Omit<Profile, 'look'> & { look?: Look }) | null {
   try {
-    const p = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? 'null');
-    if (p && typeof p.name === 'string' && typeof p.color === 'string') {
+    const p = JSON.parse(raw ?? 'null');
+    if (p && typeof p.name === 'string' && p.name.trim() && typeof p.color === 'string' && p.color.trim()) {
       return { name: p.name, color: p.color, look: p.look ? sanitizeLook(p.look, randomLook()) : undefined };
     }
   } catch {
-    // storage blocked
+    // storage blocked or a bad value
   }
   return null;
 }
 
-/** Without a look, the 3D office still has you pick a character (the 2D view saves only a name). */
-export function saveProfile(p: Omit<Profile, 'look'> & { look?: Look }) {
+/** Your saved profile. `look` is missing if you joined before there was a character select screen. */
+export function loadProfile(user?: string | null): (Omit<Profile, 'look'> & { look?: Look }) | null {
   try {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+    const own = readProfile(localStorage.getItem(profileStorageKey(user)));
+    if (own) return own;
+    const legacy = readProfile(localStorage.getItem(PROFILE_KEY));
+    if (!legacy) return null;
+    // The older shared key belongs to a signed-in account only when the saved name is that account.
+    if (user && legacy.name.trim().toLowerCase() !== user.trim().toLowerCase()) return null;
+    return legacy;
+  } catch {
+    return null;
+  }
+}
+
+/** A name and a color in storage. The Guest default in memory does not count. */
+export function hasSavedCharacter(user?: string | null): boolean {
+  return loadProfile(user) !== null;
+}
+
+/** Writes the per-user key and the older shared key, so the 2D view still sees a name. */
+export function saveProfile(p: Omit<Profile, 'look'> & { look?: Look }, user?: string | null) {
+  try {
+    const json = JSON.stringify(p);
+    localStorage.setItem(profileStorageKey(user ?? p.name), json);
+    localStorage.setItem(PROFILE_KEY, json);
   } catch {
     // storage blocked
   }

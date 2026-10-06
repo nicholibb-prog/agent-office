@@ -4,8 +4,26 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import type { Ctx } from '../../office/context.js';
 import type { ChatLine } from '../../../shared/protocol.js';
+import { activeSeatMap } from '../../../shared/hq.js';
 import { send } from '../util.js';
 import type { Route } from '../router.js';
+import { loadHqLocal, writeCrewPush } from '../../workers/crew.js';
+
+const OFFICE_ERROR = 'The office could not complete that';
+
+function dataDirs(ctx: Ctx): string[] {
+  const dirs = new Set<string>([ctx.cfg.dataDir]);
+  for (const floor of ctx.floors.values()) dirs.add(path.join(floor.dir, '.agent-office'));
+  return [...dirs];
+}
+
+/** Writes the push where the office keeps data and on every floor, with the seen time the lease uses. */
+export function pushCrew(ctx: Ctx, patch: Record<string, string>, source: string) {
+  const now = Date.now();
+  let file = writeCrewPush(ctx.cfg.dataDir, patch, source, now);
+  for (const dir of dataDirs(ctx)) if (dir !== ctx.cfg.dataDir) file = writeCrewPush(dir, patch, source, now);
+  return file;
+}
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -130,6 +148,7 @@ export const bridgeRoutes = {
       }
       const name = String(body.name || 'agent').slice(0, 32).trim() || 'agent';
       const text = String(body.text || '').slice(0, 500).trim();
+      if (name.toLowerCase() === 'okkin') return send(res, 400, { error: 'Okkin speaks only through the local model' });
       if (!text) return send(res, 400, { error: 'empty text' });
       const line: ChatLine = {
         from: 'bridge',
@@ -160,19 +179,19 @@ export const bridgeRoutes = {
         return send(res, 400, { error: 'bad json' });
       }
       const crew = body.crew || {};
-      const payload = { updatedAt: new Date().toISOString(), crew, source: 'bridge' };
+      let file;
       try {
-        const file = path.join(ctx.cfg.dataDir, 'crew-status.json');
-        writeFileSync(file, JSON.stringify(payload, null, 2) + '\n', { mode: 0o600 });
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+        file = pushCrew(ctx, crew, 'bridge');
+      } catch {
+        return send(res, 500, { error: OFFICE_ERROR });
       }
       const results: { floor: string; applied: string[] }[] = [];
       for (const floor of ctx.floors.values()) {
-        const r = floor.workers.applyCrewPresence(crew);
+        const hq = loadHqLocal(path.join(floor.dir, '.agent-office', 'workers.json'));
+        const r = floor.workers.applyCrewPresence(file.crew, { seen: file.seen, seats: activeSeatMap(hq) });
         results.push({ floor: floor.id, applied: r.applied });
       }
-      return send(res, 200, { ok: true, ...payload, results });
+      return send(res, 200, { ok: true, updatedAt: file.updatedAt, crew: file.crew, seen: file.seen, source: file.source, results });
     },
   },
   crewStatusGet: {
@@ -185,8 +204,8 @@ export const bridgeRoutes = {
         const file = path.join(ctx.cfg.dataDir, 'crew-status.json');
         if (!existsSync(file)) return send(res, 200, { crew: {}, updatedAt: null });
         return send(res, 200, JSON.parse(readFileSync(file, 'utf8')));
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: OFFICE_ERROR });
       }
     },
   },
@@ -206,25 +225,16 @@ export const bridgeRoutes = {
       const st = String(body.status || '').toLowerCase();
       if (!name) return send(res, 400, { error: 'name required' });
       if (st !== 'working' && st !== 'idle') return send(res, 400, { error: 'status working|idle' });
-      const crew: Record<string, string> = { [name]: st };
-      let merged = crew;
+      let file;
       try {
-        const file = path.join(ctx.cfg.dataDir, 'crew-status.json');
-        if (existsSync(file)) {
-          const prev = JSON.parse(readFileSync(file, 'utf8')) as { crew?: Record<string, string> };
-          merged = { ...(prev.crew || {}), ...crew };
-        }
-        writeFileSync(
-          file,
-          JSON.stringify({ updatedAt: new Date().toISOString(), crew: merged, source: 'bridge-status' }, null, 2) + '\n',
-          { mode: 0o600 },
-        );
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+        file = pushCrew(ctx, { [name]: st }, 'bridge-status');
+      } catch {
+        return send(res, 500, { error: OFFICE_ERROR });
       }
       const results: { floor: string; applied: string[] }[] = [];
       for (const floor of ctx.floors.values()) {
-        results.push({ floor: floor.id, applied: floor.workers.applyCrewPresence(merged).applied });
+        const hq = loadHqLocal(path.join(floor.dir, '.agent-office', 'workers.json'));
+        results.push({ floor: floor.id, applied: floor.workers.applyCrewPresence(file.crew, { seen: file.seen, seats: activeSeatMap(hq) }).applied });
       }
       return send(res, 200, { ok: true, name, status: st, results });
     },
@@ -256,8 +266,8 @@ export const bridgeRoutes = {
       };
       try {
         writeFileSync(path.join(ctx.cfg.dataDir, 'kavi-feed.json'), JSON.stringify(payload, null, 2) + '\n', { mode: 0o600 });
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: OFFICE_ERROR });
       }
       return send(res, 200, { ok: true, count: titles.length });
     },
@@ -272,8 +282,8 @@ export const bridgeRoutes = {
         const file = path.join(ctx.cfg.dataDir, 'kavi-feed.json');
         if (!existsSync(file)) return send(res, 200, { titles: [], updatedAt: null });
         return send(res, 200, JSON.parse(readFileSync(file, 'utf8')));
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: OFFICE_ERROR });
       }
     },
   },
@@ -313,8 +323,8 @@ export const bridgeRoutes = {
         const file = path.join(ctx.cfg.dataDir, 'kavi-outbox.json');
         if (!existsSync(file)) return send(res, 200, { items: [] });
         return send(res, 200, JSON.parse(readFileSync(file, 'utf8')));
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: OFFICE_ERROR });
       }
     },
   },

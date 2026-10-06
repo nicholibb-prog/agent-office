@@ -8,7 +8,7 @@ import { stationBrief } from '../stations.js';
 import type { PromptSource } from '../prompts.js';
 import type { GhAs } from '../signins.js';
 import type { ServiceOwner } from '../services.js';
-import { addUsage, newTracker, scanTracker, trackerUsage, zeroUsage, type Ledger } from '../usage.js';
+import { newTracker, type Ledger } from '../usage.js';
 import { PtyHost, SCROLLBACK, type Adopted, type Pty } from '../ptys.js';
 import { configuredProvider, providerCommand, validateWorkerEffort, validateWorkerModel } from '../agents.js';
 import { ScrollbackStore, searchTerminal, terminalTail } from '../history.js';
@@ -30,7 +30,9 @@ import type { HookEnv, OpenedPr, RepoSource, RunAs, Worker, WorkerContext, Worke
 import { clamp, safeEq, truncate } from './util.js';
 import { COLORS, NAMES, newWorker } from './worker.js';
 import { WorkerTrees, lostMessage } from './worktree.js';
-import { createCrewWatch, settleQuietShell, type CrewWatch } from './crew.js';
+import { bindCrewDesks, createCrewWatch, settleQuietShell, type CrewApplyOpts, type CrewWatch } from './crew.js';
+import { workerHandle } from './handle.js';
+import { scanWorkerUsage } from './usage-scan.js';
 
 const SCREEN_INTERVAL_MS = 250;
 /** How often a steady typist's "last typed" time is refreshed for everyone. */
@@ -166,6 +168,7 @@ export class WorkerManager {
     this.host.killUnclaimed();
     // Whoever's worktree was deleted while the office was down stays asleep, marked lost, rather than failing to start.
     for (const w of this.workers.values()) this.worktrees.checkLost(w);
+    await bindCrewDesks(this.workers, this.statePath, { retire: (id) => this.kill(id), emit: (w) => this.events.update({ ...w.info }), persist: () => this.persist() });
     this.wakeAll();
     this.crew.start();
     // It may have switched branches while the office was down, its terminal still going.
@@ -226,6 +229,7 @@ export class WorkerManager {
    * other floors' repositories a worker in its own worktree works in too (see makeWorkspace).
    */
   spawn(deskId: string, by: string, prompt?: string, worktree = false, kind: WorkerKind = 'agent', provider?: AgentProvider, model?: string, effort?: AgentEffort, meeting?: { id: string; worktree?: WorkerInfo['worktree'] }, owner?: string, repos: RepoSource[] = [], via?: 'herald'): WorkerInfo | string {
+    if (kind === 'crew') return 'Crew seats are bound by the office, not hired';
     // Nobody picked (a board agent, say): the office's default worker, model and effort included.
     if (kind === 'agent' && provider === undefined) ({ provider, model, effort } = this.officeDefault);
     const selectedProvider = kind === 'agent' ? provider : undefined;
@@ -315,6 +319,7 @@ export class WorkerManager {
   resume(id: string, prompt?: string): string | undefined {
     const w = this.workers.get(id);
     if (!w) return 'No such worker';
+    if (w.info.kind === 'crew') return 'A crew seat has no session to resume';
     if (w.pty || w.dsh) return 'Worker is already running';
     if (this.worktrees.checkLost(w, true)) return lostMessage(w.info);
     clockWork(w.info, 'starting');
@@ -365,7 +370,7 @@ export class WorkerManager {
   /** Starts every worker that isn't running: nobody should be found asleep at their desk. */
   wakeAll() {
     // A DeepSeek Harness worker has no PTY but is still running: only the ones that are gone wake up.
-    for (const w of this.workers.values()) if (!w.pty && !w.dsh) this.resume(w.info.id);
+    for (const w of this.workers.values()) if (!w.pty && !w.dsh && w.info.kind !== 'crew') this.resume(w.info.id);
   }
 
   /**
@@ -885,23 +890,7 @@ export class WorkerManager {
 
   /** Picks up what the session logged since last time and books the difference. */
   private scanUsage(w: Worker) {
-    const usage = w.info.kind === 'agent' ? providerAdapter(w.info.provider)?.usage : undefined;
-    if (usage?.scan) {
-      if (this.workers.get(w.info.id) === w) usage.scan(this.handleOf(w));
-      return;
-    }
-    if (!usage?.transcript || !w.tracker.transcript || this.workers.get(w.info.id) !== w) return;
-    try {
-      if (!scanTracker(w.tracker)) return;
-    } catch {
-      return; // an unreadable transcript is retried on the next scan
-    }
-    const before = w.info.usage ?? zeroUsage();
-    const after = trackerUsage(w.tracker);
-    w.info.usage = after;
-    this.ledger.add(addUsage(after, before, -1));
-    this.emitUpdate(w);
-    this.persist();
+    scanWorkerUsage(w, this.workers, this.ledger, (worker) => this.handleOf(worker), (worker) => this.emitUpdate(worker), () => this.persist());
   }
 
   private onProgress(w: Worker, busy: boolean) {
@@ -912,8 +901,8 @@ export class WorkerManager {
     else if (!busy && (s === 'working' || (s === 'needs_input' && !w.bootBlocked))) this.setStatus(w, 'done');
   }
 
-  applyCrewPresence(crew: Record<string, string>): { applied: string[] } {
-    return this.crew.apply(crew);
+  applyCrewPresence(crew: Record<string, string>, opts?: CrewApplyOpts): { applied: string[] } {
+    return this.crew.apply(crew, opts);
   }
 
   chatWorking(name: string, text?: string): void {
@@ -939,52 +928,16 @@ export class WorkerManager {
 
   /** What a worker's provider adapter is handed of it (see WorkerHandle): made once, kept on the worker. */
   private handleOf(w: Worker): WorkerHandle {
-    return (w.handle ??= {
-      get info() {
-        return w.info;
-      },
-      get state() {
-        return w.state;
-      },
-      get running() {
-        return !!w.pty;
-      },
-      get bootBlocked() {
-        return !!w.bootBlocked;
-      },
-      set bootBlocked(v) {
-        w.bootBlocked = v;
-      },
-      get leftNeedsInputAt() {
-        return w.leftNeedsInputAt;
-      },
-      set leftNeedsInputAt(v) {
-        w.leftNeedsInputAt = v;
-      },
-      get failStreak() {
-        return w.failStreak;
-      },
-      set failStreak(v) {
-        w.failStreak = v;
-      },
-      get tracker() {
-        return w.tracker;
-      },
-      get pendingPrompt() {
-        return w.pendingPrompt;
-      },
-      set pendingPrompt(v) {
-        w.pendingPrompt = v;
-      },
-      setStatus: (status) => this.setStatus(w, status),
-      emit: () => this.emitUpdate(w),
+    return workerHandle(w, {
+      setStatus: (worker, status) => this.setStatus(worker, status),
+      emit: (worker) => this.emitUpdate(worker),
       persist: () => this.persist(),
-      notePrompt: (prompt) => this.tasks.notePrompt(w, prompt),
-      noteTool: (tool) => this.tasks.noteTool(w, tool),
-      notePr: (command, output) => this.prs.noteOwn(w, command, output),
-      clearTask: () => this.tasks.clear(w),
-      scheduleScan: () => this.scheduleScan(w),
-      prompt: (text) => this.prompt(w.info.id, text),
+      notePrompt: (worker, prompt) => this.tasks.notePrompt(worker, prompt),
+      noteTool: (worker, tool) => this.tasks.noteTool(worker, tool),
+      notePr: (worker, command, output) => this.prs.noteOwn(worker, command, output),
+      clearTask: (worker) => this.tasks.clear(worker),
+      scheduleScan: (worker) => this.scheduleScan(worker),
+      prompt: (id, text) => this.prompt(id, text),
     });
   }
 

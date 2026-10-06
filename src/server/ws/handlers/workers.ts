@@ -20,6 +20,7 @@ export const workerHandlers = {
     const who = c.peer.name;
     const floor = here(ctx, c);
     if (!floor) return;
+    if (msg.kind === 'crew') return ctx.warn(c, 'Crew seats are bound by the office, not hired');
     const kind = msg.kind === 'shell' ? 'shell' : 'agent';
     if (kind === 'agent' && msg.provider !== undefined && (!isAgentProvider(msg.provider) || !floor.project.agentProviders.includes(msg.provider))) {
       ctx.warn(c, 'Unknown agent provider');

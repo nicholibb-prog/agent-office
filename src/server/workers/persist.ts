@@ -64,7 +64,8 @@ export function restoreWorkers(file: string, workers: Map<string, Worker>, defau
     for (const s of saved) {
       if (!s.id || !s.deskId || !DESK_BY_ID.has(s.deskId) || deskOccupied(s.deskId)) continue;
       const tracker = restoreTracker(s.tracker);
-      const provider = s.kind === 'shell'
+      const crew = s.kind === 'crew';
+      const provider = s.kind === 'shell' || crew
         ? undefined
         : isAgentProvider(s.provider)
           ? s.provider
@@ -74,7 +75,7 @@ export function restoreWorkers(file: string, workers: Map<string, Worker>, defau
       const usage = providerAdapter(provider)?.usage;
       const info: WorkerInfo = {
         id: s.id,
-        kind: s.kind === 'shell' ? 'shell' : 'agent',
+        kind: crew ? 'crew' : s.kind === 'shell' ? 'shell' : 'agent',
         provider,
         model: savedModel(provider, s.model),
         effort: savedEffort(provider, s.effort),
@@ -106,13 +107,13 @@ export function restoreWorkers(file: string, workers: Map<string, Worker>, defau
       if (typeof s.owner === 'string' && s.owner) w.owner = s.owner;
       usage?.restore?.(w.state, s);
       w.screenDirty = false;
-      if (typeof s.pty?.id === 'string') {
+      if (!crew && typeof s.pty?.id === 'string') {
         const status: WorkerStatus = RUNNING.has(s.pty.status) ? s.pty.status : 'idle';
         w.saved = { ptyId: s.pty.id, status, acked: s.pty.acked !== false, waitingSince: typeof s.pty.waitingSince === 'number' ? s.pty.waitingSince : undefined };
       }
       // Mid-turn as the office went down: cut off, unless its terminal is picked back up still
       // running (adopt). An office from before midTurn only said so for a terminal in the host.
-      w.interrupted = typeof s.midTurn === 'boolean' ? s.midTurn : s.pty?.status === 'working' || s.pty?.status === 'needs_input';
+      w.interrupted = crew ? false : typeof s.midTurn === 'boolean' ? s.midTurn : s.pty?.status === 'working' || s.pty?.status === 'needs_input';
       if (info.prompt) w.prompts = [info.prompt.replace(/\s+/g, ' ').trim()];
       workers.set(info.id, w);
     }

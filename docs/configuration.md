@@ -63,3 +63,15 @@ agent-office tunnel [office@address | url] [--port <n>] [--office-port <n>] [--n
   the worker stops it. Given an SSH address it opens the tunnel to the office too.
   See docs/tunnel.md.
 ```
+
+## Local crew
+
+See [Local HQ](hq.md). The floor's gitignored `.agent-office/hq-local.json` turns desks into crew seats. The office data directory also holds `bridge-token` (created if it is missing, mode 0600), `crew-status.json`, `chat-outbox.jsonl`, `chat-inbox.jsonl`, `talk-threads.json`, and `desk-cards.json`.
+
+| Variable | Meaning |
+| --- | --- |
+| `OLLAMA_URL` | Loopback Ollama origin. Unset uses `http://127.0.0.1:11434`. Any other host is refused. |
+| `OKKIN_MODEL` | The tag Okkin talks with. Not set in source. |
+| `OKKIN_MODEL_ALLOW` | Comma-separated tags the desk may switch to. Intersected with the tags Ollama has installed. |
+
+Env wins over `hq-local.json`. A request cannot set the URL or add a tag.
