@@ -20,6 +20,7 @@ import { Court } from './court.js';
 import { Jail } from './jail.js';
 import { Garage } from './garage.js';
 import { JevStore } from './jev.js';
+import { agentsOnFloor, watchJev } from './jev-watch.js';
 import { Jukebox } from './jukebox.js';
 import { Whiteboard } from './whiteboard.js';
 import { MeetingRoom } from './meetings.js';
@@ -139,6 +140,8 @@ export class Floor {
   /** Workers sent home on a map that locks them up (see MapPlan.sendHome). */
   readonly jail: Jail;
   private timer: NodeJS.Timeout;
+  /** The nightly Jev ranking. Stopped with the floor. */
+  private stopJev?: () => void;
   /** Pull requests merging, to ring the gong for. */
   private merges = new MergeWatch();
   /** A look for workers whose pull request merged, due shortly (see sendLandedHome). */
@@ -312,6 +315,10 @@ export class Floor {
     this.jukebox = new Jukebox(dataDir);
     this.whiteboard = new Whiteboard(dataDir);
     this.jev = new JevStore(dataDir);
+    this.stopJev = watchJev(this.jev, {
+      load: () => agentsOnFloor(this),
+      emit: (board) => ctx.emit(this, { t: 'jev', board }),
+    }).stop;
     this.ready = this.workers.start();
 
     void this.github.refresh();
@@ -414,6 +421,7 @@ export class Floor {
 
   /** With `keep` (a restart), the workers' terminals keep running for the next office to pick up. */
   shutdown(keep = false) {
+    this.stopJev?.();
     clearInterval(this.timer);
     clearTimeout(this.landedTimer);
     this.dog.stop();

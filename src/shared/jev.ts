@@ -1,5 +1,6 @@
 // Local Jev rankings for one floor. Counts live in .agent-office/jev-metrics.json.
 // Names and numbers only: no paths, tokens, TypeSafe, or any remote API.
+// The board compares every hired agent. The order is published at local midnight.
 
 /** One made-up or local agent on the board. `id` is a slug, never a filesystem path. */
 export interface JevAgent {
@@ -35,6 +36,22 @@ export interface JevTrophy {
 export interface JevBoard {
   rows: JevRow[];
   trophies: JevTrophy[];
+  /** Local calendar day this order was published, YYYY-MM-DD. The next night replaces it. */
+  rankedOn?: string;
+}
+
+/**
+ * One hired agent as counted today. `lines` left out means the worktree could not be read, so the
+ * last count stands. Shells are not agents and never appear here.
+ */
+export interface LiveAgent {
+  id: string;
+  name: string;
+  deskId?: string;
+  lines?: number;
+  prs: number;
+  tasks: number;
+  breakroomMinutes?: number;
 }
 
 export const BREAKROOM_HALFLIFE_MIN = 30;
@@ -54,7 +71,25 @@ export const JEV_BOARD = { x: -6, z: 2.15, width: 2.6, height: 1.55, bottom: 1 }
 
 const NAME_MAX = 24;
 const SLUG = /^[a-z0-9-]{1,24}$/;
-const DESK = /^desk-\d{1,2}$/;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** A desk, a bean bag, a meeting chair, or one of the board stations. Not a path. */
+const SEAT = /^(?:desk|beanbag|meeting)-\d{1,2}$|^station-(?:issues|pulls|queue)$/;
+
+/** How many agents the nightly board keeps. The ones at a desk always stay. */
+export const JEV_KEEP = 24;
+
+/** Sample ids the board used to paint before it ranked hired agents. A file that never published a night drops them. */
+export const JEV_STAND_INS = new Set(['ada', 'pip', 'tasker', 'lou', 'nib']);
+
+/** The office machine's calendar day, the night the ranking rolls over. */
+export function localDay(d = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function isLocalDay(day: unknown): day is string {
+  return typeof day === 'string' && DAY.test(day);
+}
 
 /** A display name. Paths, URLs and token-shaped text are refused. */
 export function cleanJevName(name: unknown): string {
@@ -87,7 +122,7 @@ export const TROPHY_MILESTONES = [
 ] as const;
 
 export function trophiesFor(agent: JevAgent): JevTrophy[] {
-  if (!agent.deskId || !DESK.test(agent.deskId)) return [];
+  if (!agent.deskId || !SEAT.test(agent.deskId)) return [];
   const out: JevTrophy[] = [];
   for (const m of TROPHY_MILESTONES) if (agent[m.field] >= m.at) out.push({ deskId: agent.deskId, milestone: m.id, label: m.label });
   return out;
@@ -106,11 +141,67 @@ export function rankAgents(agents: readonly JevAgent[]): JevRow[] {
   return scored.map((row, i) => ({ rank: i + 1, ...row }));
 }
 
-export function boardFrom(agents: readonly JevAgent[]): JevBoard {
-  return { rows: rankAgents(agents), trophies: agents.flatMap(trophiesFor) };
+export function boardFrom(agents: readonly JevAgent[], rankedOn?: string): JevBoard {
+  return { rows: rankAgents(agents), trophies: agents.flatMap(trophiesFor), ...(rankedOn ? { rankedOn } : {}) };
 }
 
-/** Stand-ins so the board is not blank before any local counts exist. Not hired workers. */
+/** Pull requests this agent has open now, opened before, or opened in another repository. */
+export function pullRequestsOf(w: { pr?: unknown; pastPrs?: readonly unknown[]; repos?: readonly { pr?: unknown }[] }): number {
+  return (w.pr ? 1 : 0) + (w.pastPrs?.length ?? 0) + (w.repos?.filter((r) => r.pr).length ?? 0);
+}
+
+/**
+ * Finished queue tasks for this agent. A turn that ended with no queue task behind it still counts
+ * as one, once. A task that was stopped or failed does not.
+ */
+export function finishedTasks(workerId: string, tasks: readonly { workerId?: string; status: string; outcome?: string }[], worker?: { status: string; hasTask: boolean }): number {
+  const done = tasks.filter((t) => t.workerId === workerId && t.status === 'done' && t.outcome === 'done').length;
+  if (done > 0) return done;
+  return worker?.status === 'done' && worker.hasTask ? 1 : 0;
+}
+
+function liveAgent(a: LiveAgent, prev?: JevAgent): JevAgent | undefined {
+  const name = cleanJevName(a.name);
+  const id = SLUG.test(a.id) ? a.id : '';
+  if (!name || !id) return undefined;
+  const deskId = a.deskId && SEAT.test(a.deskId) ? a.deskId : undefined;
+  return {
+    id,
+    name,
+    lines: a.lines === undefined ? (prev?.lines ?? 0) : whole(a.lines),
+    prs: whole(a.prs),
+    tasks: whole(a.tasks),
+    breakroomMinutes: Math.max(whole(a.breakroomMinutes), prev?.breakroomMinutes ?? 0),
+    ...(deskId ? { deskId } : {}),
+  };
+}
+
+/**
+ * Every agent the board knows, with today's counts laid over the last ones. Someone sent home stays,
+ * with the numbers they had. A worktree that could not be read keeps its last line count.
+ */
+export function mergeAgents(previous: readonly JevAgent[], live: readonly LiveAgent[]): JevAgent[] {
+  const byId = new Map(previous.map((a) => [a.id, a]));
+  const liveIds = new Set<string>();
+  for (const a of live) {
+    const prev = SLUG.test(a.id) ? byId.get(a.id) : undefined;
+    const next = liveAgent(a, prev);
+    if (!next) continue;
+    liveIds.add(next.id);
+    byId.set(next.id, next);
+  }
+  const all = [...byId.values()];
+  if (all.length <= JEV_KEEP) return all;
+  const ranked = [...all].sort((a, b) => rawScore(b) - rawScore(a) || a.name.localeCompare(b.name));
+  const keep = new Set(liveIds);
+  for (const a of ranked) {
+    if (keep.size >= JEV_KEEP) break;
+    keep.add(a.id);
+  }
+  return all.filter((a) => keep.has(a.id));
+}
+
+/** The sample board the props lab paints. The office ranks hired agents instead. */
 export function seedAgents(): JevAgent[] {
   return [
     { id: 'ada', name: 'Ada Lines', lines: 420, prs: 2, tasks: 4, breakroomMinutes: 0, deskId: 'desk-12' },
@@ -127,7 +218,7 @@ export function cleanAgent(raw: unknown): JevAgent | undefined {
   const name = cleanJevName(r.name);
   const id = typeof r.id === 'string' && SLUG.test(r.id) ? r.id : '';
   if (!name || !id) return undefined;
-  const deskId = typeof r.deskId === 'string' && DESK.test(r.deskId) ? r.deskId : undefined;
+  const deskId = typeof r.deskId === 'string' && SEAT.test(r.deskId) ? r.deskId : undefined;
   return { id, name, lines: whole(r.lines), prs: whole(r.prs), tasks: whole(r.tasks), breakroomMinutes: whole(r.breakroomMinutes), ...(deskId ? { deskId } : {}) };
 }
 
