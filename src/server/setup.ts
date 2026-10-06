@@ -6,9 +6,9 @@ import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import tty from 'node:tty';
 import { normalizeRepo, sameRepo } from '../shared/floors.js';
-import type { RepoChoice } from '../shared/protocol.js';
+import { GH_FAILED, GH_NOT_FOUND, type RepoChoice } from '../shared/protocol.js';
 import { Building, tildify } from './building.js';
-import { resolveGhBinary } from './github.js';
+import { ghSpawnFailure, resolveGhBinary } from './github.js';
 import { officeHome, type Config } from './config.js';
 
 // Setting up an office from its terminal: where projects are cloned, signing the GitHub CLI in, and
@@ -219,9 +219,14 @@ function ghUser(cwd: string): Promise<{ login?: string; missing?: boolean; signe
   return new Promise((resolve) => {
     execFile(bin, ['api', 'user', '--jq', '.login'], { cwd, timeout: 30_000 }, (err, stdout, stderr) => {
       if (!err && stdout.trim()) return resolve({ login: stdout.trim() });
-      if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') return resolve({ missing: true });
-      const why = String(stderr || err?.message || '').trim();
-      resolve({ signedOut: /auth login|not logged in|authentication|bad credentials|HTTP 401/i.test(why), error: why.split('\n').filter(Boolean).slice(-1)[0] ?? 'gh failed' });
+      if (err && typeof (err as NodeJS.ErrnoException).code === 'string') {
+        const spawned = ghSpawnFailure(err as NodeJS.ErrnoException);
+        if (spawned === GH_NOT_FOUND) return resolve({ missing: true });
+        return resolve({ error: GH_FAILED });
+      }
+      // stderr only. err.message names the binary ("Command failed: <path>").
+      const why = String(stderr || '').trim();
+      resolve({ signedOut: /auth login|not logged in|authentication|bad credentials|HTTP 401/i.test(why), error: why.split('\n').filter(Boolean).slice(-1)[0] ?? GH_FAILED });
     });
   });
 }

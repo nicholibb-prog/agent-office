@@ -2,7 +2,7 @@
 // If gh cannot be found, or `gh auth status` fails, the boards get an empty logged-out state.
 // Nothing here invents cards.
 import type { GhIssue, GhLabel, GhPull, GhState } from '../shared/protocol.js';
-import { GH_NOT_FOUND, GH_NOT_LOGGED_IN } from '../shared/protocol.js';
+import { GH_FAILED, GH_NOT_FOUND, GH_NOT_LOGGED_IN } from '../shared/protocol.js';
 
 /** The office's `gh` (see github.ts), or a stand-in in tests. */
 export interface GhBoardRunner {
@@ -16,17 +16,34 @@ export function emptyBoard<T>(error: string, fetchedAt = Date.now()): GhState<T>
   return { items: [], error, fetchedAt, loading: false };
 }
 
-/** Maps a failed `gh` call onto the two honest board states, or leaves a specific gh error as it is. */
+/** Node's spawn and "Command failed" lines name the binary. They never reach the client. */
+function withoutSpawnLeak(msg: string): string {
+  const lines = msg.split('\n').filter((line) => !/^Command failed:/.test(line));
+  return lines
+    .map((line) => {
+      if (!/^spawn(?:Sync)?\s+\S/.test(line)) return line;
+      return /\bENOENT\b/.test(line) && !/[\\/]/.test(line) ? 'ENOENT' : GH_FAILED;
+    })
+    .join('\n');
+}
+
+/** Maps a failed `gh` call onto the honest board states, or leaves a specific gh error as it is. */
 export function classifyGhError(err: unknown): string {
-  const msg = err instanceof Error ? err.message : String(err ?? '');
-  if (msg === GH_NOT_FOUND || msg === GH_NOT_LOGGED_IN) return msg;
+  const raw = err instanceof Error ? err.message : String(err ?? '');
+  if (raw === GH_NOT_FOUND || raw === GH_NOT_LOGGED_IN || raw === GH_FAILED) return raw;
+  const msg = withoutSpawnLeak(raw);
+  if (msg.trim() === GH_FAILED) return GH_FAILED;
   if (/ENOENT|not installed|spawn gh\b|^gh not found$/i.test(msg)) return GH_NOT_FOUND;
   if (/auth login|not logged in|authentication|sign-in stopped|bad credentials|HTTP 401/i.test(msg)) return GH_NOT_LOGGED_IN;
-  return msg.trim() || GH_NOT_LOGGED_IN;
+  const trimmed = msg.trim();
+  // A path to the gh binary must not ride out on an otherwise specific error.
+  if (!trimmed || /[\\/][^\s]*gh(?:\.exe)?\b/i.test(trimmed)) return GH_FAILED;
+  return trimmed;
 }
 
 /**
  * Proves the office gh session before any list. Missing binary stays "gh not found".
+ * A spawn that found gh but could not start it stays "gh failed".
  * Any other failed `gh auth status` is "gh not logged in": the boards do not guess.
  */
 export async function ghSessionBlock(run: GhBoardRunner, cwd: string): Promise<string | undefined> {
@@ -35,7 +52,8 @@ export async function ghSessionBlock(run: GhBoardRunner, cwd: string): Promise<s
     return undefined;
   } catch (err) {
     const msg = classifyGhError(err);
-    return msg === GH_NOT_FOUND ? GH_NOT_FOUND : GH_NOT_LOGGED_IN;
+    if (msg === GH_NOT_FOUND || msg === GH_FAILED) return msg;
+    return GH_NOT_LOGGED_IN;
   }
 }
 

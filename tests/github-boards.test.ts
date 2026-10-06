@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { GH_NOT_FOUND, GH_NOT_LOGGED_IN, ghBoardHint, ghListsBlock } from '../src/shared/protocol.js';
-import { GH_WINDOWS_FALLBACK, GitHub, gh, resolveGhBinary } from '../src/server/github.js';
-import { loadIssueBoard, loadPullBoard, type GhBoardRunner } from '../src/server/github-boards.js';
+import { GH_FAILED, GH_NOT_FOUND, GH_NOT_LOGGED_IN, ghBoardHint, ghListsBlock } from '../src/shared/protocol.js';
+import { GH_WINDOWS_FALLBACK, GitHub, gh, ghSpawnFailure, resolveGhBinary } from '../src/server/github.js';
+import { classifyGhError, loadIssueBoard, loadPullBoard, type GhBoardRunner } from '../src/server/github-boards.js';
 import type { GhIssue, GhPull, GhState } from '../src/shared/protocol.js';
 
 const issue = {
@@ -44,16 +46,81 @@ test('gh resolves GH_PATH, then PATH, then the Windows install path', () => {
   const dir = '/opt/gh-cli';
   const onPath = path.join(dir, 'gh');
   const exe = path.join(dir, 'gh.exe');
-  assert.equal(resolveGhBinary({ env: { GH_PATH: '/opt/override/gh', PATH: dir }, exists: (p) => p === '/opt/override/gh' || p === onPath }), '/opt/override/gh');
-  assert.equal(resolveGhBinary({ env: { GH_PATH: '/missing/gh', PATH: dir }, exists: (p) => p === onPath }), onPath);
-  assert.equal(resolveGhBinary({ env: { PATH: dir }, exists: (p) => p === exe }), exe);
-  assert.equal(resolveGhBinary({ env: { PATH: '' }, exists: (p) => p === GH_WINDOWS_FALLBACK }), GH_WINDOWS_FALLBACK);
-  assert.equal(resolveGhBinary({ env: { PATH: dir, GH_PATH: '' }, exists: () => false }), undefined);
+  assert.equal(resolveGhBinary({ env: { GH_PATH: '/opt/override/gh', PATH: dir }, isFile: (p) => p === '/opt/override/gh' || p === onPath }), '/opt/override/gh');
+  assert.equal(resolveGhBinary({ env: { GH_PATH: '/missing/gh', PATH: dir }, isFile: (p) => p === onPath }), onPath);
+  assert.equal(resolveGhBinary({ env: { PATH: dir }, isFile: (p) => p === exe }), exe);
+  assert.equal(resolveGhBinary({ env: { PATH: '' }, isFile: (p) => p === GH_WINDOWS_FALLBACK }), GH_WINDOWS_FALLBACK);
+  assert.equal(resolveGhBinary({ env: { PATH: dir, GH_PATH: '' }, isFile: () => false }), undefined);
+  // A directory at the Windows fallback is not a match, even when the path exists.
+  assert.equal(resolveGhBinary({ env: { PATH: '' }, isFile: (p) => p === GH_WINDOWS_FALLBACK ? false : false }), undefined);
+});
+
+test('GH_PATH, PATH, and the Windows fallback match only a regular file', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'gh-lookup-'));
+  try {
+    const folder = path.join(root, 'not-a-binary');
+    mkdirSync(folder);
+    const bindir = path.join(root, 'bin');
+    mkdirSync(bindir);
+    mkdirSync(path.join(bindir, 'gh'));
+    const exe = path.join(bindir, 'gh.exe');
+    writeFileSync(exe, '');
+    const real = path.join(root, 'real-gh');
+    writeFileSync(real, '');
+    assert.equal(resolveGhBinary({ env: { GH_PATH: folder, PATH: '' } }), undefined);
+    assert.equal(resolveGhBinary({ env: { PATH: bindir } }), exe);
+    assert.equal(resolveGhBinary({ env: { GH_PATH: path.join(bindir, 'gh'), PATH: bindir } }), exe);
+    assert.equal(resolveGhBinary({ env: { GH_PATH: real, PATH: '' } }), real);
+    assert.equal(resolveGhBinary({ env: { GH_PATH: folder, PATH: root } }), undefined);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('gh() fails closed with gh not found when no binary resolves, and when the file is missing', async () => {
   await assert.rejects(() => gh(['auth', 'status'], process.cwd(), 5_000, undefined, () => undefined), { message: GH_NOT_FOUND });
   await assert.rejects(() => gh(['auth', 'status'], process.cwd(), 5_000, undefined, () => '/no/such/gh-binary'), { message: GH_NOT_FOUND });
+});
+
+test('a gh spawn error other than ENOENT is gh failed and does not echo the path', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'gh-spawn-'));
+  const bin = path.join(root, 'gh');
+  writeFileSync(bin, '');
+  chmodSync(bin, 0o644);
+  const secret = '/opt/secret/GitHub CLI/gh.exe';
+  try {
+    await assert.rejects(
+      () => gh(['auth', 'status'], root, 5_000, undefined, () => bin),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.equal(err.message, GH_FAILED);
+        assert.equal(err.message.includes(bin), false);
+        assert.equal(err.message.includes(root), false);
+        assert.doesNotMatch(err.message, /EACCES|EPERM|ENOEXEC|spawn/);
+        return true;
+      },
+    );
+    assert.equal(ghSpawnFailure({ code: 'EACCES', message: `spawn ${secret} EACCES` } as NodeJS.ErrnoException), GH_FAILED);
+    assert.equal(ghSpawnFailure({ code: 'ENOENT' } as NodeJS.ErrnoException), GH_NOT_FOUND);
+    const leaked = new Error(`spawn ${secret} EACCES`);
+    assert.equal(classifyGhError(leaked), GH_FAILED);
+    assert.equal(classifyGhError(leaked).includes(secret), false);
+    assert.equal(classifyGhError(new Error(`Command failed: ${secret} auth status\nYou are not logged into any GitHub hosts. Run gh auth login to authenticate.`)), GH_NOT_LOGGED_IN);
+    const boom: GhBoardRunner = async () => {
+      throw new Error(`spawn ${secret} EACCES`);
+    };
+    const board = await loadIssueBoard(boom, '/repo');
+    assert.equal(board.error, GH_FAILED);
+    assert.equal(board.error?.includes('secret'), false);
+    assert.equal(board.error?.includes(secret), false);
+    assert.deepEqual(board.items, []);
+    assert.equal(ghListsBlock({ error: GH_FAILED }, { error: GH_NOT_LOGGED_IN }), GH_FAILED);
+    assert.equal(ghListsBlock({ error: GH_NOT_FOUND }, { error: GH_FAILED }), GH_NOT_FOUND);
+    assert.match(ghBoardHint(GH_FAILED), /could not be started/i);
+    assert.equal(ghBoardHint(GH_FAILED).includes(secret), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('a missing gh is gh not found, and a failed gh auth status is gh not logged in', async () => {

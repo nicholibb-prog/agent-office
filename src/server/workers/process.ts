@@ -4,7 +4,6 @@ import { accessSync, chmodSync, constants, existsSync, mkdirSync, writeFileSync 
 import { execFile, execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveGhBinary } from '../github.js';
 
 export const WIN = process.platform === 'win32';
 
@@ -30,11 +29,6 @@ export function shellRun(line: string): string[] {
 }
 
 export function resolveCommand(cmd: string): string | null {
-  // gh is often off the office process PATH (the Windows installer path). Same lookup the boards use.
-  if (cmd === 'gh') {
-    const bin = resolveGhBinary();
-    if (bin) return bin;
-  }
   // Windows runs files by extension: `claude` is really claude.exe / claude.cmd. An npm shim with
   // no extension is a sh script the console can't run, so only take it when asked for by name.
   const exts = WIN && !path.extname(cmd) ? (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean) : [''];

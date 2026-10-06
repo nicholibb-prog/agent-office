@@ -1,7 +1,7 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { closeSync, fstatSync, openSync, readSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import type { CloneProgress } from '../shared/protocol.js';
+import { GH_FAILED, type CloneProgress } from '../shared/protocol.js';
 import { resolveGhBinary } from './github.js';
 
 // One `gh repo clone`, run so the office can see how it's getting on. git's progress goes to a log
@@ -125,7 +125,7 @@ export class CloneRun {
       } finally {
         closeSync(fd);
       }
-      child.once('error', (err: NodeJS.ErrnoException) => resolve(err.code === 'ENOENT' ? "The GitHub CLI (gh) isn't installed on the office's machine" : `Couldn't run gh: ${err.message}`));
+      child.once('error', (err: NodeJS.ErrnoException) => resolve(err.code === 'ENOENT' ? "The GitHub CLI (gh) isn't installed on the office's machine" : GH_FAILED));
       child.once('spawn', () => {
         const run = new CloneRun(child.pid!, log, child, opts);
         child.once('exit', (code) => run.end(code));

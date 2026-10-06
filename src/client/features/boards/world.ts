@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GH_NOT_FOUND, GH_NOT_LOGGED_IN, ghBoardBlock, type GhIssue, type GhPull, type GhState, type QueueState, type QueueTask, type ServiceInfo, type WorkerInfo } from '../../../shared/protocol';
+import { GH_FAILED, GH_NOT_FOUND, GH_NOT_LOGGED_IN, ghBoardBlock, type GhIssue, type GhPull, type GhState, type QueueState, type QueueTask, type ServiceInfo, type WorkerInfo } from '../../../shared/protocol';
 import { store, workerForPull } from '../../state';
 
 export const NOTE_COLORS = ['#fff7b0', '#ffd6e0', '#caffbf', '#bde0fe', '#ffe5b4'];
@@ -355,7 +355,7 @@ export class QueueBoardTexture {
       g.fillText(block || 'Nothing queued', W / 2, H / 2 - 10);
       g.fillStyle = '#6b7280';
       g.font = `700 30px ${font}`;
-      const sub = block === GH_NOT_FOUND ? 'Set GH_PATH or install GitHub CLI' : block === GH_NOT_LOGGED_IN ? 'Run gh auth login on this machine' : 'Add issues from the 📌 Issues board, or press E here';
+      const sub = block === GH_NOT_FOUND ? 'Set GH_PATH or install GitHub CLI' : block === GH_FAILED ? 'GitHub CLI could not start' : block === GH_NOT_LOGGED_IN ? 'Run gh auth login on this machine' : 'Add issues from the 📌 Issues board, or press E here';
       g.fillText(sub, W / 2, H / 2 + 44);
       g.textAlign = 'left';
       this.texture.needsUpdate = true;

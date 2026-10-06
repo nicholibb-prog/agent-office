@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import path from 'node:path';
-import { GH_NOT_FOUND, type GhCheck, type GhCloseReason, type GhComment, type GhIssue, type GhIssueDetail, type GhLabel, type GhMergeMethod, type GhPull, type GhPullDetail, type GhRepoInfo, type GhReviewComment, type GhState } from '../shared/protocol.js';
+import { GH_FAILED, GH_NOT_FOUND, type GhCheck, type GhCloseReason, type GhComment, type GhIssue, type GhIssueDetail, type GhLabel, type GhMergeMethod, type GhPull, type GhPullDetail, type GhRepoInfo, type GhReviewComment, type GhState } from '../shared/protocol.js';
 import { ghSessionBlock, loadIssueBoard, loadPullBoard, type GhBoardRunner } from './github-boards.js';
 import type { GhAs } from './signins.js';
 
@@ -10,29 +10,47 @@ export const GH_WINDOWS_FALLBACK = 'C:\\Program Files\\GitHub CLI\\gh.exe';
 
 export interface GhResolveOpts {
   env?: NodeJS.ProcessEnv;
-  exists?: (file: string) => boolean;
+  /** True only for a regular file. A directory must not match. Defaults to a guarded `statSync`. */
+  isFile?: (file: string) => boolean;
+}
+
+/** A regular file, or false when the path is missing, a directory, or not stat-able. */
+function ghIsRegularFile(file: string): boolean {
+  try {
+    return statSync(file).isFile();
+  } catch {
+    return false;
+  }
 }
 
 /**
  * Where the office runs gh from: `GH_PATH`, then an executable named `gh` / `gh.exe` on `PATH`,
- * then the default Windows install path. Undefined when none of those is a real file.
+ * then the default Windows install path. Undefined when none of those is a regular file.
  */
 export function resolveGhBinary(opts: GhResolveOpts = {}): string | undefined {
   const env = opts.env ?? process.env;
-  const exists = opts.exists ?? existsSync;
+  const isFile = opts.isFile ?? ghIsRegularFile;
   const override = env.GH_PATH?.trim();
-  if (override && exists(override)) return override;
+  if (override && isFile(override)) return override;
   const pathEnv = env.PATH ?? env.Path ?? '';
   const delimiter = pathEnv.includes(';') ? ';' : path.delimiter;
   for (const dir of pathEnv.split(delimiter)) {
     if (!dir) continue;
     for (const name of ['gh', 'gh.exe']) {
       const full = path.join(dir, name);
-      if (exists(full)) return full;
+      if (isFile(full)) return full;
     }
   }
-  if (exists(GH_WINDOWS_FALLBACK)) return GH_WINDOWS_FALLBACK;
+  if (isFile(GH_WINDOWS_FALLBACK)) return GH_WINDOWS_FALLBACK;
   return undefined;
+}
+
+/**
+ * A spawn of gh that never started. ENOENT is "gh not found". Any other spawn error is "gh failed".
+ * The binary path and the raw errno stay here: callers must not send `err.message` onward.
+ */
+export function ghSpawnFailure(err: NodeJS.ErrnoException): typeof GH_NOT_FOUND | typeof GH_FAILED {
+  return err.code === 'ENOENT' ? GH_NOT_FOUND : GH_FAILED;
 }
 
 const REFRESH_MS = 90_000;
@@ -58,13 +76,15 @@ export function gh(args: string[], cwd: string, timeout = 30_000, env?: Record<s
   return new Promise((resolve, reject) => {
     execFile(bin, args, { cwd, maxBuffer: 32 * 1024 * 1024, timeout, env }, (err, stdout, stderr) => {
       if (err) {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-          reject(new Error(GH_NOT_FOUND));
+        const code = (err as NodeJS.ErrnoException).code;
+        // A string code means gh never started. Do not use err.message: it names the binary.
+        if (typeof code === 'string') {
+          reject(new Error(ghSpawnFailure(err as NodeJS.ErrnoException)));
           return;
         }
-        const msg = (stderr || err.message || '').trim().split('\n').slice(-2).join(' ');
+        const msg = String(stderr || '').trim().split('\n').slice(-2).join(' ');
         const signedOut = env && /auth login|not logged in|authentication/i.test(msg);
-        reject(new Error(signedOut ? 'Your GitHub sign-in stopped working — sign in again (☰ → 🔐 Your sign-ins)' : friendly(msg)));
+        reject(new Error(signedOut ? 'Your GitHub sign-in stopped working — sign in again (☰ → 🔐 Your sign-ins)' : friendly(msg) || GH_FAILED));
       } else resolve(stdout);
     });
   });
