@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { AgentChoice, AgentEffort, AgentProvider, TerminalHit, WorkerInfo, WorkerKind, WorkerRepo, WorkerStatus } from '../../shared/protocol.js';
@@ -34,6 +35,8 @@ import { WorkerTrees, lostMessage } from './worktree.js';
 const SCREEN_INTERVAL_MS = 250;
 /** How often a steady typist's "last typed" time is refreshed for everyone. */
 const TYPED_REFRESH_MS = 15_000;
+/** Shells have no agent hooks: after this much quiet since last real input, return to idle (roam/asleep). */
+const SHELL_IDLE_MS = 12_000;
 /** The most other repositories one worker can take on (see WorkerInfo.repos). */
 export const MAX_REPOS = 8;
 /** How often every worker's transcript is checked for new spend, on top of the hook-driven checks. */
@@ -70,6 +73,8 @@ export class WorkerManager {
   private scrollback: ScrollbackStore;
   private drops: DropStore;
   private saveTimer: NodeJS.Timeout;
+  private shellIdleTick?: ReturnType<typeof setInterval>;
+  private crewStatusTick?: ReturnType<typeof setInterval>;
   /** How many rows the floor's back office is built out: its desks past that aren't there to hire at (see WING). */
   wing: () => number = () => 0;
 
@@ -163,6 +168,10 @@ export class WorkerManager {
     // Whoever's worktree was deleted while the office was down stays asleep, marked lost, rather than failing to start.
     for (const w of this.workers.values()) this.worktrees.checkLost(w);
     this.wakeAll();
+    // Shells: force idle when quiet so desk is only for WORKING.
+    this.shellIdleTick = setInterval(() => this.tickShellIdle(), 3_000);
+    this.crewStatusTick = setInterval(() => this.tickCrewStatusFile(), 4_000);
+    this.tickCrewStatusFile();
     // It may have switched branches while the office was down, its terminal still going.
     void this.syncBranches();
   }
@@ -494,6 +503,9 @@ export class WorkerManager {
     const last = w.info.lastInput;
     if (last?.by === by && now - last.at < TYPED_REFRESH_MS) return false;
     w.info.lastInput = { by, at: now };
+    // Real terminal input while at rest → WORKING @ desk. Hooks / shell idle timer clear it later.
+    const s = w.info.status;
+    if (s === 'idle' || s === 'done' || s === 'starting') this.setStatus(w, 'working');
     return true;
   }
 
@@ -508,7 +520,9 @@ export class WorkerManager {
       w.info.activity = truncate(clean, 80);
       this.tasks.notePrompt(w, clean);
       if (by) w.info.lastInput = { by, at: Date.now() };
-      this.emitUpdate(w);
+      const sd = w.info.status;
+      if (sd === 'idle' || sd === 'done' || sd === 'starting') this.setStatus(w, 'working');
+      else this.emitUpdate(w);
       return undefined;
     }
     if (!w.pty) return 'Worker is not running';
@@ -520,7 +534,9 @@ export class WorkerManager {
     w.info.activity = truncate(clean, 80);
     this.tasks.notePrompt(w, clean);
     if (by) w.info.lastInput = { by, at: Date.now() };
-    this.emitUpdate(w);
+    const sp = w.info.status;
+      if (sp === 'idle' || sp === 'done' || sp === 'starting') this.setStatus(w, 'working');
+      else this.emitUpdate(w);
     return undefined;
   }
 
@@ -906,6 +922,107 @@ export class WorkerManager {
     else if (!busy && (s === 'working' || (s === 'needs_input' && !w.bootBlocked))) this.setStatus(w, 'done');
   }
 
+
+  
+  /** Local HQ overrides (gitignored). Neutral defaults when absent. */
+  private loadHqLocal(): {
+    crewKeysLower: string[];
+    humanAliases: string[];
+    humanMapsTo: string;
+  } {
+    const empty = { crewKeysLower: [] as string[], humanAliases: [] as string[], humanMapsTo: '' };
+    try {
+      const file = path.join(path.dirname(this.statePath), 'hq-local.json');
+      if (!existsSync(file)) return empty;
+      const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<typeof empty>;
+      return {
+        crewKeysLower: Array.isArray(raw.crewKeysLower) ? raw.crewKeysLower.map(String) : [],
+        humanAliases: Array.isArray(raw.humanAliases) ? raw.humanAliases.map(String) : [],
+        humanMapsTo: typeof raw.humanMapsTo === 'string' ? raw.humanMapsTo : '',
+      };
+    } catch {
+      return empty;
+    }
+  }
+
+  /** Apply a name?status map from the local bridge onto shell desks. */
+  applyCrewPresence(crew: Record<string, string>): { applied: string[] } {
+    const clean = (s: string) => s.replace(/\s*[^\w\s.-]+\s*$/u, '').trim().toLowerCase();
+    const want = new Map<string, 'working' | 'idle'>();
+    for (const [k, v] of Object.entries(crew || {})) {
+      const n = clean(k);
+      const st = String(v).toLowerCase();
+      if (!n) continue;
+      if (st === 'working' || st === 'busy' || st === 'active') want.set(n, 'working');
+      else if (st === 'idle' || st === 'asleep' || st === 'roam' || st === 'offline' || st === 'done') want.set(n, 'idle');
+    }
+    const applied: string[] = [];
+    for (const w of this.workers.values()) {
+      if (w.info.kind !== 'shell') continue;
+      const n = clean(w.info.name);
+      const next = want.get(n);
+      if (!next) continue;
+      if (next === 'working') {
+        w.info.lastInput = { by: 'crew-status', at: Date.now() };
+        if (w.info.status !== 'working') this.setStatus(w, 'working');
+        else this.emitUpdate(w);
+        applied.push(w.info.name + '=working');
+      } else {
+        if (w.info.status === 'working' || w.info.status === 'starting') this.setStatus(w, 'idle');
+        applied.push(w.info.name + '=idle');
+      }
+    }
+    return { applied };
+  }
+
+  chatWorking(name: string, text?: string): void {
+    const clean = (s: string) => s.replace(/\s*[^\w\s.-]+\s*$/u, '').trim().toLowerCase();
+    const hq = this.loadHqLocal();
+    const want = new Set<string>();
+    const who = clean(name);
+    if (who) want.add(who);
+    const crewSet = new Set(hq.crewKeysLower.map((s) => s.toLowerCase()));
+    const mapsTo = hq.humanMapsTo ? clean(hq.humanMapsTo) : '';
+    if (who && mapsTo && !crewSet.has(who)) want.add(mapsTo);
+    for (const a of hq.humanAliases) {
+      if (who === clean(a) && mapsTo) want.add(mapsTo);
+    }
+    // @Name or "Name:" / "Name," at start of a line.
+    const raw = (text || '').trim();
+    for (const m of raw.matchAll(/@([\w][\w.-]*(?:\s+[\w][\w.-]*)?)/g)) want.add(clean(m[1]));
+    const lead = raw.match(/^([A-Za-z][\w.-]*(?:\s+[A-Za-z][\w.-]*)?)\s*[,:]\s+/);
+    if (lead) want.add(clean(lead[1]));
+    if (!want.size) return;
+    for (const w of this.workers.values()) {
+      const n = clean(w.info.name);
+      if (!want.has(n)) continue;
+      const st = w.info.status;
+      w.info.lastInput = { by: name, at: Date.now() };
+      if (st === 'idle' || st === 'done' || st === 'starting' || !st) this.setStatus(w, 'working');
+      else this.emitUpdate(w);
+    }
+  }
+
+
+  private tickCrewStatusFile(): void {
+    try {
+      const file = path.join(path.dirname(this.statePath), 'crew-status.json');
+      if (!existsSync(file)) return;
+      const raw = JSON.parse(readFileSync(file, 'utf8')) as { crew?: Record<string, string> };
+      if (raw?.crew) this.applyCrewPresence(raw.crew);
+    } catch { /* ignore bad/missing file */ }
+  }
+
+  private tickShellIdle(): void {
+    for (const w of this.workers.values()) {
+      if (w.info.kind !== 'shell') continue;
+      if (w.info.status !== 'working' && w.info.status !== 'starting') continue;
+      const at = w.info.lastInput?.at ?? 0;
+      if (at && Date.now() - at < SHELL_IDLE_MS) continue;
+      this.setStatus(w, 'idle');
+    }
+  }
+
   private setStatus(w: Worker, status: WorkerStatus) {
     if (w.info.status === status) return;
     if (w.info.status === 'needs_input') w.leftNeedsInputAt = Date.now();
@@ -937,6 +1054,15 @@ export class WorkerManager {
   }
 
   private emitUpdate(w: Worker) {
+    // Shells never get agent hooks: after quiet since last real input, go idle so they roam/asleep.
+    if (w.info.kind === 'shell' && w.info.status === 'working') {
+      const at = w.info.lastInput?.at ?? 0;
+      if (!at || Date.now() - at >= SHELL_IDLE_MS) {
+        clockWork(w.info, 'idle');
+        w.info.status = 'idle';
+        w.info.action = undefined;
+      }
+    }
     this.events.update({ ...w.info });
   }
 
