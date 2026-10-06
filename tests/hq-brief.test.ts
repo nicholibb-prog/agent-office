@@ -204,12 +204,13 @@ test('files keep actionable blocks and status lines, and a tap removes the block
     assert.equal(brief.digest.done.seats[0].lines[0].title, 'Ship the queue');
     assert.equal(brief.digest.blocked.seats[0].lines[0].title, 'Not logged in');
 
-    assert.equal(answerBlock(dir, 'b1', 'yes', 60), true);
+    assert.equal(answerBlock(dir, 'b1', 'yes', 60, 'acct-1'), true);
     const after = readBrief(dir, [], [], 10, now);
     assert.equal(after.blocks.length, 0);
-    const disk = JSON.parse(readFileSync(path.join(dir, 'unblock.json'), 'utf8')) as { answered: { answer: string }[]; blocks: unknown[] };
+    const disk = JSON.parse(readFileSync(path.join(dir, 'unblock.json'), 'utf8')) as { answered: { answer: string; by: string }[]; blocks: unknown[] };
     assert.equal(disk.blocks.length, 0);
     assert.deepEqual(disk.answered.map((a) => a.answer), ['yes']);
+    assert.deepEqual(disk.answered.map((a) => a.by), ['acct-1']);
     assert.equal(JSON.stringify(disk).includes('chat'), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });

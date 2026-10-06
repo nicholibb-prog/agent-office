@@ -25,7 +25,7 @@ The unblock strip and **Since last visit** read four files in the office data di
 
 `humanMapsTo`, when it is a single token such as `operator`, is the strip’s heading (`Needs operator`). Blank stays **Needs a decision**. Seat values that are not a short token (`seat-a`, `desk-1`) are dropped.
 
-`unblock.json` is the queue. `actionable` must be true, `kind` is `yesno` or `talk`, and `title` is one line of at most 80 characters. **Yes** / **No** on a `yesno` row types `1` or `2` into `workerId` when that desk exists, and moves the block onto `answered`.
+`unblock.json` is the queue. `actionable` must be true, `kind` is `yesno` or `talk`, and `title` is one line of at most 80 characters. **Yes** / **No** on a `yesno` row types `1` or `2` into the desk stored on that block (a live row uses the id after `live:`). The desk must be waiting for input right then, and the tap must still carry that desk’s `at` and title. A `talk` row never types. The block moves onto `answered`, with the signed-in account id in `by`.
 
 ```json
 {
@@ -33,7 +33,7 @@ The unblock strip and **Since last visit** read four files in the office data di
   "blocks": [
     { "id": "b1", "seat": "seat-a", "title": "Approve npm test", "kind": "yesno", "actionable": true, "at": 1710000000000, "workerId": "w1" }
   ],
-  "answered": [{ "id": "b1", "answer": "yes", "at": 1710000001000 }]
+  "answered": [{ "id": "b1", "answer": "yes", "at": 1710000001000, "by": "account-id" }]
 }
 ```
 
@@ -50,7 +50,7 @@ The unblock strip and **Since last visit** read four files in the office data di
 
 `last-visit.json` is `{ "at": 1710000000000 }`. The panel writes it when you close it. The first open, with no stamp, uses the last twelve hours.
 
-The bridge accepts these on `POST /api/bridge/unblock` (`{ "blocks": [] }`) and `POST /api/bridge/board-status` (`{ "items": [] }`), with the same token or office session as the other bridge routes, and only from `127.0.0.1` or `localhost`. `GET /api/bridge/hq-brief?since=` returns the strip and the digest. `POST /api/bridge/unblock/answer` is `{ "id", "answer": "yes"|"no", "workerId"? }`.
+The bridge accepts these on `POST /api/bridge/unblock` (`{ "blocks": [] }`) and `POST /api/bridge/board-status` (`{ "items": [] }`), with the same token or office session as the other bridge routes, and only from `127.0.0.1` or `localhost`. `GET /api/bridge/hq-brief?since=` returns the strip and the digest. `POST /api/bridge/unblock/answer` is signed-in office session only (a bridge token or `Authorization: Bearer` is rejected). The body is `{ "id", "answer": "yes"|"no", "at", "titleHash" }`. A `workerId` in that body is ignored. The server types only when the block is `yesno`, that desk’s status is `needs_input`, and `at` plus `titleHash` still match the live desk.
 
 ## Command line
 

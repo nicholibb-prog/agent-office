@@ -137,6 +137,16 @@ export function answerKey(answer: 'yes' | 'no'): string {
   return answer === 'yes' ? YES_KEY : NO_KEY;
 }
 
+/** Stable hash of the title a person tapped. The server rechecks it against the live desk. */
+export function titleHash(title: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < title.length; i++) {
+    h ^= title.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
 export function sinceOf(requested: number | undefined, stored: number | undefined, now: number): number {
   const ok = (n: number | undefined): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0 && n <= now + 60_000;
   const hits = [requested, stored].filter(ok);

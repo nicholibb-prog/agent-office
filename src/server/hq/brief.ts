@@ -24,7 +24,7 @@ import { loadHqLocal, type HqLocal } from '../workers/crew.js';
 
 const ANSWER_CAP = 40;
 
-export type Answered = { id: string; answer: 'yes' | 'no'; at: number };
+export type Answered = { id: string; answer: 'yes' | 'no'; at: number; by: string };
 
 type NeedsFile = { updatedAt?: string; blocks?: unknown[]; answered?: Answered[] };
 type BoardFile = { updatedAt?: string; items?: unknown[] };
@@ -64,7 +64,12 @@ export function loadBook(dataDir: string): { hq: HqLocal; book: SeatBook } {
 function readAnswered(raw: unknown): Answered[] {
   const items = raw && typeof raw === 'object' ? (raw as NeedsFile).answered : undefined;
   if (!Array.isArray(items)) return [];
-  return items.filter((a): a is Answered => !!a && (a.answer === 'yes' || a.answer === 'no') && typeof a.id === 'string' && typeof a.at === 'number').slice(-ANSWER_CAP);
+  const out: Answered[] = [];
+  for (const a of items) {
+    if (!a || (a.answer !== 'yes' && a.answer !== 'no') || typeof a.id !== 'string' || typeof a.at !== 'number') continue;
+    out.push({ id: a.id, answer: a.answer, at: a.at, by: typeof a.by === 'string' ? a.by : '' });
+  }
+  return out.slice(-ANSWER_CAP);
 }
 
 export function readBlocks(dataDir: string, book: SeatBook): Decision[] {
@@ -107,13 +112,13 @@ export function saveItems(dataDir: string, rawItems: unknown[]): number {
   return items.length;
 }
 
-/** Drops a file block and remembers the tap. Returns whether that id was in the file. */
-export function answerBlock(dataDir: string, id: string, answer: 'yes' | 'no', at: number): boolean {
+/** Drops a file block and remembers who tapped. Returns whether that id was in the file. */
+export function answerBlock(dataDir: string, id: string, answer: 'yes' | 'no', at: number, by: string): boolean {
   const { book } = loadBook(dataDir);
   const prev = readJson(hqPaths(dataDir).needs) as NeedsFile | null;
   const blocks = readBlocks(dataDir, book);
   const hit = blocks.some((b) => b.id === id);
-  const answered = [...readAnswered(prev), { id, answer, at }].slice(-ANSWER_CAP);
+  const answered = [...readAnswered(prev), { id, answer, at, by: by.slice(0, 80) }].slice(-ANSWER_CAP);
   writeJson(hqPaths(dataDir).needs, {
     updatedAt: new Date().toISOString(),
     blocks: blocks.filter((b) => b.id !== id).map(storedBlock),

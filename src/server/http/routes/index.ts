@@ -35,13 +35,13 @@ export const routes: readonly Route[] = [
   hqBriefRoutes.seen,
   hqBriefRoutes.needs,
   hqBriefRoutes.board,
-  hqBriefRoutes.answer,
   pageRoutes.assets,
   pageRoutes.login,
   pageRoutes.claim,
   pageRoutes.join,
   pageRoutes.favicon,
-  // Signed in.
+  // Signed in. The unblock answer is a person at the office, never a bridge token.
+  hqBriefRoutes.answer,
   authRoutes.whoami,
   agentRoutes.models,
   fileRoutes.image,

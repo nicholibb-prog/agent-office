@@ -1,14 +1,19 @@
-// Unblock queue and morning digest. Same gate as the rest of the bridge: loopback host,
-// origin, JSON on POST, and a bridge token or an office session. Yes/No types 1 or 2 into
-// the worker. It does not post a chat line and it does not mark anyone working.
+// Unblock queue and morning digest. Filing blocks and reading the brief use the bridge gate
+// (token or session). Answering does not: only a signed-in office session can type 1 or 2,
+// and only into the desk the block names while that desk still needs input. A bridge token
+// never approves. Nothing here posts a chat line or marks anyone working.
 
 import type http from 'node:http';
+import type { Session } from '../../auth.js';
 import type { Ctx } from '../../office/context.js';
-import { answerKey, liveFromInfo, type LiveTask, type LiveWorker } from '../../../shared/hq-brief.js';
-import { answerBlock, markSeen, readBrief, saveBlocks, saveItems } from '../../hq/brief.js';
+import type { WorkerInfo } from '../../../shared/protocol.js';
+import { answerKey, liveBlock, liveFromInfo, titleHash, type LiveTask, type LiveWorker } from '../../../shared/hq-brief.js';
+import { answerBlock, loadBook, markSeen, readBlocks, readBrief, saveBlocks, saveItems } from '../../hq/brief.js';
 import { send, readBody } from '../util.js';
-import { bridgeGate } from './bridge.js';
+import { bridgeGate, bridgeShape } from './bridge.js';
 import type { Route } from '../router.js';
+
+const INTERNAL = 'internal error';
 
 function num(v: string | null): number | undefined {
   if (!v) return undefined;
@@ -36,11 +41,21 @@ function snapshot(ctx: Ctx): { workers: LiveWorker[]; tasks: LiveTask[] } {
   return { workers, tasks };
 }
 
-function findWorker(ctx: Ctx, workerId: string) {
+function locate(ctx: Ctx, workerId: string): { info: WorkerInfo; write(data: string, by: string): void } | undefined {
   for (const floor of ctx.floors.values()) {
-    if (floor.workers.list().some((w) => w.id === workerId)) return floor;
+    const info = floor.workers.list().find((w) => w.id === workerId);
+    if (info) return { info, write: (data, by) => floor.workers.write(info.id, data, by) };
   }
   return undefined;
+}
+
+/** A bridge token or a Bearer credential on this route is a bot, not a person tapping Yes. */
+function presentedToken(req: http.IncomingMessage): boolean {
+  const hdr = req.headers['x-bridge-token'];
+  if (typeof hdr === 'string' && hdr.trim()) return true;
+  if (Array.isArray(hdr) && hdr.some((h) => h.trim())) return true;
+  const auth = req.headers.authorization;
+  return typeof auth === 'string' && /^Bearer\s+\S/i.test(auth);
 }
 
 async function jsonBody(req: http.IncomingMessage, res: http.ServerResponse): Promise<Record<string, unknown> | undefined> {
@@ -79,8 +94,8 @@ export const hqBriefRoutes = {
       const at = typeof body.at === 'number' && Number.isFinite(body.at) ? body.at : Date.now();
       try {
         markSeen(ctx.cfg.dataDir, at);
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: INTERNAL });
       }
       return send(res, 200, { ok: true, at });
     },
@@ -98,8 +113,8 @@ export const hqBriefRoutes = {
         const accepted = saveBlocks(ctx.cfg.dataDir, body.blocks);
         if (body.blocks.length > 0 && accepted === 0) return send(res, 400, { error: 'no actionable blocks' });
         return send(res, 200, { ok: true, accepted });
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: INTERNAL });
       }
     },
   },
@@ -116,38 +131,45 @@ export const hqBriefRoutes = {
         const accepted = saveItems(ctx.cfg.dataDir, body.items);
         if (body.items.length > 0 && accepted === 0) return send(res, 400, { error: 'no status lines' });
         return send(res, 200, { ok: true, accepted });
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: INTERNAL });
       }
     },
   },
   answer: {
     method: 'POST' as const,
     path: '/api/bridge/unblock/answer',
-    auth: 'public' as const,
-    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!bridgeGate(ctx, req, res)) return;
+    auth: 'session' as const,
+    async handle(ctx: Ctx, { req, res, session }: { req: http.IncomingMessage; res: http.ServerResponse; session: Session }) {
+      if (!bridgeShape(req, res)) return;
+      if (presentedToken(req)) return send(res, 403, { error: 'bridge token cannot approve' });
       const body = await jsonBody(req, res);
       if (!body) return;
       const answer = body.answer === 'yes' || body.answer === 'no' ? body.answer : undefined;
       const id = typeof body.id === 'string' ? body.id.trim() : '';
-      const workerId = typeof body.workerId === 'string' ? body.workerId.trim() : '';
       if (!answer || !id) return send(res, 400, { error: 'id and answer yes|no required' });
-      let typed = false;
-      if (workerId) {
-        const floor = findWorker(ctx, workerId);
-        if (!floor) return send(res, 404, { error: 'no such worker' });
-        floor.workers.write(workerId, answerKey(answer), 'operator');
-        typed = true;
-      }
-      let filed = false;
+      // body.workerId is ignored. The block decides which desk, and only while it still matches.
+      const { book } = loadBook(ctx.cfg.dataDir);
+      const filed = id.startsWith('live:') ? undefined : readBlocks(ctx.cfg.dataDir, book).find((b) => b.id === id);
+      if (!id.startsWith('live:') && !filed) return send(res, 404, { error: 'no such block' });
+      if (filed && filed.kind !== 'yesno') return send(res, 409, { error: 'not a yes or no' });
+      const workerId = id.startsWith('live:') ? id.slice('live:'.length) : filed?.workerId;
+      if (!workerId) return send(res, 409, { error: 'not waiting' });
+      const desk = locate(ctx, workerId);
+      if (!desk || desk.info.status !== 'needs_input') return send(res, 409, { error: 'not waiting' });
+      const live = liveBlock(liveFromInfo(desk.info), book);
+      if (!live || live.kind !== 'yesno') return send(res, 409, { error: 'not a yes or no' });
+      const at = typeof body.at === 'number' && Number.isFinite(body.at) ? body.at : undefined;
+      const hash = typeof body.titleHash === 'string' ? body.titleHash : '';
+      if (at !== live.at || hash !== titleHash(live.title)) return send(res, 409, { error: 'stale' });
+      const who = session.account?.id ?? '';
       try {
-        filed = answerBlock(ctx.cfg.dataDir, id, answer, Date.now());
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+        desk.write(answerKey(answer), who || 'session');
+        answerBlock(ctx.cfg.dataDir, id, answer, Date.now(), who);
+      } catch {
+        return send(res, 500, { error: INTERNAL });
       }
-      if (!typed && !filed) return send(res, 404, { error: 'no such block' });
-      return send(res, 200, { ok: true, typed, filed, answer });
+      return send(res, 200, { ok: true, typed: true, answer });
     },
   },
 } satisfies Record<string, Route>;

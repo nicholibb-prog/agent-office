@@ -10,6 +10,7 @@ import {
   digestHasLines,
   EMPTY_BOOK,
   liveBlock,
+  titleHash,
   liveFromInfo,
   mergeBlocks,
   type Brief,
@@ -87,7 +88,7 @@ export function installHqBrief(ctx: Ctx, deps: HqBriefDeps) {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: b.id, answer: which, workerId: b.workerId }),
+        body: JSON.stringify({ id: b.id, answer: which, at: b.at, titleHash: titleHash(b.title) }),
       });
       if (!res.ok) {
         quietUntil.delete(b.id);
