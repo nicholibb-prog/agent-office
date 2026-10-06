@@ -54,6 +54,31 @@ export interface GhState<T> {
   loading: boolean;
 }
 
+/** Boards show this and list nothing when `gh auth status` fails. */
+export const GH_NOT_LOGGED_IN = 'gh not logged in';
+/** Boards show this and list nothing when no gh binary can be found. */
+export const GH_NOT_FOUND = 'gh not found';
+
+/** The honest empty-state line, when `error` is one of the two fail-closed board states. */
+export function ghBoardBlock(error?: string): typeof GH_NOT_LOGGED_IN | typeof GH_NOT_FOUND | undefined {
+  if (error === GH_NOT_FOUND || error === GH_NOT_LOGGED_IN) return error;
+  return undefined;
+}
+
+/** Issues and PR lists share one gh. "gh not found" wins when either side could not start gh. */
+export function ghListsBlock(issues: { error?: string }, pulls: { error?: string }): typeof GH_NOT_LOGGED_IN | typeof GH_NOT_FOUND | undefined {
+  if (issues.error === GH_NOT_FOUND || pulls.error === GH_NOT_FOUND) return GH_NOT_FOUND;
+  if (issues.error === GH_NOT_LOGGED_IN || pulls.error === GH_NOT_LOGGED_IN) return GH_NOT_LOGGED_IN;
+  return undefined;
+}
+
+/** The line under the empty-state heading. */
+export function ghBoardHint(error?: string): string {
+  if (error === GH_NOT_FOUND) return 'The office could not find the GitHub CLI. Set GH_PATH, or install gh and put it on PATH.';
+  if (error === GH_NOT_LOGGED_IN) return 'Run gh auth login once on the office machine. Issues, pull requests, and the queue stay empty until that works.';
+  return 'The server runs gh in the project directory — make sure it is installed and authenticated (gh auth login).';
+}
+
 export type GhMergeMethod = 'squash' | 'merge' | 'rebase';
 
 /** Why an issue was closed, as GitHub records it. */

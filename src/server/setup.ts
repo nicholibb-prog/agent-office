@@ -8,6 +8,7 @@ import tty from 'node:tty';
 import { normalizeRepo, sameRepo } from '../shared/floors.js';
 import type { RepoChoice } from '../shared/protocol.js';
 import { Building, tildify } from './building.js';
+import { resolveGhBinary } from './github.js';
 import { officeHome, type Config } from './config.js';
 
 // Setting up an office from its terminal: where projects are cloned, signing the GitHub CLI in, and
@@ -206,13 +207,17 @@ async function githubLogin(cwd: string): Promise<string | undefined> {
     }
     console.log("\n  🐙 The office clones projects with the GitHub CLI (gh), and it isn't signed in.");
     if (/^n/i.test(await ask('     Sign in to GitHub now? [Y/n] '))) return undefined;
-    spawnSync('gh', ['auth', 'login'], { stdio: 'inherit' });
+    const bin = resolveGhBinary();
+    if (!bin) return undefined;
+    spawnSync(bin, ['auth', 'login'], { stdio: 'inherit' });
   }
 }
 
 function ghUser(cwd: string): Promise<{ login?: string; missing?: boolean; signedOut?: boolean; error?: string }> {
+  const bin = resolveGhBinary();
+  if (!bin) return Promise.resolve({ missing: true });
   return new Promise((resolve) => {
-    execFile('gh', ['api', 'user', '--jq', '.login'], { cwd, timeout: 30_000 }, (err, stdout, stderr) => {
+    execFile(bin, ['api', 'user', '--jq', '.login'], { cwd, timeout: 30_000 }, (err, stdout, stderr) => {
       if (!err && stdout.trim()) return resolve({ login: stdout.trim() });
       if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') return resolve({ missing: true });
       const why = String(stderr || err?.message || '').trim();

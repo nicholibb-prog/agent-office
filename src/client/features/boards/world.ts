@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { GhIssue, GhPull, GhState, QueueState, QueueTask, ServiceInfo, WorkerInfo } from '../../../shared/protocol';
+import { GH_NOT_FOUND, GH_NOT_LOGGED_IN, ghBoardBlock, type GhIssue, type GhPull, type GhState, type QueueState, type QueueTask, type ServiceInfo, type WorkerInfo } from '../../../shared/protocol';
 import { store, workerForPull } from '../../state';
 
 export const NOTE_COLORS = ['#fff7b0', '#ffd6e0', '#caffbf', '#bde0fe', '#ffe5b4'];
@@ -96,9 +96,10 @@ export class BoardTexture {
       g.fillStyle = rnd() > 0.5 ? 'rgba(120,70,30,.18)' : 'rgba(255,240,210,.18)';
       g.fillRect(rnd() * W, rnd() * H, 3, 3);
     }
-    const open = (state.items as (GhIssue | GhPull)[]).filter((i) => i.state === 'OPEN');
+    const blocked = ghBoardBlock(state.error);
+    const open = blocked ? [] : (state.items as (GhIssue | GhPull)[]).filter((i) => i.state === 'OPEN');
     if (!open.length) {
-      const note = state.error ? `⚠️ ${state.error}` : state.loading && !state.fetchedAt ? 'Loading…' : this.kind === 'issues' ? 'No open issues 🎉' : 'No open PRs';
+      const note = blocked ? blocked : state.error ? `⚠️ ${state.error}` : state.loading && !state.fetchedAt ? 'Loading…' : this.kind === 'issues' ? 'No open issues 🎉' : 'No open PRs';
       g.font = '800 40px Nunito, ui-rounded, system-ui, sans-serif';
       const lines = wrap(g, note.replace(/`/g, ''), 760, 4);
       const boxH = 60 + lines.length * 50;
@@ -287,7 +288,7 @@ export class QueueBoardTexture {
     this.texture.anisotropy = 8;
   }
 
-  render(state: QueueState, workers: Map<string, WorkerInfo>) {
+  render(state: QueueState, workers: Map<string, WorkerInfo>, block?: string) {
     const name = (t: QueueTask) => (t.issue !== undefined ? `#${t.issue}  ${t.title.replace(new RegExp(`^#${t.issue}\\s*`), '')}` : t.title);
     const running = state.tasks.filter((t) => t.status === 'running');
     const queued = state.tasks.filter((t) => t.status === 'queued');
@@ -306,7 +307,8 @@ export class QueueBoardTexture {
         color: '#8a8f98',
       })),
     ];
-    const summary = state.maxWorkers === 0 ? 'paused' : `${running.length} working · ${queued.length} waiting · up to ${state.maxWorkers} at once`;
+    const counts = state.maxWorkers === 0 ? 'paused' : `${running.length} working · ${queued.length} waiting · up to ${state.maxWorkers} at once`;
+    const summary = block ? `${block} · ${counts}` : counts;
     const key = JSON.stringify([rows, summary]);
     if (key === this.drawn) return;
     this.drawn = key;
@@ -350,10 +352,11 @@ export class QueueBoardTexture {
       g.textAlign = 'center';
       g.fillStyle = '#2b2d42';
       g.font = `900 50px ${font}`;
-      g.fillText('Nothing queued', W / 2, H / 2 - 10);
+      g.fillText(block || 'Nothing queued', W / 2, H / 2 - 10);
       g.fillStyle = '#6b7280';
       g.font = `700 30px ${font}`;
-      g.fillText('Add issues from the 📌 Issues board, or press E here', W / 2, H / 2 + 44);
+      const sub = block === GH_NOT_FOUND ? 'Set GH_PATH or install GitHub CLI' : block === GH_NOT_LOGGED_IN ? 'Run gh auth login on this machine' : 'Add issues from the 📌 Issues board, or press E here';
+      g.fillText(sub, W / 2, H / 2 + 44);
       g.textAlign = 'left';
       this.texture.needsUpdate = true;
       return;

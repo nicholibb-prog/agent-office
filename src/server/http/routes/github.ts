@@ -1,4 +1,6 @@
 // The issue and pull request windows: a PR or issue in full, its diff, and the repo's labels.
+import { ghBoardBlock } from '../../../shared/protocol.js';
+import { classifyGhError } from '../../github-boards.js';
 import { send } from '../util.js';
 import type { Route } from '../router.js';
 import { floorParam } from './files.js';
@@ -16,6 +18,8 @@ export const githubRoutes = {
       if (p !== '/api/gh/labels' && (!Number.isSafeInteger(n) || n <= 0)) return send(res, 400, { error: 'Bad number' });
       if (!floor) return send(res, 404, { error: 'No such floor' });
       const github = floor.github;
+      const blocked = await github.sessionError();
+      if (blocked) return send(res, 503, { error: blocked, items: [] });
       try {
         // "You" on comments is your own GitHub login once you've signed in to it.
         const me = session.account ? ctx.signins.githubLogin(session.account.id) : undefined;
@@ -29,7 +33,9 @@ export const githubRoutes = {
           return;
         }
       } catch (err) {
-        return send(res, 502, { error: (err as Error).message });
+        const message = classifyGhError(err);
+        if (ghBoardBlock(message)) return send(res, 503, { error: message, items: [] });
+        return send(res, 502, { error: message });
       }
       return send(res, 404, { error: 'Not found' });
     },

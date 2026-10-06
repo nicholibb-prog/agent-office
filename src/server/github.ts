@@ -1,6 +1,39 @@
 import { execFile } from 'node:child_process';
-import type { GhCheck, GhCloseReason, GhComment, GhIssue, GhIssueDetail, GhLabel, GhMergeMethod, GhPull, GhPullDetail, GhRepoInfo, GhReviewComment, GhState } from '../shared/protocol.js';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { GH_NOT_FOUND, type GhCheck, type GhCloseReason, type GhComment, type GhIssue, type GhIssueDetail, type GhLabel, type GhMergeMethod, type GhPull, type GhPullDetail, type GhRepoInfo, type GhReviewComment, type GhState } from '../shared/protocol.js';
+import { ghSessionBlock, loadIssueBoard, loadPullBoard, type GhBoardRunner } from './github-boards.js';
 import type { GhAs } from './signins.js';
+
+/** GitHub CLI's default install path on Windows, used when it is not on PATH. */
+export const GH_WINDOWS_FALLBACK = 'C:\\Program Files\\GitHub CLI\\gh.exe';
+
+export interface GhResolveOpts {
+  env?: NodeJS.ProcessEnv;
+  exists?: (file: string) => boolean;
+}
+
+/**
+ * Where the office runs gh from: `GH_PATH`, then an executable named `gh` / `gh.exe` on `PATH`,
+ * then the default Windows install path. Undefined when none of those is a real file.
+ */
+export function resolveGhBinary(opts: GhResolveOpts = {}): string | undefined {
+  const env = opts.env ?? process.env;
+  const exists = opts.exists ?? existsSync;
+  const override = env.GH_PATH?.trim();
+  if (override && exists(override)) return override;
+  const pathEnv = env.PATH ?? env.Path ?? '';
+  const delimiter = pathEnv.includes(';') ? ';' : path.delimiter;
+  for (const dir of pathEnv.split(delimiter)) {
+    if (!dir) continue;
+    for (const name of ['gh', 'gh.exe']) {
+      const full = path.join(dir, name);
+      if (exists(full)) return full;
+    }
+  }
+  if (exists(GH_WINDOWS_FALLBACK)) return GH_WINDOWS_FALLBACK;
+  return undefined;
+}
 
 const REFRESH_MS = 90_000;
 /** How long the repo's list of labels is kept before the label picker asks GitHub again. */
@@ -15,14 +48,23 @@ function friendly(raw: string): string {
   return raw;
 }
 
-/** Runs gh as the office, or with `env` as someone signed in to their own GitHub (see signins.ts). */
-export function gh(args: string[], cwd: string, timeout = 30_000, env?: Record<string, string>): Promise<string> {
+/**
+ * Runs gh as the office, or with `env` as someone signed in to their own GitHub (see signins.ts).
+ * The binary is `GH_PATH`, else `gh` on `PATH`, else the Windows install path. `locate` is for tests.
+ */
+export function gh(args: string[], cwd: string, timeout = 30_000, env?: Record<string, string>, locate?: () => string | undefined): Promise<string> {
+  const bin = (locate ?? (() => resolveGhBinary({ env: { ...process.env, ...(env ?? {}) } })))();
+  if (!bin) return Promise.reject(new Error(GH_NOT_FOUND));
   return new Promise((resolve, reject) => {
-    execFile('gh', args, { cwd, maxBuffer: 32 * 1024 * 1024, timeout, env }, (err, stdout, stderr) => {
+    execFile(bin, args, { cwd, maxBuffer: 32 * 1024 * 1024, timeout, env }, (err, stdout, stderr) => {
       if (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          reject(new Error(GH_NOT_FOUND));
+          return;
+        }
         const msg = (stderr || err.message || '').trim().split('\n').slice(-2).join(' ');
         const signedOut = env && /auth login|not logged in|authentication/i.test(msg);
-        reject(new Error((err as NodeJS.ErrnoException).code === 'ENOENT' ? 'GitHub CLI (gh) is not installed on the server' : signedOut ? 'Your GitHub sign-in stopped working — sign in again (☰ → 🔐 Your sign-ins)' : friendly(msg)));
+        reject(new Error(signedOut ? 'Your GitHub sign-in stopped working — sign in again (☰ → 🔐 Your sign-ins)' : friendly(msg)));
       } else resolve(stdout);
     });
   });
@@ -30,19 +72,6 @@ export function gh(args: string[], cwd: string, timeout = 30_000, env?: Record<s
 
 function labels(raw: any[]): GhLabel[] {
   return (raw ?? []).map((l) => ({ name: String(l.name), color: `#${l.color ?? '888888'}` }));
-}
-
-function checksOf(rollup: any[]): GhPull['checks'] {
-  if (!rollup?.length) return 'none';
-  let pending = false;
-  for (const c of rollup) {
-    const concl = String(c.conclusion ?? c.state ?? '').toUpperCase();
-    const status = String(c.status ?? '').toUpperCase();
-    if (['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED'].includes(concl)) return 'fail';
-    if (status && status !== 'COMPLETED') pending = true;
-    if (concl === 'PENDING' || concl === 'EXPECTED') pending = true;
-  }
-  return pending ? 'pending' : 'pass';
 }
 
 const FAILED = ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'];
@@ -148,7 +177,13 @@ export class GitHub {
     private dir: string,
     private onIssues: (s: GhState<GhIssue>) => void,
     private onPulls: (s: GhState<GhPull>) => void,
+    private run: GhBoardRunner = gh,
   ) {}
+
+  /** Why the boards must stay empty, or undefined when `gh auth status` succeeded. */
+  sessionError(): Promise<string | undefined> {
+    return ghSessionBlock(this.run, this.dir);
+  }
 
   start() {
     void this.refresh();
@@ -421,30 +456,13 @@ export class GitHub {
     this.issues = { ...this.issues, loading: true };
     this.onIssues(this.issues);
     const asked = Date.now();
-    try {
-      // Open and closed separately, so old open issues are never crowded out by recent closed ones.
-      const fields = 'number,title,state,url,author,labels,assignees,createdAt,updatedAt,body,comments';
-      const [open, closed] = await Promise.all([
-        gh(['issue', 'list', '--state', 'open', '--limit', '300', '--json', fields], this.dir),
-        gh(['issue', 'list', '--state', 'closed', '--limit', '40', '--json', fields], this.dir),
-      ]);
-      const fetched: GhIssue[] = [...JSON.parse(open), ...JSON.parse(closed)].map((i: any) => ({
-        number: i.number,
-        title: i.title,
-        state: i.state,
-        url: i.url,
-        author: i.author?.login ?? '',
-        labels: labels(i.labels),
-        assignees: (i.assignees ?? []).map((a: any) => a.login),
-        createdAt: i.createdAt,
-        updatedAt: i.updatedAt,
-        body: String(i.body ?? '').slice(0, 4000),
-        comments: Array.isArray(i.comments) ? i.comments.length : Number(i.comments ?? 0),
-      }));
-      const items = this.claims.mark(this.relabel('issue', fetched, asked), asked);
+    const loaded = await loadIssueBoard(this.run, this.dir);
+    if (loaded.error) {
+      // Fail closed: a missed gh or a dead login must not leave the last cards up.
+      this.issues = { items: [], loading: false, error: loaded.error, fetchedAt: Date.now() };
+    } else {
+      const items = this.claims.mark(this.relabel('issue', loaded.items, asked), asked);
       this.issues = { items, fetchedAt: Date.now(), loading: false };
-    } catch (err) {
-      this.issues = { ...this.issues, loading: false, error: (err as Error).message, fetchedAt: Date.now() };
     }
     this.onIssues(this.issues);
   }
@@ -454,40 +472,12 @@ export class GitHub {
     this.pulls = { ...this.pulls, loading: true };
     this.onPulls(this.pulls);
     const asked = Date.now();
-    try {
-      const fields = 'number,title,state,isDraft,url,author,labels,reviewDecision,headRefName,headRefOid,baseRefName,createdAt,updatedAt,additions,deletions,statusCheckRollup,body,closingIssuesReferences';
-      const [open, merged, closed] = await Promise.all([
-        gh(['pr', 'list', '--state', 'open', '--limit', '150', '--json', fields], this.dir),
-        gh(['pr', 'list', '--state', 'merged', '--limit', '30', '--json', fields], this.dir),
-        gh(['pr', 'list', '--state', 'closed', '--limit', '40', '--json', fields], this.dir),
-      ]);
-      // `--state closed` includes merged PRs; keep only the ones closed without merging.
-      const seen = new Set<number>();
-      const all = [...JSON.parse(open), ...JSON.parse(merged), ...JSON.parse(closed)].filter((p: any) => !seen.has(p.number) && seen.add(p.number));
-      const fetched: GhPull[] = all.map((p: any) => ({
-        number: p.number,
-        title: p.title,
-        state: p.state,
-        isDraft: !!p.isDraft,
-        url: p.url,
-        author: p.author?.login ?? '',
-        labels: labels(p.labels),
-        reviewDecision: p.reviewDecision ?? '',
-        headRefName: p.headRefName,
-        headRefOid: typeof p.headRefOid === 'string' ? p.headRefOid : undefined,
-        baseRefName: p.baseRefName,
-        createdAt: p.createdAt,
-        updatedAt: p.updatedAt,
-        additions: p.additions ?? 0,
-        deletions: p.deletions ?? 0,
-        checks: checksOf(p.statusCheckRollup),
-        body: String(p.body ?? '').slice(0, 4000),
-        closes: (p.closingIssuesReferences ?? []).map((r: any) => Number(r.number)).filter((n: number) => Number.isInteger(n) && n > 0),
-      }));
-      const items = this.relabel('pull', fetched, asked);
+    const loaded = await loadPullBoard(this.run, this.dir);
+    if (loaded.error) {
+      this.pulls = { items: [], loading: false, error: loaded.error, fetchedAt: Date.now() };
+    } else {
+      const items = this.relabel('pull', loaded.items, asked);
       this.pulls = { items, fetchedAt: Date.now(), loading: false };
-    } catch (err) {
-      this.pulls = { ...this.pulls, loading: false, error: (err as Error).message, fetchedAt: Date.now() };
     }
     this.onPulls(this.pulls);
   }
