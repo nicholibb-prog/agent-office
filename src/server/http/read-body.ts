@@ -20,7 +20,7 @@ export function readJsonBody(req: http.IncomingMessage): Promise<string> {
       total += buf.length;
       if (total > MAX_JSON_BODY) {
         tooBig = true;
-        req.destroy();
+        req.pause();
         reject(new BodyTooLarge());
         return;
       }
@@ -32,5 +32,21 @@ export function readJsonBody(req: http.IncomingMessage): Promise<string> {
     req.on('error', (err) => {
       if (!tooBig) reject(err);
     });
+  });
+}
+
+/** 413 after the response is queued, then drop the socket. Destroying first is an ECONNRESET. */
+export function closeTooLarge(req: http.IncomingMessage, res: http.ServerResponse): void {
+  const body = JSON.stringify({ error: 'body too large' });
+  if (!res.headersSent) {
+    res.writeHead(413, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      connection: 'close',
+      'content-length': String(Buffer.byteLength(body)),
+    });
+  }
+  res.end(body, () => {
+    req.destroy();
   });
 }

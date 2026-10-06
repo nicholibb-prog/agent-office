@@ -197,7 +197,7 @@ export function liveDesk(card: DeskCard): boolean {
 
 export type TalkRole = 'player' | 'bot' | 'office' | 'guest';
 
-export type TalkMessage = { id: string; role: TalkRole; text: string; at: number };
+export type TalkMessage = { id: string; role: TalkRole; text: string; at: number; by?: string };
 
 export type OutboxLine = {
   v: 1;
@@ -256,7 +256,8 @@ export function chooseAgency(input: {
   return options[(step + input.seatIndex) % options.length]!;
 }
 
-export function bridgeBeat(status: string): BridgeBeat['status'] | null {
+export function bridgeBeat(status: unknown): BridgeBeat['status'] | null {
+  if (typeof status !== 'string') return null;
   const s = status.toLowerCase();
   if (s === 'working' || s === 'busy' || s === 'active') return 'working';
   if (s === 'idle' || s === 'asleep' || s === 'roam' || s === 'offline' || s === 'done') return s === 'done' ? 'done' : 'idle';

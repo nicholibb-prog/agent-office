@@ -1,17 +1,21 @@
 // Local HQ: lease, talk outbox, Okkin loopback, and the client view of /api/ps.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
+import { randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { CREW_SEATS, WORKING_LEASE_MS, chooseAgency, crewAutoReply, offlineQueuedNotice, rosterChip, sanitizeNames, seatDisplayName } from '../src/shared/hq.js';
+import { CREW_SEATS, WORKING_LEASE_MS, bridgeBeat, chooseAgency, crewAutoReply, offlineQueuedNotice, rosterChip, sanitizeNames, seatDisplayName } from '../src/shared/hq.js';
 import { applyCrewPresence, writeCrewPush } from '../src/server/workers/crew.js';
 import { notePlayerChat, outboxPath } from '../src/server/hq/relay.js';
 import { okkinClient, probeOkkin, resetOkkinForTests, setOkkinFetchForTests, switchOkkinModel, talkToOkkin } from '../src/server/hq/okkin.js';
-import { createOllama, loopbackOrigin, probeOllama, psView, readCappedResponse, resolveOllamaUrl, type OllamaFetch } from '../src/server/ollama.js';
+import { createOllama, loopbackOrigin, psView, readCappedResponse, resolveOllamaUrl, type OllamaFetch } from '../src/server/ollama.js';
+import { Auth } from '../src/server/auth.js';
+import type { Accounts } from '../src/server/accounts.js';
+import { people } from '../src/server/office/people.js';
 import { hqRoutes } from '../src/server/http/routes/hq.js';
 import { bridgeRoutes, refusesOkkinName } from '../src/server/http/routes/bridge.js';
 import { resetHqLimitsForTests, talkLimited } from '../src/server/hq/limits.js';
@@ -48,9 +52,9 @@ function ctxOf(dataDir: string, who?: { id: string; role: 'admin' | 'member' } |
     token,
     ctx: {
       cfg: { dataDir },
-      auth: { fromRequest: () => session, fromAnyCookie: () => false },
+      auth: { fromRequest: () => session, fromAnyCookie: () => !!session, sessionFromAnyCookie: () => session },
       meOf: (accountId?: string) => {
-        if (!accountId) return { admin: true };
+        if (!accountId) return { admin: false };
         if (who && who !== 'shared' && who.id === accountId) return { admin: who.role === 'admin' };
         return { admin: false };
       },
@@ -83,6 +87,46 @@ function reqOf(method: string, headers: Record<string, string>, raw = '') {
 }
 
 const SENTINEL = 'SECRETDIGEST-vram-expires';
+
+/** Tags through the shared client. A missing models array, or a refused origin, is offline. */
+async function probeOrigin(url: string): Promise<'ready' | 'offline'> {
+  const made = createOllama(url);
+  if (!('client' in made)) return 'offline';
+  const tags = await made.client.tags();
+  if (!tags.ok || !tags.body || typeof tags.body !== 'object' || !Array.isArray((tags.body as { models?: unknown }).models)) return 'offline';
+  return 'ready';
+}
+
+function officeAuth(rows: { id: string; role: 'admin' | 'member' }[], shared = true): Auth {
+  const accounts = rows.map((row) => ({
+    id: row.id,
+    name: 'Pat Example',
+    role: row.role,
+    hash: 'h',
+    salt: 's',
+    createdAt: 1,
+    createdBy: 'office',
+  }));
+  return new Auth(randomBytes(32), randomBytes(16), 'secret', {
+    sharedPassword: shared,
+    get: (id: string) => accounts.find((account) => account.id === id),
+  } as Accounts);
+}
+
+function ctxAuth(dataDir: string, auth: Auth) {
+  const token = 'e'.repeat(64);
+  writeFileSync(path.join(dataDir, 'bridge-token'), token);
+  return {
+    token,
+    ctx: {
+      cfg: { dataDir },
+      auth,
+      floors: new Map(),
+      chat: { add() {} },
+      broadcast() {},
+    } as never,
+  };
+}
 
 function ollama(tags: string[], loaded: string | null, calls: { url: string; body?: unknown }[]): OllamaFetch {
   return async (url, init) => {
@@ -215,7 +259,7 @@ test('a loopback 307 to another host is not followed', async () => {
   const otherPort = await listen(other, '127.0.0.2');
   const loopPort = await listen(loop, '127.0.0.1');
   try {
-    const status = await probeOllama({ url: `http://127.0.0.1:${loopPort}`, model: null, refused: false });
+    const status = await probeOrigin(`http://127.0.0.1:${loopPort}`);
     assert.equal(status, 'offline');
     assert.equal(hits, 0);
     assert.ok(otherPort > 0);
@@ -251,7 +295,7 @@ test('a response over 1 MB is dropped and the stream is closed', async () => {
   });
   const port = await listen(server, '127.0.0.1');
   try {
-    const status = await probeOllama({ url: `http://127.0.0.1:${port}`, model: null, refused: false });
+    const status = await probeOrigin(`http://127.0.0.1:${port}`);
     assert.equal(status, 'offline');
     for (let i = 0; i < 20 && !closed; i++) await new Promise((r) => setTimeout(r, 25));
     assert.equal(closed, true);
@@ -495,7 +539,7 @@ test('a content-length over 1 MB goes offline', async () => {
   const port = await listen(server, '127.0.0.1');
   const started = Date.now();
   try {
-    const status = await probeOllama({ url: `http://127.0.0.1:${port}`, model: null, refused: false });
+    const status = await probeOrigin(`http://127.0.0.1:${port}`);
     assert.equal(status, 'offline');
     assert.ok(Date.now() - started < 800);
   } finally {
@@ -683,16 +727,15 @@ test('chat sends num_predict 256 and a refused URL does not fall back', async ()
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-test('Okkin look-alike names are rejected and 0kkin is not', async () => {
-  const lookalikes = ['Okk\u0456n', 'O-k-k-i-n', 'okkin2', 'Okkin\u200b'];
+test('Okkin look-alike names are rejected, including digits that fold to okkin', async () => {
+  const lookalikes = ['Okk\u0456n', 'O-k-k-i-n', 'okkin2', 'Okkin\u200b', 'Okk\u00EFn', 'Okk\u00EDn', '\u039F\u039A\u039A\u0399\u039D', '\u1D0F\u1D0B\u1D0B\u026A\u0274', '0kk1n', 'okk\u0131n', '0kkin'];
   for (const name of lookalikes) assert.equal(refusesOkkinName(name), true, name);
-  assert.equal(refusesOkkinName('0kkin'), false);
   const dataDir = dir('look');
   const { ctx, token } = ctxOf(dataDir);
   const headers = { host: '127.0.0.1:4600', 'content-type': 'application/json', 'x-bridge-token': token };
   const allowed = resOf();
   await bridgeRoutes.say.handle(ctx, {
-    req: reqOf('POST', headers, JSON.stringify({ name: '0kkin', text: 'hi' })),
+    req: reqOf('POST', headers, JSON.stringify({ name: 'Ada', text: 'hi' })),
     res: allowed.res,
   });
   assert.equal(allowed.status, 200);
@@ -811,4 +854,257 @@ test('a bridge token cannot talk as player', async () => {
   resetHqLimitsForTests();
   rmSync(dataDir, { recursive: true, force: true });
   rmSync(guestDir, { recursive: true, force: true });
+});
+
+test('meOf(undefined) is not an admin', () => {
+  const made = people({
+    accounts: { sharedPassword: true, get: () => undefined },
+    clients: new Map(),
+    sendTo() {},
+  } as never);
+  assert.equal(made.meOf(undefined).admin, false);
+  assert.equal(made.officeAdmin(undefined), true);
+});
+
+test('a member cookie from another port logs guest, and an unknown cookie is refused', async () => {
+  resetHqLimitsForTests();
+  const memberDir = dir('cookie-member');
+  const memberAuth = officeAuth([{ id: 'member-1', role: 'member' }]);
+  const member = ctxAuth(memberDir, memberAuth);
+  const viaDev = resOf();
+  await hqRoutes.talk.handle(member.ctx, {
+    req: reqOf(
+      'POST',
+      { host: '127.0.0.1:5173', 'content-type': 'application/json', cookie: `ao_session_4600=${memberAuth.issue('member-1')}` },
+      JSON.stringify({ seat: 'seat-1', text: 'from the dev port' }),
+    ),
+    res: viaDev.res,
+  });
+  assert.equal(viaDev.status, 200);
+  const viaBody = JSON.parse(viaDev.body) as { messages: { role: string; by?: string }[] };
+  assert.equal(viaBody.messages.some((m) => m.role === 'player'), false);
+  assert.equal(viaBody.messages.find((m) => m.role === 'guest')?.by, 'member-1');
+  const out = JSON.parse(readFileSync(outboxPath(memberDir), 'utf8').trim()) as { role: string; by: string };
+  assert.equal(out.role, 'guest');
+  assert.equal(out.by, 'member-1');
+  const thread = JSON.parse(readFileSync(path.join(memberDir, 'talk-threads.json'), 'utf8')) as { threads: { 'seat-1': { role: string; by?: string }[] } };
+  assert.equal(thread.threads['seat-1'][0]?.role, 'guest');
+  assert.equal(thread.threads['seat-1'][0]?.by, 'member-1');
+
+  const unknownDir = dir('cookie-unknown');
+  const unknownAuth = officeAuth([{ id: 'member-1', role: 'member' }]);
+  const unknown = ctxAuth(unknownDir, unknownAuth);
+  const bad = resOf();
+  await hqRoutes.talk.handle(unknown.ctx, {
+    req: reqOf('POST', { host: '127.0.0.1:4600', 'content-type': 'application/json', cookie: 'ao_session_4600=nope' }, JSON.stringify({ seat: 'seat-1', text: 'no' })),
+    res: bad.res,
+  });
+  assert.equal(bad.status, 401);
+  const renamed = resOf();
+  await hqRoutes.talk.handle(unknown.ctx, {
+    req: reqOf(
+      'POST',
+      { host: '127.0.0.1:4600', 'content-type': 'application/json', cookie: `session=${unknownAuth.issue('member-1')}` },
+      JSON.stringify({ seat: 'seat-1', text: 'renamed' }),
+    ),
+    res: renamed.res,
+  });
+  assert.equal(renamed.status, 401);
+  assert.equal(existsSync(outboxPath(unknownDir)), false);
+
+  resetHqLimitsForTests();
+  const adminDir = dir('cookie-admin');
+  const adminAuth = officeAuth([{ id: 'admin-1', role: 'admin' }]);
+  const admin = ctxAuth(adminDir, adminAuth);
+  const said = resOf();
+  await hqRoutes.talk.handle(admin.ctx, {
+    req: reqOf(
+      'POST',
+      { host: '127.0.0.1:4600', 'content-type': 'application/json', cookie: `ao_session_4600=${adminAuth.issue('admin-1')}` },
+      JSON.stringify({ seat: 'seat-1', text: 'from admin' }),
+    ),
+    res: said.res,
+  });
+  assert.equal(said.status, 200);
+  const adminBody = JSON.parse(said.body) as { messages: { role: string; by?: string }[] };
+  assert.equal(adminBody.messages.find((m) => m.role === 'player')?.by, 'admin-1');
+  const adminLine = JSON.parse(readFileSync(outboxPath(adminDir), 'utf8').trim()) as { role: string; by: string };
+  assert.equal(adminLine.role, 'player');
+  assert.equal(adminLine.by, 'admin-1');
+
+  resetHqLimitsForTests();
+  const sharedDir = dir('cookie-shared');
+  const sharedAuth = officeAuth([], true);
+  const shared = ctxAuth(sharedDir, sharedAuth);
+  const sharedSaid = resOf();
+  await hqRoutes.talk.handle(shared.ctx, {
+    req: reqOf(
+      'POST',
+      { host: '127.0.0.1:4600', 'content-type': 'application/json', cookie: `ao_session_4600=${sharedAuth.issue()}` },
+      JSON.stringify({ seat: 'seat-1', text: 'shared' }),
+    ),
+    res: sharedSaid.res,
+  });
+  assert.equal(sharedSaid.status, 200);
+  const sharedBody = JSON.parse(sharedSaid.body) as { messages: { role: string; by?: string }[] };
+  const sharedPlayer = sharedBody.messages.find((m) => m.role === 'player');
+  assert.ok(sharedPlayer);
+  assert.equal(sharedPlayer.by, undefined);
+  resetHqLimitsForTests();
+  rmSync(memberDir, { recursive: true, force: true });
+  rmSync(unknownDir, { recursive: true, force: true });
+  rmSync(adminDir, { recursive: true, force: true });
+  rmSync(sharedDir, { recursive: true, force: true });
+});
+
+test('a chunked body over the cap is answered 413 and the connection is closed', async () => {
+  const dataDir = dir('chunk');
+  const { ctx, token } = ctxOf(dataDir);
+  const server = createServer((req, res) => {
+    void bridgeRoutes.say.handle(ctx, { req, res });
+  });
+  const port = await listen(server, '127.0.0.1');
+  try {
+    const result = await new Promise<{ status: number; connection: string | undefined; code?: string }>((resolve) => {
+      const req = httpRequest(
+        {
+          hostname: '127.0.0.1',
+          port,
+          path: '/api/bridge/say',
+          method: 'POST',
+          headers: { host: '127.0.0.1:4600', 'content-type': 'application/json', 'x-bridge-token': token },
+        },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, connection: typeof res.headers.connection === 'string' ? res.headers.connection : undefined }));
+        },
+      );
+      req.on('error', (err) => resolve({ status: 0, connection: undefined, code: (err as NodeJS.ErrnoException).code }));
+      req.end(`{"name":"Ada","text":"${'x'.repeat(20 * 1024)}`);
+    });
+    assert.equal(result.code, undefined);
+    assert.equal(result.status, 413);
+    assert.equal(result.connection, 'close');
+  } finally {
+    server.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('a failed model switch starts the cooldown so a retry does not unload again', async () => {
+  const calls: { url: string }[] = [];
+  resetOkkinForTests();
+  resetHqLimitsForTests();
+  setOkkinFetchForTests(async (url) => {
+    calls.push({ url });
+    if (url.endsWith('/api/tags')) return { ok: true, status: 200, text: async () => JSON.stringify({ models: [{ name: 'demo:1b' }, { name: 'small:1b' }] }) };
+    if (url.endsWith('/api/ps')) return { ok: true, status: 200, text: async () => JSON.stringify({ models: [{ name: 'demo:1b' }] }) };
+    if (url.endsWith('/api/generate')) return { ok: false, status: 500, text: async () => '{}' };
+    return { ok: false, status: 404, text: async () => '' };
+  });
+  const dataDir = dir('switch-fail');
+  const { ctx } = ctxOf(dataDir, { id: 'switch-fail', role: 'admin' });
+  const prevUrl = process.env.OLLAMA_URL;
+  const prevModel = process.env.OKKIN_MODEL;
+  const prevAllow = process.env.OKKIN_MODEL_ALLOW;
+  process.env.OLLAMA_URL = 'http://127.0.0.1:11434';
+  process.env.OKKIN_MODEL = 'demo:1b';
+  process.env.OKKIN_MODEL_ALLOW = 'demo:1b,small:1b';
+  const post = (model: string) => {
+    const captured = resOf();
+    return hqRoutes.okkinModel
+      .handle(ctx, {
+        req: reqOf('POST', { host: '127.0.0.1:4600', 'content-type': 'application/json' }, JSON.stringify({ model })),
+        res: captured.res,
+      })
+      .then(() => captured);
+  };
+  try {
+    const unknown = await post('nope:9b');
+    assert.equal(unknown.status, 400);
+    assert.equal(calls.filter((c) => c.url.endsWith('/api/generate')).length, 0);
+    const failed = await post('small:1b');
+    assert.equal(failed.status, 502);
+    assert.equal(calls.filter((c) => c.url.endsWith('/api/generate')).length, 1);
+    const retry = await post('small:1b');
+    assert.equal(retry.status, 429);
+    assert.equal(calls.filter((c) => c.url.endsWith('/api/generate')).length, 1);
+  } finally {
+    if (prevUrl === undefined) delete process.env.OLLAMA_URL;
+    else process.env.OLLAMA_URL = prevUrl;
+    if (prevModel === undefined) delete process.env.OKKIN_MODEL;
+    else process.env.OKKIN_MODEL = prevModel;
+    if (prevAllow === undefined) delete process.env.OKKIN_MODEL_ALLOW;
+    else process.env.OKKIN_MODEL_ALLOW = prevAllow;
+    resetOkkinForTests();
+    resetHqLimitsForTests();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('the kavi outbox keeps the last 200 items at mode 0600', async () => {
+  const dataDir = dir('kavi');
+  const { ctx, token } = ctxOf(dataDir);
+  const headers = { host: '127.0.0.1:4600', 'content-type': 'application/json', 'x-bridge-token': token };
+  for (let i = 0; i < 201; i++) {
+    const posted = resOf();
+    await bridgeRoutes.kaviOutbox.handle(ctx, {
+      req: reqOf('POST', headers, JSON.stringify({ title: 'note', text: `item-${i}` })),
+      res: posted.res,
+    });
+    assert.equal(posted.status, 200);
+  }
+  const file = path.join(dataDir, 'kavi-outbox.json');
+  const saved = JSON.parse(readFileSync(file, 'utf8')) as { items: { text: string }[] };
+  assert.equal(saved.items.length, 200);
+  assert.equal(saved.items[0]?.text, 'item-1');
+  assert.equal(saved.items[199]?.text, 'item-200');
+  assert.equal(statSync(file).mode & 0o777, 0o600);
+  const feed = resOf();
+  await bridgeRoutes.kaviFeed.handle(ctx, {
+    req: reqOf('POST', headers, JSON.stringify({ titles: [{ name: 'Pat Example' }] })),
+    res: feed.res,
+  });
+  assert.equal(feed.status, 200);
+  assert.equal(statSync(path.join(dataDir, 'kavi-feed.json')).mode & 0o777, 0o600);
+  rmSync(dataDir, { recursive: true, force: true });
+});
+
+test('a non-string crew value is skipped', async () => {
+  assert.equal(bridgeBeat(1), null);
+  assert.equal(bridgeBeat(null), null);
+  const dataDir = dir('crew-num');
+  const { ctx, token } = ctxOf(dataDir);
+  const posted = resOf();
+  await hqRoutes.status.handle(ctx, {
+    req: reqOf(
+      'POST',
+      { host: '127.0.0.1:4600', 'content-type': 'application/json', 'x-bridge-token': token },
+      JSON.stringify({ crew: { 'seat-1': 1 } }),
+    ),
+    res: posted.res,
+  });
+  assert.equal(posted.status, 200);
+  const file = JSON.parse(readFileSync(path.join(dataDir, 'crew-status.json'), 'utf8')) as { crew: Record<string, unknown> };
+  assert.equal(file.crew['seat-1'], undefined);
+  rmSync(dataDir, { recursive: true, force: true });
+});
+
+test('an ipv6 loopback origin is requested without brackets on the hostname', async () => {
+  let seen = 0;
+  const server = createServer((_req, res) => {
+    seen++;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ models: [] }));
+  });
+  const port = await listen(server, '::1');
+  try {
+    const made = createOllama(`http://[::1]:${port}`);
+    assert.ok('client' in made);
+    const tags = await made.client.tags();
+    assert.equal(tags.ok, true);
+    assert.equal(seen, 1);
+  } finally {
+    server.close();
+  }
 });

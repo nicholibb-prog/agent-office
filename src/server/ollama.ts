@@ -167,7 +167,7 @@ async function defaultFetch(url: string, init: { method: string; headers?: Recor
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
-        hostname: target.hostname,
+        hostname: target.hostname.replace(/^\[|\]$/g, ''),
         port: target.port,
         path: `${target.pathname}${target.search}`,
         method: init.method,
@@ -229,50 +229,6 @@ async function call(origin: string, route: string, method: 'GET' | 'POST', body:
   }
 }
 
-export async function probeOllama(settings: OllamaSettings, fetchImpl?: OllamaFetch): Promise<'ready' | 'offline'> {
-  if (settings.refused || !settings.url) return 'offline';
-  const res = await call(settings.url, '/api/tags', 'GET', undefined, PROBE_TIMEOUT_MS, fetchImpl);
-  if (!res.ok) return 'offline';
-  try {
-    const json = JSON.parse(res.text) as { models?: unknown };
-    if (!json || !Array.isArray(json.models)) return 'offline';
-  } catch {
-    return 'offline';
-  }
-  return 'ready';
-}
-
-export async function chatOllama(
-  settings: OllamaSettings,
-  content: string,
-  fetchImpl?: OllamaFetch,
-): Promise<{ ok: true; text: string } | { ok: false; reason: 'offline' | 'model unset' }> {
-  if (settings.refused || !settings.url) return { ok: false, reason: 'offline' };
-  if (!settings.model) return { ok: false, reason: 'model unset' };
-  const res = await call(
-    settings.url,
-    '/api/chat',
-    'POST',
-    {
-      model: settings.model,
-      messages: [{ role: 'user', content: content.slice(0, 4000) }],
-      stream: false,
-      options: { num_predict: MAX_PREDICT },
-    },
-    CHAT_TIMEOUT_MS,
-    fetchImpl,
-  );
-  if (!res.ok) return { ok: false, reason: 'offline' };
-  try {
-    const json = JSON.parse(res.text) as { message?: { content?: unknown } };
-    const text = typeof json.message?.content === 'string' ? json.message.content.trim() : '';
-    if (!text) return { ok: false, reason: 'offline' };
-    return { ok: true, text: text.slice(0, 4000) };
-  } catch {
-    return { ok: false, reason: 'offline' };
-  }
-}
-
 export type OllamaResult = { ok: true; status: number; body: unknown } | { ok: false; status: number; error: string };
 
 export type OllamaClient = {
@@ -290,12 +246,6 @@ export function resolveOllamaUrl(explicit: string | undefined): { url: string } 
   const parsed = loopbackOrigin(explicit.trim());
   if (!parsed.ok) return { refused: 'Ollama URL must be http on 127.0.0.1 or ::1' };
   return { url: parsed.origin };
-}
-
-export function ollamaUrlFrom(env: { OLLAMA_URL?: string }, configured: string | undefined): { url: string } | { refused: string } {
-  const fromEnv = env.OLLAMA_URL;
-  const explicit = fromEnv !== undefined && fromEnv.trim() !== '' ? fromEnv : configured;
-  return resolveOllamaUrl(explicit);
 }
 
 async function requestJson(origin: string, route: string, method: 'GET' | 'POST', body: unknown, fetchImpl?: OllamaFetch): Promise<OllamaResult> {

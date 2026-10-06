@@ -6,10 +6,11 @@ import type { Ctx } from '../../office/context.js';
 import type { ChatLine } from '../../../shared/protocol.js';
 import { activeSeatMap, isSeatId } from '../../../shared/hq.js';
 import { send } from '../util.js';
-import { BodyTooLarge, readJsonBody } from '../read-body.js';
+import { BodyTooLarge, closeTooLarge, readJsonBody } from '../read-body.js';
 import type { Route } from '../router.js';
 import { appendInbox, ingestInbox } from '../../hq/relay.js';
 import { loadHqLocal, writeCrewPush } from '../../workers/crew.js';
+import { writePrivate } from '../../private-file.js';
 
 const OFFICE_ERROR = 'The office could not complete that';
 
@@ -36,27 +37,48 @@ async function readJson<T extends object>(req: http.IncomingMessage, res: http.S
     }
     return value;
   } catch (err) {
-    if (err instanceof BodyTooLarge) send(res, 413, { error: 'body too large' });
+    if (err instanceof BodyTooLarge) {
+      closeTooLarge(req, res);
+      return undefined;
+    }
     else send(res, 400, { error: 'bad json' });
     return undefined;
   }
 }
 
-/** Letters that look like o, k, i, or n after casefold. NFKC does not fold these. */
+/** Letters and digits that fold toward o, k, i, or n. Applied after NFKD and mark stripping. */
 const LOOKALIKE: Record<string, string> = {
+  '0': 'o',
+  '1': 'i',
+  l: 'i',
+  L: 'i',
+  '\u0131': 'i',
+  '\u03bf': 'o',
+  '\u039f': 'o',
+  '\u03ba': 'k',
+  '\u039a': 'k',
+  '\u03b9': 'i',
+  '\u0399': 'i',
+  '\u03bd': 'n',
+  '\u039d': 'n',
+  '\u1d0f': 'o',
+  '\u1d0b': 'k',
+  '\u026a': 'i',
+  '\u0274': 'n',
+  '\u04c0': 'i',
+  '\u0456': 'i',
+  '\u0406': 'i',
   '\u043e': 'o',
   '\u041e': 'o',
   '\u043a': 'k',
   '\u041a': 'k',
-  '\u0456': 'i',
-  '\u0406': 'i',
   '\u043d': 'n',
   '\u041d': 'n',
 };
 
-/** True when the name folds to something that contains okkin. Digit 0 is left as 0. */
+/** True when the name folds to something that contains okkin. */
 export function refusesOkkinName(raw: string): boolean {
-  let folded = String(raw).normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/\p{M}/gu, '');
+  const folded = String(raw).normalize('NFKD').replace(/\p{Cf}/gu, '').replace(/\p{M}/gu, '');
   let mapped = '';
   for (const ch of folded) mapped += LOOKALIKE[ch] ?? ch;
   return mapped.toLowerCase().replace(/[^a-z0-9]/g, '').includes('okkin');
@@ -163,7 +185,7 @@ export function sessionOnly(ctx: Ctx, req: http.IncomingMessage, res: http.Serve
     send(res, 403, { error: 'session required' });
     return false;
   }
-  if (ctx.auth.fromRequest(req) || ctx.auth.fromAnyCookie(req)) return true;
+  if (ctx.auth.sessionFromAnyCookie(req)) return true;
   send(res, 401, { error: 'office session required' });
   return false;
 }
@@ -316,7 +338,7 @@ export const bridgeRoutes = {
         titles,
       };
       try {
-        writeFileSync(path.join(ctx.cfg.dataDir, 'kavi-feed.json'), JSON.stringify(payload, null, 2) + '\n', { mode: 0o600 });
+        writePrivate(path.join(ctx.cfg.dataDir, 'kavi-feed.json'), JSON.stringify(payload, null, 2) + '\n');
       } catch {
         return send(res, 500, { error: OFFICE_ERROR });
       }
@@ -356,7 +378,8 @@ export const bridgeRoutes = {
         /* */
       }
       items.push({ title, text, at: new Date().toISOString() });
-      writeFileSync(file, JSON.stringify({ items, note: 'crew picks up via local connector' }, null, 2) + '\n', { mode: 0o600 });
+      items = items.slice(-200);
+      writePrivate(file, JSON.stringify({ items, note: 'crew picks up via local connector' }, null, 2) + '\n');
       return send(res, 200, { ok: true, queued: items.length });
     },
   },

@@ -48,11 +48,11 @@ A blocked bridge push sets `needs_input` (`lastInput.by` is `crew-status`). A la
 
 Press **Y**. Near a crew desk (about 2.5 m) that opens a thread with that seat. Otherwise it opens the roster: ten rows, each with a chip, an age, a one-line task, and **Go**, **Talk**, and **Desk**. **Desk** is a card (condition, actions, needs, task, milestone, link). **✕** or **Esc** closes it and returns you to mouse-look.
 
-`POST /api/bridge/talk` takes an office session. A bridge token or a Bearer header is refused (403), even if a session cookie is sent with it. An admin, or the shared office password, writes `role` `player`. Any other account writes `guest`. The outbox records `by` as that account id when there is one. Talk is limited to one line every 3 seconds and 20 lines a minute per account (429). Request bodies over 16 KB are refused (413).
+`POST /api/bridge/talk` takes a verified office session. A bridge token or a Bearer header is refused (403), even if a session cookie is sent with it. A cookie from another port of this host counts only when it verifies. An unknown or renamed cookie is 401. An admin account, or the shared office password, writes `role` `player`. Any other account, including a member, writes `guest`. The outbox and the thread record `by` as that account id when there is one. Talk is limited to one line every 3 seconds and 20 lines a minute per account (429). Request bodies over 16 KB are refused (413) and the connection is closed.
 
 Player and guest lines are written to `.agent-office/chat-outbox.jsonl`. The file keeps the last 200 lines and is replaced as a whole (mode `0600`). A separate process can sync that file. This repo does not know folder ids or API tokens.
 
-A bot line in a generic seat's thread is only an inbox record posted through `POST /api/bridge/inbox` (the bridge gate: loopback Host, and a bridge token or an office session). The body is `{ "seat": "seat-1", "text": "..." }`. Okkin is refused there. The office copies that text into the thread. It does not write a bot line of its own. `POST /api/bridge/say` folds the name (compatibility form, format and mark characters stripped, non-letters dropped, case folded) and refuses any name that then contains `okkin`.
+A bot line in a generic seat's thread is only an inbox record posted through `POST /api/bridge/inbox` (the bridge gate: loopback Host, and a bridge token or an office session). The body is `{ "seat": "seat-1", "text": "..." }`. Okkin is refused there. The office copies that text into the thread. It does not write a bot line of its own. `POST /api/bridge/say` folds the name before that check: compatibility decomposition, format and mark characters stripped, then look-alike letters (Greek ο κ ι ν, small capitals, a dotless i, a Cyrillic palochka, and Cyrillic і о к) plus `0` to o and `1` or `l` to i. What remains is lowercased, non-letters dropped, and refused when it contains `okkin`. `0kkin` is refused.
 
 Talking to an offline seat with no bot line queues the text and adds one office line: `offline — message queued for seat-1` (or the local display name). The chip stays offline.
 
@@ -60,7 +60,7 @@ Talking to an offline seat with no bot line queues the text and adds one office 
 { "v": 1, "kind": "talk", "seat": "seat-1", "thread": "seat-1", "role": "player", "text": "hello", "at": "2026-01-01T00:00:00.000Z" }
 ```
 
-`kind` is `talk` or `tchat`. `role` is `player`, `guest`, `bot`, or `office`. `by` is the account id when the line came from an account. Threads live in `talk-threads.json` (the last 80 lines). Cards live in `desk-cards.json`. Files are mode `0600`.
+`kind` is `talk` or `tchat`. `role` is `player`, `guest`, `bot`, or `office`. `by` is the account id when the line came from an account, on the outbox line and on the thread record. Threads live in `talk-threads.json` (the last 80 lines). Cards live in `desk-cards.json`. Files are mode `0600`. `kavi-feed.json` and `kavi-outbox.json` are written the same way. The outbox keeps the last 200 items.
 
 There is no canned reply in a crew member's name.
 
@@ -74,7 +74,7 @@ Okkin is one seat (`crew-okkin`). Talk goes to Ollama on the office machine.
 
 The desk shows the loaded model name and a state word from `GET /api/ps`: `loaded`, `unloaded`, or `unknown`. The browser is not sent the Ollama body (no digest, size, expiry, or VRAM).
 
-`POST /api/bridge/okkin/model` with `{ "model": "<exact tag>" }` needs an office session (a bridge token is 403). A second switch within 45 seconds is 429. The tag must be in the allowlist ∩ installed tags, or the office returns 400 and does not start that wait. Switching unloads the previous model with `POST /api/generate` and `keep_alive: 0`, then warms the next one with `num_predict` 1 and no prompt. Chat sends `num_predict` 256. The model name stays in the JSON body; it never changes the URL path. The chip is `switching`, never working. Working is only while a real `POST /api/chat` is in flight. A second talk or switch while one is in flight is rejected (409). Unreachable Ollama, including a machine that is asleep, is offline.
+`POST /api/bridge/okkin/model` with `{ "model": "<exact tag>" }` needs an office session (a bridge token is 403). A second switch within 45 seconds is 429. The tag must be in the allowlist ∩ installed tags, or the office returns 400 and does not start that wait. A switch that reaches Ollama and comes back 200 or 502 does start it, so a retry of a failed unload does not unload again. Switching unloads the previous model with `POST /api/generate` and `keep_alive: 0`, then warms the next one with `num_predict` 1 and no prompt. Chat sends `num_predict` 256. The model name stays in the JSON body; it never changes the URL path. The chip is `switching`, never working. Working is only while a real `POST /api/chat` is in flight. A second talk or switch while one is in flight is rejected (409). Unreachable Ollama, including a machine that is asleep, is offline.
 
 Allowed calls are `GET /api/tags`, `GET /api/ps`, `POST /api/chat`, and `POST /api/generate`. There is no pull, delete, create, copy, push, or raw proxy. Every caller uses `src/server/ollama.ts`. A later change that also talks to Ollama imports that module.
 
