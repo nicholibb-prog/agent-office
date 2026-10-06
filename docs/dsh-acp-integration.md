@@ -349,8 +349,8 @@ client window type. Independent of Phases 1–4.
 5. **Opaque model ids.** The office can no longer validate a model syntactically, so a stale saved
    model must degrade gracefully at `session/new` rather than fail the launch.
 6. **`dsh` on `PATH`.** Like the other providers, DSH must be installed and configured as the user
-   running the office. The office's `resolveCommand` fallback (a login shell) already covers nvm and
-   asdf installs.
+   running the office. `resolveCommand` scans `PATH` once per command with `accessSync` and `X_OK`
+   and does not ask a login shell, so an nvm or asdf install has to be on `PATH`.
 7. **One prompt at a time.** ACP serializes prompts per session. If two people type at once, the
    second must queue or be rejected; decide which, and show it in the terminal.
 

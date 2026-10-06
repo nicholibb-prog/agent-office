@@ -10,6 +10,24 @@ const excalidrawDir = resolve(import.meta.dirname, 'node_modules/@excalidraw/exc
 const excalidrawVersion = (JSON.parse(readFileSync(join(excalidrawDir, 'package.json'), 'utf8')) as { version: string }).version;
 const EXCALIDRAW_ASSETS = `/assets/excalidraw-${excalidrawVersion}/`;
 
+
+function htmlPageAliases(): Plugin {
+  // Vite multi-page entries are *.html; the server and client use /login /claim /join without the suffix.
+  const pages = new Set(['/login', '/claim', '/join', '/lite']);
+  return {
+    name: 'html-page-aliases',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const raw = req.url ?? '';
+        const path = raw.split('?')[0] ?? '';
+        if (!pages.has(path)) return next();
+        const q = raw.includes('?') ? raw.slice(raw.indexOf('?')) : '';
+        req.url = `${path}.html${q}`;
+        next();
+      });
+    },
+  };
+}
 function excalidrawFonts(): Plugin {
   const fonts = join(excalidrawDir, 'dist/prod/fonts');
   const files = (dir: string, rel = ''): string[] =>
@@ -37,7 +55,7 @@ function excalidrawFonts(): Plugin {
 export default defineConfig({
   root: resolve(import.meta.dirname, 'src/client'),
   publicDir: resolve(import.meta.dirname, 'src/client/public'),
-  plugins: [excalidrawFonts()],
+  plugins: [htmlPageAliases(), excalidrawFonts()],
   define: {
     __EXCALIDRAW_ASSETS__: JSON.stringify(EXCALIDRAW_ASSETS),
   },

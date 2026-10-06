@@ -8,6 +8,7 @@ import { ROOF, isDrink } from '../../../shared/rooftop.js';
 import { isBarGame } from '../../../shared/bargames.js';
 import { throttle } from '../../office/client.js';
 import { COLOR_RE, issueNumber, num, str } from '../../office/input.js';
+import { notePlayerChat } from '../../hq/relay.js';
 import type { HandlerMap } from './types.js';
 
 export const presenceHandlers = {
@@ -110,6 +111,14 @@ export const presenceHandlers = {
     const line: ChatLine = { from: c.id, name: who, color: c.peer.color, text, at: Date.now(), ...(c.accountId ? { account: true } : {}) };
     ctx.chat.add(line);
     ctx.broadcast({ t: 'chat', ...line });
+    if (throttle(c, 'hq-outbox', 1000)) {
+      try {
+        notePlayerChat(ctx.cfg.dataDir, { text, at: line.at, role: c.admin ? 'player' : 'guest', by: c.accountId });
+      } catch {
+        /* the chat line already went out */
+      }
+    }
+    ctx.floorOf(c)?.workers.chatWorking(who, text);
   },
   doing(ctx, c, msg) {
     const what = str(msg.what, 60).trim() || undefined;
@@ -120,6 +129,7 @@ export const presenceHandlers = {
     if (reading) c.peer.reading = true;
     else delete c.peer.reading;
     ctx.broadcast({ t: 'peer.update', peer: c.peer });
+    if (what) ctx.floorOf(c)?.workers.chatWorking(c.peer.name);
   },
   ping(ctx, c, msg) {
     ctx.sendTo(c, { t: 'pong', at: num(msg.at), now: Date.now() });

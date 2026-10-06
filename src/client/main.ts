@@ -1,14 +1,15 @@
 import './style.css';
+import { randomLook } from '../shared/avatar';
 import { Net } from './net';
 import { DesktopNotifier } from './notify';
-import { store, loadProfile, loadSettings } from './state';
+import { store, hasSavedCharacter, loadProfile, loadSettings } from './state';
 import { PlayerController, groundAt } from './player';
 import { Hands } from './world/hands';
 import { Confetti } from './world/confetti';
 import { djFrame } from './dnb';
 import { Voice } from './voice';
 import { $ } from './ui/dom';
-import { openCharacter } from './ui/character';
+import { mountChangeCharacter, openCharacter } from './ui/character';
 import { elevatorPanelOpen } from './ui/elevator';
 import { onModelsProgress, preloadModels } from './world/models';
 import { loadingScreen } from './ui/loading';
@@ -48,6 +49,8 @@ import { installGallery, installHanging } from './features/hanging';
 import { installHerald } from './features/herald';
 import { installHud } from './features/hud';
 import { installJev } from './features/jev';
+import { installHq } from './features/hq';
+import { installKaviBoard } from './features/kavi-board';
 import { installJukebox } from './features/jukebox';
 import { installMeeting } from './features/meeting';
 import { installNeedsYou } from './features/needsyou';
@@ -171,6 +174,7 @@ parts.cards = installCarrying(ctx, {
 parts.seating = installSeating(ctx, { shares: () => parts.talk.currentShares(), watchShare: () => parts.talk.watchShare(), arcade: parts.arcade, showBar: parts.bar.showBar, usable: () => parts.pointer.usable() });
 installGong(ctx, { burstOver: parts.views.burstOver, workerViews: parts.views.workerViews, court: () => parts.worlds.court(), idleAgents: () => parts.worlds.idleAgents() });
 installJev(ctx);
+installKaviBoard(ctx);
 
 parts.hintbar = installHintBar(ctx, core, parts);
 parts.emotes = installEmotes(ctx, { personOf });
@@ -181,6 +185,7 @@ installChat(ctx);
 parts.talk = installVoice(ctx, { tv: parts.tv });
 installDictation(ctx);
 parts.hud = installHud(ctx, core, parts);
+installHq(ctx, { workerViews: parts.views.workerViews, walkThen: parts.walking.walkThen });
 
 // ---- Main loop ---------------------------------------------------------------------------------------
 fitWindow(ctx);
@@ -204,14 +209,21 @@ async function whoami() {
   }
 }
 
+function showChangeCharacter() {
+  mountChangeCharacter(() => parts.hud.editProfile());
+}
+
 void whoami().then(() => {
-  const saved = loadProfile();
+  const user = store.me.account?.name ?? null;
+  const saved = loadProfile(user);
   if (saved && store.me.account) saved.name = store.me.account.name;
   if (store.me.account) store.profile.name = store.me.account.name;
   store.emit('me');
-  if (saved?.look) {
-    store.profile = { ...saved, look: saved.look };
+  if (hasSavedCharacter(user) && saved) {
+    const look = saved.look ?? randomLook();
+    store.profile = { name: saved.name, color: saved.color, look };
     parts.you.showMyProfile(store.profile);
+    showChangeCharacter();
     boot();
     // In as soon as the floor you're on is here with its dog, so the dog doesn't pop in after.
     const welcomed = new Promise<void>((resolve) => {
@@ -231,6 +243,7 @@ void whoami().then(() => {
     requestAnimationFrame(frame);
     openCharacter(true, (p) => {
       parts.you.showMyProfile(p);
+      showChangeCharacter();
       parts.net.connect();
     });
     // No floor comes before you pick, so only the office behind the character select is waited for.

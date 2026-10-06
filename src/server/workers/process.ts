@@ -1,7 +1,7 @@
 // Starting things for the workers: which shell, where a command is, how to run one without
 // blocking the office, and the install's own bin/ scripts and the commands that run them.
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,7 +28,17 @@ export function shellRun(line: string): string[] {
   return WIN && !process.env.SHELL ? ['/d', '/s', '/c', line] : ['-l', '-i', '-c', line];
 }
 
+/** One PATH scan per command for the life of this office. A later install is seen after a restart. */
+const commandCache = new Map<string, string | null>();
+
 export function resolveCommand(cmd: string): string | null {
+  if (commandCache.has(cmd)) return commandCache.get(cmd) ?? null;
+  const found = findOnPath(cmd);
+  commandCache.set(cmd, found);
+  return found;
+}
+
+function findOnPath(cmd: string): string | null {
   // Windows runs files by extension: `claude` is really claude.exe / claude.cmd. An npm shim with
   // no extension is a sh script the console can't run, so only take it when asked for by name.
   const exts = WIN && !path.extname(cmd) ? (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean) : [''];
@@ -45,22 +55,12 @@ export function resolveCommand(cmd: string): string | null {
   };
   if (cmd.includes('/') || (WIN && cmd.includes('\\'))) {
     const found = usable(cmd);
-    return found && path.resolve(found);
+    return found ? path.resolve(found) : null;
   }
   for (const dir of (process.env.PATH || '').split(path.delimiter)) {
     if (!dir) continue;
     const found = usable(path.join(dir, cmd));
     if (found) return found;
-  }
-  if (WIN && !process.env.SHELL) return null;
-  try {
-    const found = execFileSync(defaultShell(), ['-l', '-i', '-c', `command -v ${shq(cmd)}`], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] })
-      .trim()
-      .split('\n')
-      .pop();
-    if (found && found.startsWith('/')) return found;
-  } catch {
-    // fall through
   }
   return null;
 }
@@ -92,7 +92,10 @@ export function writeOfficeCommands(dataDir: string): string | undefined {
     if (!script) continue;
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const file = path.join(dir, name);
-    writeFileSync(file, `#!/bin/sh\n# ${what} (see bin/${name}.js).\nexec ${shq(process.execPath)} ${shq(script)} "$@"\n`, { mode: 0o700 });
+    const shBody = WIN
+      ? `#!/bin/sh\n# ${what} (see bin/${name}.js).\n${shq(process.execPath)} ${shq(script)} "$@"\n`
+      : `#!/bin/sh\n# ${what} (see bin/${name}.js).\nexec ${shq(process.execPath)} ${shq(script)} "$@"\n`;
+    writeFileSync(file, shBody, { mode: 0o700 });
     chmodSync(file, 0o700);
     // cmd.exe and PowerShell find it by PATHEXT; Git Bash (Claude Code's shell there) runs the sh one.
     if (WIN) writeFileSync(`${file}.cmd`, `@"${process.execPath}" "${script}" %*\r\n`);
