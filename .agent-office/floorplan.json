@@ -1,0 +1,14 @@
+{
+  "wing": 0,
+  "labels": {
+    "desk-1": { "text": "george", "color": "#2b2d42", "by": "crew", "at": 0 },
+    "desk-2": { "text": "ForgeL", "color": "#ef476f", "by": "crew", "at": 0 },
+    "desk-3": { "text": "ScoutL", "color": "#f78c6b", "by": "crew", "at": 0 },
+    "desk-4": { "text": "PolishL", "color": "#ffd166", "by": "crew", "at": 0 },
+    "desk-5": { "text": "Jack", "color": "#06d6a0", "by": "crew", "at": 0 },
+    "desk-6": { "text": "TutorL", "color": "#118ab2", "by": "crew", "at": 0 },
+    "desk-7": { "text": "Dan", "color": "#9b5de5", "by": "crew", "at": 0 },
+    "desk-8": { "text": "Side Lanes", "color": "#2b2d42", "by": "crew", "at": 0 },
+    "desk-9": { "text": "Kavi", "color": "#ef476f", "by": "crew", "at": 0 }
+  }
+}

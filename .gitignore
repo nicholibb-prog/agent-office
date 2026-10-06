@@ -1,6 +1,9 @@
 node_modules
 dist
-.agent-office
+# Office data stays local. The crew nameplates are the one file that ships with the repo:
+# ceiling signs for desks 1–9, not hired workers.
+.agent-office/*
+!.agent-office/floorplan.json
 *.log
 .DS_Store
 pw.txt
