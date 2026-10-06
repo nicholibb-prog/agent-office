@@ -156,7 +156,7 @@ export const kaviKaren: Fixture<'kaviKaren'> = (site) => {
       feedAge += dt;
       if (feedAge < 5) return;
       feedAge = 0;
-      void fetch('/api/bridge/kavi-feed')
+      void fetch('/api/bridge/kavi-feed', { credentials: 'same-origin' })
         .then((r) => (r.ok ? r.json() : null))
         .then((j: { titles?: { name?: string }[] } | null) => {
           const names = (j?.titles || []).map((t) => String(t.name || '').trim()).filter(Boolean);

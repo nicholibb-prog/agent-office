@@ -1,5 +1,6 @@
-﻿import type http from 'node:http';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import type http from 'node:http';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import type { Ctx } from '../../office/context.js';
 import type { ChatLine } from '../../../shared/protocol.js';
@@ -15,29 +16,112 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
-function loopback(req: http.IncomingMessage): boolean {
-  const a = req.socket.remoteAddress || '';
-  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+const ALLOWED_HOSTS = new Set([
+  '127.0.0.1:4600',
+  '127.0.0.1:5173',
+  'localhost:4600',
+  'localhost:5173',
+]);
+
+const ALLOWED_ORIGINS = new Set([
+  'http://127.0.0.1:4600',
+  'http://127.0.0.1:5173',
+  'http://localhost:4600',
+  'http://localhost:5173',
+]);
+
+function hostOk(req: http.IncomingMessage): boolean {
+  const host = (req.headers.host || '').toLowerCase();
+  return ALLOWED_HOSTS.has(host);
 }
 
-/** Localhost-only bridge: crew bots ? office T-chat. */
+function originOk(req: http.IncomingMessage): boolean {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  return ALLOWED_ORIGINS.has(String(origin).toLowerCase());
+}
+
+function contentTypeOk(req: http.IncomingMessage): boolean {
+  if (req.method !== 'POST') return true;
+  const ct = String(req.headers['content-type'] || '').toLowerCase();
+  return ct.startsWith('application/json');
+}
+
+function safeTokenEq(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ba.length !== bb.length) return false;
+  try {
+    return timingSafeEqual(ba, bb);
+  } catch {
+    return false;
+  }
+}
+
+function bridgeToken(dataDir: string): string {
+  const file = path.join(dataDir, 'bridge-token');
+  try {
+    if (existsSync(file)) {
+      const t = readFileSync(file, 'utf8').trim();
+      if (t.length >= 32) return t;
+    }
+  } catch {
+    /* regenerate below */
+  }
+  mkdirSync(dataDir, { recursive: true });
+  const t = randomBytes(32).toString('hex');
+  writeFileSync(file, t + '\n', { mode: 0o600 });
+  return t;
+}
+
+function tokenFromReq(req: http.IncomingMessage): string {
+  const hdr = req.headers['x-bridge-token'];
+  if (typeof hdr === 'string' && hdr.trim()) return hdr.trim();
+  const auth = req.headers.authorization;
+  if (typeof auth === 'string' && /^Bearer\s+/i.test(auth)) return auth.replace(/^Bearer\s+/i, '').trim();
+  return '';
+}
+
+/** Bridge auth: Host allowlist + Origin check + (token OR office session). Loopback alone is not enough. */
+export function bridgeGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  if (!hostOk(req)) {
+    send(res, 403, { error: 'host not allowed' });
+    return false;
+  }
+  if (!originOk(req)) {
+    send(res, 403, { error: 'origin not allowed' });
+    return false;
+  }
+  if (!contentTypeOk(req)) {
+    send(res, 415, { error: 'Content-Type must be application/json' });
+    return false;
+  }
+  const expected = bridgeToken(ctx.cfg.dataDir);
+  const got = tokenFromReq(req);
+  if (got && safeTokenEq(got, expected)) return true;
+  if (ctx.auth.fromRequest(req) || ctx.auth.fromAnyCookie(req)) return true;
+  send(res, 401, { error: 'bridge token or office session required' });
+  return false;
+}
+
+/** Local HQ bridge: crew bots to office T-chat / presence / feed. */
 export const bridgeRoutes = {
   chatRecent: {
-    method: 'GET',
+    method: 'GET' as const,
     path: '/api/bridge/chat',
-    auth: 'public',
-    handle(ctx: Ctx, { req, res, url }) {
-      if (!loopback(req)) return send(res, 403, { error: 'loopback only' });
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res, url }: { req: http.IncomingMessage; res: http.ServerResponse; url: URL }) {
+      if (!bridgeGate(ctx, req, res)) return;
       const n = Math.min(50, Math.max(1, Number(url.searchParams.get('n') || 20) || 20));
       return send(res, 200, { lines: ctx.chat.recent(n) });
     },
   },
   say: {
-    method: 'POST',
+    method: 'POST' as const,
     path: '/api/bridge/say',
-    auth: 'public',
-    async handle(ctx: Ctx, { req, res }) {
-      if (!loopback(req)) return send(res, 403, { error: 'loopback only' });
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!bridgeGate(ctx, req, res)) return;
       let body: { name?: string; text?: string; color?: string };
       try {
         body = JSON.parse(await readBody(req)) as { name?: string; text?: string; color?: string };
@@ -64,12 +148,12 @@ export const bridgeRoutes = {
     },
   },
   crewStatus: {
-    method: 'POST',
+    method: 'POST' as const,
     path: '/api/bridge/crew-status',
-    auth: 'public',
-    async handle(ctx: Ctx, { req, res }) {
-      if (!loopback(req)) return send(res, 403, { error: 'loopback only' });
-      let body: { crew?: Record<string, string>; updatedAt?: string };
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!bridgeGate(ctx, req, res)) return;
+      let body: { crew?: Record<string, string> };
       try {
         body = JSON.parse(await readBody(req)) as { crew?: Record<string, string> };
       } catch {
@@ -92,11 +176,11 @@ export const bridgeRoutes = {
     },
   },
   crewStatusGet: {
-    method: 'GET',
+    method: 'GET' as const,
     path: '/api/bridge/crew-status',
-    auth: 'public',
-    handle(ctx: Ctx, { req, res }) {
-      if (!loopback(req)) return send(res, 403, { error: 'loopback only' });
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!bridgeGate(ctx, req, res)) return;
       try {
         const file = path.join(ctx.cfg.dataDir, 'crew-status.json');
         if (!existsSync(file)) return send(res, 200, { crew: {}, updatedAt: null });
@@ -106,12 +190,12 @@ export const bridgeRoutes = {
       }
     },
   },
-status: {
-    method: 'POST',
+  status: {
+    method: 'POST' as const,
     path: '/api/bridge/status',
-    auth: 'public',
-    async handle(ctx: Ctx, { req, res }) {
-      if (!loopback(req)) return send(res, 403, { error: 'loopback only' });
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!bridgeGate(ctx, req, res)) return;
       let body: { name?: string; status?: string };
       try {
         body = JSON.parse(await readBody(req)) as { name?: string; status?: string };
@@ -123,7 +207,6 @@ status: {
       if (!name) return send(res, 400, { error: 'name required' });
       if (st !== 'working' && st !== 'idle') return send(res, 400, { error: 'status working|idle' });
       const crew: Record<string, string> = { [name]: st };
-      // Merge into existing crew-status file so poller keeps others.
       let merged = crew;
       try {
         const file = path.join(ctx.cfg.dataDir, 'crew-status.json');
@@ -131,7 +214,11 @@ status: {
           const prev = JSON.parse(readFileSync(file, 'utf8')) as { crew?: Record<string, string> };
           merged = { ...(prev.crew || {}), ...crew };
         }
-        writeFileSync(file, JSON.stringify({ updatedAt: new Date().toISOString(), crew: merged, source: 'bridge-status' }, null, 2) + '\n', { mode: 0o600 });
+        writeFileSync(
+          file,
+          JSON.stringify({ updatedAt: new Date().toISOString(), crew: merged, source: 'bridge-status' }, null, 2) + '\n',
+          { mode: 0o600 },
+        );
       } catch (e) {
         return send(res, 500, { error: String(e) });
       }
@@ -143,11 +230,11 @@ status: {
     },
   },
   kaviFeed: {
-    method: 'POST',
+    method: 'POST' as const,
     path: '/api/bridge/kavi-feed',
-    auth: 'public',
-    async handle(ctx: Ctx, { req, res }) {
-      if (!loopback(req)) return send(res, 403, { error: 'loopback only' });
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!bridgeGate(ctx, req, res)) return;
       let body: { titles?: { name?: string; id?: string; modifiedTime?: string }[] };
       try {
         body = JSON.parse(await readBody(req)) as typeof body;
@@ -176,14 +263,11 @@ status: {
     },
   },
   kaviFeedGet: {
-    method: 'GET',
+    method: 'GET' as const,
     path: '/api/bridge/kavi-feed',
-    auth: 'public',
-    handle(ctx: Ctx, { req, res }) {
-      // Face reads this from browser on 127.1 — allow loopback OR same-origin signed session later; for now public on 127-only host.
-      if (!loopback(req) && req.socket.remoteAddress) {
-        // Vite proxies from 5173; remote may be ::ffff:127.0.0.1 already covered by loopback().
-      }
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!bridgeGate(ctx, req, res)) return;
       try {
         const file = path.join(ctx.cfg.dataDir, 'kavi-feed.json');
         if (!existsSync(file)) return send(res, 200, { titles: [], updatedAt: null });
@@ -194,11 +278,11 @@ status: {
     },
   },
   kaviOutbox: {
-    method: 'POST',
+    method: 'POST' as const,
     path: '/api/bridge/kavi-outbox',
-    auth: 'public',
-    async handle(ctx: Ctx, { req, res }) {
-      if (!loopback(req)) return send(res, 403, { error: 'loopback only' });
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!bridgeGate(ctx, req, res)) return;
       let body: { title?: string; text?: string };
       try {
         body = JSON.parse(await readBody(req)) as typeof body;
@@ -211,18 +295,20 @@ status: {
       let items: { title: string; text: string; at: string }[] = [];
       try {
         if (existsSync(file)) items = (JSON.parse(readFileSync(file, 'utf8')) as { items?: typeof items }).items || [];
-      } catch { /* */ }
+      } catch {
+        /* */
+      }
       items.push({ title, text, at: new Date().toISOString() });
       writeFileSync(file, JSON.stringify({ items, note: 'crew picks up via local connector' }, null, 2) + '\n', { mode: 0o600 });
       return send(res, 200, { ok: true, queued: items.length });
     },
   },
   kaviOutboxGet: {
-    method: 'GET',
+    method: 'GET' as const,
     path: '/api/bridge/kavi-outbox',
-    auth: 'public',
-    handle(ctx: Ctx, { req, res }) {
-      if (!loopback(req)) return send(res, 403, { error: 'loopback only' });
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!bridgeGate(ctx, req, res)) return;
       try {
         const file = path.join(ctx.cfg.dataDir, 'kavi-outbox.json');
         if (!existsSync(file)) return send(res, 200, { items: [] });
