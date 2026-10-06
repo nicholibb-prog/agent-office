@@ -11,6 +11,9 @@ export function writePrivate(file: string, text: string): void {
   try {
     writeSync(fd, text);
     fsyncSync(fd);
+    closeSync(fd);
+    chmodSync(tmp, 0o600);
+    renameSync(tmp, file);
   } catch (err) {
     try {
       closeSync(fd);
@@ -24,7 +27,4 @@ export function writePrivate(file: string, text: string): void {
     }
     throw err;
   }
-  closeSync(fd);
-  chmodSync(tmp, 0o600);
-  renameSync(tmp, file);
 }

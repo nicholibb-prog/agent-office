@@ -348,12 +348,6 @@ export function resolveOllamaUrl(explicit: string | undefined): { url: string } 
   return { url: parsed.origin };
 }
 
-export function ollamaUrlFrom(env: { OLLAMA_URL?: string }, configured: string | undefined): { url: string } | { refused: string } {
-  const fromEnv = env.OLLAMA_URL;
-  const explicit = fromEnv !== undefined && fromEnv.trim() !== '' ? fromEnv : configured;
-  return resolveOllamaUrl(explicit);
-}
-
 async function requestJson(origin: string, route: string, method: 'GET' | 'POST', body: unknown, fetchImpl?: OllamaFetch): Promise<OllamaResult> {
   const res = await call(origin, route, method, body, CHAT_TIMEOUT_MS, fetchImpl);
   if (!res.ok && !res.text) {
