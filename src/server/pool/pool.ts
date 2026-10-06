@@ -203,7 +203,7 @@ export class WorkPool {
     job.completedAt = now;
     if (job.level >= 6) {
       job.status = 'needs_approval';
-      job.approval = job.level >= 7 ? 'owner-yes' : 'dan-pass';
+      job.approval = 'dan-pass';
     } else {
       job.status = 'done';
       this.trimDone();
@@ -214,8 +214,8 @@ export class WorkPool {
   }
 
   /**
-   * Level 6 only. The actor id must be on the Dan allowlist, and must not have posted,
-   * claimed, or completed the job. This does not mark the job done.
+   * Levels 6 and 7. The actor id must be on the Dan allowlist, and must not have posted,
+   * claimed, or completed the job. This does not mark the job done. It moves the job to owner approval.
    */
   danPass(id: string, actor: PoolActor, seen: SeenJob): PoolOk<PoolJob> {
     this.sweep();
@@ -226,7 +226,7 @@ export class WorkPool {
     if (seen.hash !== contentHash(job)) return fail(409, 'content changed');
     if (!who || !this.policy().dan.includes(who.id)) return fail(403, 'only Dan can record a Dan pass');
     if (touchedBy(job, who.id)) return fail(403, 'cannot pass your own job');
-    if (job.status !== 'needs_approval' || job.level !== 6 || job.approval !== 'dan-pass') return fail(409, 'job is not waiting on a Dan pass');
+    if (job.status !== 'needs_approval' || job.level < 6 || job.approval !== 'dan-pass') return fail(409, 'job is not waiting on a Dan pass');
     const now = this.now();
     job.danPass = { by: who.id, at: now };
     job.approval = 'owner-yes';
@@ -237,8 +237,8 @@ export class WorkPool {
 
   /**
    * Owner approval from an account id on pool.approvers.
-   * The approver cannot have posted, claimed, completed, or recorded the Dan pass.
-   * Level 6 needs a Dan pass first, from someone else.
+   * Levels 6 and 7 need a Dan pass first. The approver id must differ from the account
+   * that recorded that pass, the poster, and the claimer. Display names are not compared.
    */
   ownerApproval(id: string, actor: PoolActor, seen: SeenJob): PoolOk<PoolJob> {
     this.sweep();
@@ -250,7 +250,7 @@ export class WorkPool {
     if (!fresh(job, seen)) return fail(409, 'stale');
     if (seen.hash !== contentHash(job)) return fail(409, 'content changed');
     if (job.status !== 'needs_approval' || (job.level !== 6 && job.level !== 7)) return fail(409, 'job is not waiting on approval');
-    if (job.level === 6 && !job.danPass) return fail(403, 'Dan pass is required');
+    if (job.level >= 6 && !job.danPass) return fail(403, 'Dan pass is required');
     if (job.approval !== 'owner-yes') return fail(409, 'needs owner');
     if (job.danPass?.by === who.id) return fail(403, 'cannot approve a pass you recorded');
     if (touchedBy(job, who.id)) return fail(403, 'cannot approve your own job');
@@ -408,7 +408,7 @@ function fresh(job: PoolJob, seen: SeenJob): boolean {
   return job.status === seen.state && job.updatedAt === seen.updatedAt;
 }
 
-/** Poster, completer, current claimer, or anyone who held the claim. */
+/** Poster, completer, current claimer, or anyone who held the claim. Compared by account id, never by display name. */
 function touchedBy(job: PoolJob, id: string): boolean {
   if (job.postedBy === id || job.doneBy === id || job.claim?.by === id) return true;
   return job.history.some((h) => h.by === id);

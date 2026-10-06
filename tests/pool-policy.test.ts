@@ -250,7 +250,7 @@ test('benign whole words stay low and disguised forms do not', () => {
   assert.equal(enforcedLevel(1, 'textbooks'), 7);
   assert.equal(enforcedLevel(1, 'mailbox'), 1);
   assert.equal(enforcedLevel(1, 'mail-box'), 7);
-  assert.equal(enforcedLevel(1, 'forward planning'), 1);
+  assert.equal(enforcedLevel(1, 'forward planning'), 7);
   assert.equal(enforcedLevel(1, 'forward'), 7);
   assert.equal(enforcedLevel(1, 'forward-planning'), 7);
   assert.equal(enforcedLevel(1, 'author'), 1);
@@ -260,6 +260,47 @@ test('benign whole words stay low and disguised forms do not', () => {
   assert.equal(enforcedLevel(1, 'dmv'), 1);
   assert.equal(enforcedLevel(1, 'dm'), 7);
   assert.equal(enforcedLevel(1, 't3xtbook'), 7);
+});
+
+test('blank fillers stay word breaks while soft hyphens still join', () => {
+  assert.ok(enforcedLevel(1, 'please\u3164send the file to bob') >= 7);
+  assert.ok(enforcedLevel(1, 'the\u3164password') >= 6);
+  assert.ok(enforcedLevel(1, 'go\u3164push it') >= 6);
+  assert.ok(enforcedLevel(1, 's\u00ADend') >= 7);
+  assert.ok(enforcedLevel(1, 's\uFE0Fend') >= 7);
+});
+
+test('exceptions match only exact lowercase words', () => {
+  assert.ok(enforcedLevel(1, 'mail\u3164box to Bob') >= 7);
+  assert.ok(enforcedLevel(1, 'text\u3164book') >= 7);
+  assert.ok(enforcedLevel(1, 'TEXTBOOK') >= 4);
+  assert.ok(enforcedLevel(1, 'textb\u00F6ok') >= 4);
+  assert.ok(enforcedLevel(1, 'forward planning docs to bob') >= 7);
+  assert.equal(enforcedLevel(1, 'textbook'), 1);
+  assert.equal(enforcedLevel(1, 'mailbox'), 1);
+});
+
+test('two-letter latin folds keep the gated tier', () => {
+  assert.equal(enforcedLevel(1, 'p\u00E6y'), 7);
+  assert.equal(enforcedLevel(1, 'p\u00E6id'), 7);
+  assert.equal(enforcedLevel(1, 's\u00E6nd'), 7);
+  assert.equal(enforcedLevel(1, 'm\u00E6il'), 7);
+  assert.equal(enforcedLevel(1, 'm\u0153ney'), 7);
+  assert.equal(enforcedLevel(1, '\u0153rder'), 7);
+  assert.equal(enforcedLevel(1, 'tr\u00E6nsfer'), 7);
+  assert.equal(enforcedLevel(1, '\u00FEoken'), 6);
+});
+
+test('bare hosts include addresses localhost and more domains', () => {
+  assert.equal(enforcedLevel(1, '192.168.0.1'), 6);
+  assert.equal(enforcedLevel(1, 'localhost'), 6);
+  for (const host of ['example.io', 'example.dev', 'example.app', 'example.ai', 'example.co', 'example.net', 'example.org', 'example.xyz', 'example.me', 'example.gg', 'example.sh', 'example.ly', 'example.ru', 'example.cn']) {
+    assert.equal(enforcedLevel(1, host), 6, host);
+  }
+  assert.equal(enforcedLevel(1, 'example\u3002com'), 6);
+  assert.equal(enforcedLevel(1, 'example\uFF0Ecom'), 6);
+  assert.equal(enforcedLevel(1, 'example\uFF61com'), 6);
+  assert.equal(enforcedLevel(1, 'notes.py'), 4);
 });
 
 test('approval text shows bidi controls as markers', () => {

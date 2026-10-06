@@ -184,7 +184,7 @@ test('posting stores the raised level', (t) => {
   assert.equal(post(pool, 'Notes', 'a summary', { level: 4 }).level, 4);
 });
 
-test('completing 1–5 is done, 6 waits on a Dan pass, and 7 needs owner', (t) => {
+test('completing 1–5 is done, and 6 and 7 wait on a Dan pass', (t) => {
   const pool = poolAt(dirOf(t));
   const low = post(pool, 'Summarise', 'A short note.', { level: 3 });
   must(pool.claim(low.id, OKKIN_ACTOR));
@@ -205,7 +205,7 @@ test('completing 1–5 is done, 6 waits on a Dan pass, and 7 needs owner', (t) =
   must(pool.claim(seven.id, ADA));
   const held = must(pool.complete(seven.id, ADA));
   assert.equal(held.status, 'needs_approval');
-  assert.equal(held.approval, 'owner-yes');
+  assert.equal(held.approval, 'dan-pass');
   assert.notEqual(held.status, 'done');
 });
 
@@ -267,22 +267,44 @@ test('Dan pass is only Dan, and it does not mark the job done', (t) => {
   assert.equal(approved.doneBy, PIPER.id);
 });
 
-test('level 6 cannot be approved before a Dan pass, and level 7 can', (t) => {
-  const pool = poolAt(dirOf(t));
+test('level 7 needs a Dan pass from someone else before owner approval', (t) => {
+  const dir = dirOf(t);
+  writePolicy(dir, { approvers: [CASEY.id, ADA.id, PIPER.id, RILEY.id] });
+  const pool = poolAt(dir);
+  const seven = post(pool, 'Hold', 'Wait.', { level: 7, targetBot: PIPER.id });
+  must(pool.claim(seven.id, PIPER));
+  const held = must(pool.complete(seven.id, PIPER));
+  assert.equal(held.approval, 'dan-pass');
+  const seen = saw(held);
+  const early = pool.ownerApproval(seven.id, CASEY, seen);
+  assert.equal(early.ok, false);
+  assert.equal((early as { status: number }).status, 403);
+  assert.equal((early as { error: string }).error, 'Dan pass is required');
+
+  const passed = must(pool.danPass(seven.id, RILEY, seen));
+  assert.equal(passed.approval, 'owner-yes');
+  const fresh = saw(passed);
+  assert.equal((pool.ownerApproval(seven.id, { id: RILEY.id, label: 'Not Riley' }, fresh) as { status: number }).status, 403);
+  assert.equal((pool.ownerApproval(seven.id, { id: RILEY.id, label: 'Not Riley' }, fresh) as { error: string }).error, 'cannot approve a pass you recorded');
+  assert.equal((pool.ownerApproval(seven.id, { id: ADA.id, label: 'Casey' }, fresh) as { status: number }).status, 403);
+  assert.equal((pool.ownerApproval(seven.id, { id: ADA.id, label: 'Casey' }, fresh) as { error: string }).error, 'cannot approve your own job');
+  assert.equal((pool.ownerApproval(seven.id, { id: PIPER.id, label: 'Casey' }, fresh) as { status: number }).status, 403);
+  assert.equal((pool.ownerApproval(seven.id, { id: PIPER.id, label: 'Casey' }, fresh) as { error: string }).error, 'cannot approve your own job');
+  const done = must(pool.ownerApproval(seven.id, { id: CASEY.id, label: ADA.label }, fresh));
+  assert.equal(done.status, 'done');
+  assert.equal(done.approvedBy, CASEY.id);
+
   const six = post(pool, 'Gate', 'Session check.', { level: 6, targetBot: PIPER.id });
   must(pool.claim(six.id, PIPER));
   const waiting = must(pool.complete(six.id, PIPER));
-  const seen = saw(waiting);
-  assert.equal((pool.ownerApproval(six.id, CASEY, seen) as { error: string }).error, 'Dan pass is required');
+  assert.equal(waiting.approval, 'dan-pass');
+  const sixSeen = saw(waiting);
+  assert.equal((pool.ownerApproval(six.id, CASEY, sixSeen) as { error: string }).error, 'Dan pass is required');
   assert.equal(pool.get(six.id)!.status, 'needs_approval');
-
-  const seven = post(pool, 'Hold', 'Wait.', { level: 7, targetBot: ADA.id });
-  must(pool.claim(seven.id, ADA));
-  const held = must(pool.complete(seven.id, ADA));
-  const yes = must(pool.ownerApproval(seven.id, CASEY, saw(held)));
-  assert.equal(yes.status, 'done');
-  assert.equal(yes.approvedBy, CASEY.id);
-  assert.equal(pool.danPass(seven.id, RILEY, saw(yes)).ok, false);
+  const sixPassed = must(pool.danPass(six.id, RILEY, sixSeen));
+  const sixDone = must(pool.ownerApproval(six.id, CASEY, saw(sixPassed)));
+  assert.equal(sixDone.status, 'done');
+  assert.equal(sixDone.approvedBy, CASEY.id);
 });
 
 test('files are mode 0600 and a caller token is stored only as a hash', (t) => {
@@ -389,8 +411,10 @@ test('a bridge token cannot record owner approval, and a body approver is ignore
   await signed(jsonReq('/api/pool/owner-yes', { ...body, state: 'done' }), wrongState.res);
   assert.equal(wrongState.got.status, 409);
 
+  const passed = must(pool.danPass(job.id, RILEY, saw(waiting)));
+  const ready = { id: job.id, state: passed.status, updatedAt: passed.updatedAt, hash: passed.contentHash, approver: 'pat', by: 'pat' };
   const yes = capture();
-  await signed(jsonReq('/api/pool/owner-yes', body), yes.res);
+  await signed(jsonReq('/api/pool/owner-yes', ready), yes.res);
   assert.equal(yes.got.status, 200);
   assert.equal(yes.got.json().job?.approvedBy, CASEY.id);
   assert.notEqual(yes.got.json().job?.approvedBy, 'pat');

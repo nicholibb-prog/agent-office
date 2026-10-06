@@ -1,6 +1,6 @@
 // Keyword floor for the work pool. Every pass is a straight scan: no nested quantifiers.
 // The floor is the highest tier among a few spellings of the same text.
-import { casefoldStrip, decodeOnce, domainFloor, foldConfusables, stripIgnorable } from './pool-fold.js';
+import { casefoldStrip, decodeOnce, domainFloor, foldConfusables, hasAltLatin, spaceFillers, spaceIgnorable, stripIgnorable, wideLatinFloor, type FoldMode } from './pool-fold.js';
 
 const PREFIXES = ['force', 'auto', 'pre', 'git', 're', 'un'];
 
@@ -26,7 +26,7 @@ const PHRASES: readonly [string, number][] = [
 
 const EXTS = new Set(['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'py', 'pyw', 'sh', 'bash', 'ps1', 'json', 'env', 'yml', 'yaml', 'rb', 'go', 'rs', 'php', 'sql', 'toml', 'ini', 'xml', 'html', 'htm', 'css', 'vue', 'svelte']);
 
-/** Whole words that stay at their own level. A compound or a disguised spelling does not. */
+/** Exact lowercase ASCII words that stay at their own level. Matched on the raw text only. */
 const EXACT = new Set(['textbook', 'mailbox', 'author', 'keyboard', 'dmv']);
 
 const STEMS: readonly [string, number][] = [
@@ -294,73 +294,40 @@ function wordTier(word: string): number {
   return best;
 }
 
-/** Exception words that already stand alone in the folded text, before separators or letter gaps close. */
+/**
+ * Exception words standing alone in the raw text.
+ * Ignorables and fillers become spaces. No case, accent, or confusable folding.
+ * Only an exact lowercase ASCII word is exempt.
+ */
 function exactHits(text: string): Set<string> {
+  const flat = spaceIgnorable(spaceFillers(text));
   const hits = new Set<string>();
   let word = '';
+  let pure = true;
   const end = () => {
-    if (EXACT.has(word)) hits.add(word);
+    if (pure && EXACT.has(word)) hits.add(word);
     word = '';
+    pure = true;
   };
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i);
-    if (isAsciiWord(c)) word += text[i];
-    else end();
+  for (let i = 0; i < flat.length; i++) {
+    const c = flat.charCodeAt(i);
+    if (c >= 97 && c <= 122) word += flat[i];
+    else if ((c >= 48 && c <= 57) || (c >= 65 && c <= 90)) {
+      pure = false;
+      word += flat[i];
+    } else end();
   }
   end();
   return hits;
 }
 
-/** 'forward planning' with whitespace between the words. A hyphen is a different spelling. */
-function hasForwardPlanning(text: string): boolean {
-  const flat = squeeze(text);
-  let i = 0;
-  while (i < flat.length) {
-    while (i < flat.length && flat.charCodeAt(i) === 32) i++;
-    if (i >= flat.length) break;
-    const start = i;
-    while (i < flat.length && isAsciiWord(flat.charCodeAt(i))) i++;
-    if (i === start) {
-      i++;
-      continue;
-    }
-    if (flat.slice(start, i) !== 'forward' || flat.charCodeAt(i) !== 32) continue;
-    let j = i + 1;
-    while (j < flat.length && flat.charCodeAt(j) === 32) j++;
-    const n = j;
-    while (j < flat.length && isAsciiWord(flat.charCodeAt(j))) j++;
-    if (flat.slice(n, j) === 'planning') return true;
-    i = j;
-  }
-  return false;
-}
-
-function score(text: string, hits: Set<string>, phrase: boolean): number {
+function score(text: string, hits: Set<string>): number {
   let best = 1;
   const flat = squeeze(text);
-  for (const [phraseTier, tier] of PHRASES) if (flat.includes(phraseTier)) best = Math.max(best, tier);
+  for (const [phrase, tier] of PHRASES) if (flat.includes(phrase)) best = Math.max(best, tier);
   let word = '';
-  let held = false;
-  const commit = (w: string) => {
-    if (!w || hits.has(w)) return;
-    best = Math.max(best, wordTier(w));
-  };
   const end = () => {
-    if (!word) return;
-    if (phrase && held) {
-      held = false;
-      if (word === 'planning') {
-        word = '';
-        return;
-      }
-      commit('forward');
-    }
-    if (phrase && word === 'forward') {
-      held = true;
-      word = '';
-      return;
-    }
-    commit(word);
+    if (word && !hits.has(word)) best = Math.max(best, wordTier(word));
     word = '';
   };
   for (let i = 0; i < flat.length; i++) {
@@ -374,7 +341,6 @@ function score(text: string, hits: Set<string>, phrase: boolean): number {
     if (best === 7) break;
   }
   end();
-  if (held) commit('forward');
   if (hasCodeExt(text)) best = Math.max(best, 4);
   return best;
 }
@@ -438,7 +404,7 @@ function scriptFloor(text: string): number {
 }
 
 function prepared(text: string): string {
-  return foldConfusables(stripIgnorable(text.normalize('NFKC')));
+  return foldConfusables(stripIgnorable(spaceFillers(text.normalize('NFKC'))));
 }
 
 /** A Latin word that still has a non-ASCII letter after folding. */
@@ -487,28 +453,41 @@ export function normalizePoolText(text: string): string {
   return joinSeparators(collapseLetterSpacing(lowered(prepared(text))));
 }
 
-function floorOnce(text: string): number {
-  const stripped = stripIgnorable(text.normalize('NFKC'));
-  const script = scriptFloor(stripped);
-  const raw = foldConfusables(stripped);
-  const base = lowered(raw);
-  const hits = exactHits(base);
-  const phrase = hasForwardPlanning(base);
-  const spaced = collapseLetterSpacing(lowered(spaceSeparators(splitCamel(raw))));
+function scoreFolded(raw: string, hits: Set<string>, mode: FoldMode): number {
+  const base = casefoldStrip(raw, mode);
+  const spaced = collapseLetterSpacing(casefoldStrip(spaceSeparators(splitCamel(raw)), mode));
   const joined = joinSeparators(collapseLetterSpacing(base));
-  let best = Math.max(script, latinResidue(base), domainFloor(base, EXTS), score(joined, hits, phrase), score(spaced, hits, phrase), hasCodeExt(base) ? 4 : 0);
-  if (best === 7) return 7;
-  if (needsLeet(raw)) {
-    for (const one of ['l', 'i'] as const) {
-      const leet = applyLeet(raw, one);
-      const leetBase = lowered(leet);
-      const leetJoined = joinSeparators(collapseLetterSpacing(leetBase));
-      const leetSpaced = collapseLetterSpacing(lowered(spaceSeparators(splitCamel(leet))));
-      best = Math.max(best, domainFloor(leetBase, EXTS), score(leetJoined, hits, phrase), score(leetSpaced, hits, phrase));
-      if (best === 7) return 7;
-    }
+  let best = Math.max(latinResidue(base), domainFloor(base), score(joined, hits), score(spaced, hits), hasCodeExt(base) ? 4 : 0);
+  if (best === 7 || !needsLeet(raw)) return best;
+  for (const one of ['l', 'i'] as const) {
+    const leet = applyLeet(raw, one);
+    const leetBase = casefoldStrip(leet, mode);
+    best = Math.max(
+      best,
+      domainFloor(leetBase),
+      score(joinSeparators(collapseLetterSpacing(leetBase)), hits),
+      score(collapseLetterSpacing(casefoldStrip(spaceSeparators(splitCamel(leet)), mode)), hits),
+    );
+    if (best === 7) return 7;
   }
   return best;
+}
+
+function scorePrepared(text: string, hits: Set<string>): number {
+  const raw = foldConfusables(text);
+  let best = Math.max(scriptFloor(text), scoreFolded(raw, hits, 'wide'), wideLatinFloor(raw));
+  if (best === 7 || !hasAltLatin(raw)) return best;
+  return Math.max(best, scoreFolded(raw, hits, 'a'), scoreFolded(raw, hits, 'e'));
+}
+
+function floorOnce(text: string): number {
+  const hits = exactHits(text);
+  const filled = spaceFillers(text.normalize('NFKC'));
+  const deleted = stripIgnorable(filled);
+  let best = scorePrepared(deleted, hits);
+  if (best === 7) return 7;
+  const spaced = spaceIgnorable(filled);
+  return spaced === deleted ? best : Math.max(best, scorePrepared(spaced, hits));
 }
 
 /** Highest keyword tier. The decoded spelling is scored once, and the higher result wins. */
