@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Desk screens</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; background: #0e1018; color: #e6e6f0; font: 16px ui-monospace, Menlo, monospace; }
+      body { display: flex; gap: 12px; padding: 12px; }
+      figure { margin: 0; }
+      figcaption { margin-bottom: 6px; }
+      canvas { width: 480px; height: 320px; background: #000; display: block; }
+    </style>
+  </head>
+  <body>
+    <figure><figcaption>idle</figcaption><canvas id="calm" width="1024" height="680"></canvas></figure>
+    <figure><figcaption>WORKING</figcaption><canvas id="work" width="1024" height="680"></canvas></figure>
+    <figure><figcaption>WORKING, a moment later</figcaption><canvas id="later" width="1024" height="680"></canvas></figure>
+    <script type="module" src="./desk.ts"></script>
+  </body>
+</html>

@@ -3,6 +3,7 @@ import { FLAG_BOLD, FLAG_DIM, FLAG_INVERSE, RGB_FLAG, type Run } from '../../../
 import { mesh, roundedBox, toon } from '../../world/toon';
 import { TERM_THEME } from '../../ui/termtheme';
 import type { ScreenState } from '../../state/store';
+import { paintDesk, type DeskFace } from './desktop';
 
 
 const BASE16 = [
@@ -128,6 +129,7 @@ export class Laptop {
   private texture: THREE.CanvasTexture;
   private lid = new THREE.Group();
   private drawnVersion = -1;
+  private drawnKey = '';
   private paintedAt = 0;
   private openT = 0;
   private placeholder = 'booting…';
@@ -199,11 +201,20 @@ export class Laptop {
     if (text === this.placeholder) return;
     this.placeholder = text;
     this.drawnVersion = -2;
+    this.drawnKey = '';
   }
 
-  /** `distance` to the camera throttles repaints: far-away laptops refresh rarely. */
-  update(dt: number, screen: ScreenState | undefined, distance = 0) {
+  /**
+   * `distance` to the camera throttles repaints: far-away laptops refresh rarely.
+   * `desk`, when the worker is known, is the live desktop (see desktop.ts). Without it, the
+   * terminal mirror is painted as before.
+   */
+  update(dt: number, screen: ScreenState | undefined, distance = 0, desk?: DeskFace) {
     if (this.openT < 1) this.setLid(Math.min(1, this.openT + dt * 1.6));
+    if (desk) {
+      this.paintDesk(screen, distance, desk);
+      return;
+    }
     const version = screen ? screen.version : -1;
     const now = performance.now();
     const every = distance < 6 ? 150 : distance < 14 ? 600 : 2000;
@@ -213,6 +224,18 @@ export class Laptop {
       paintScreen(this.ctx, this.canvas.width, this.canvas.height, screen, this.placeholder, 22);
       this.texture.needsUpdate = true;
     }
+  }
+
+  /** Redraws the live desktop often enough for a blink and a scroll while the worker is going. */
+  private paintDesk(screen: ScreenState | undefined, distance: number, desk: DeskFace) {
+    const live = desk.pace === 'working' && !desk.still;
+    const every = desk.still ? 1000 : distance < 6 ? (live ? 80 : 1000) : distance < 14 ? (live ? 200 : 1500) : live ? 600 : 2500;
+    const lines = desk.lines.length ? desk.lines : [this.placeholder];
+    const key = `${desk.pace}|${desk.chip}|${Math.floor(desk.now / every)}|${screen?.version ?? -1}|${desk.activity ?? ''}|${lines.join('\n')}|${desk.still ? 1 : 0}`;
+    if (key === this.drawnKey) return;
+    this.drawnKey = key;
+    paintDesk(this.ctx, this.canvas.width, this.canvas.height, { ...desk, lines });
+    this.texture.needsUpdate = true;
   }
 
   /** Folds the lid down a little further (it snaps shut at the end); true once it's closed. */

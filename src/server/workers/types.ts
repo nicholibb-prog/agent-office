@@ -73,6 +73,8 @@ export interface Worker {
   hookToken: string;
   /** Claude never reported SessionStart: it's stuck on a trust/login/onboarding screen. */
   bootBlocked?: boolean;
+  /** When a shell last printed (ms). Silence after that sends it back to idle (see presence.ts). */
+  outputAt?: number;
   /** Its provider's own state on it (see ProviderAdapter.createState). */
   state: unknown;
   /** What its provider's adapter is handed of it (see WorkerHandle), once asked for. */
