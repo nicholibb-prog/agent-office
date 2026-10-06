@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { Ctx } from '../../office/context.js';
 import { send } from '../util.js';
-import { BodyTooLarge, readJsonBody } from '../read-body.js';
+import { BodyTooLarge, closeTooLarge, readJsonBody } from '../read-body.js';
 import type { Route } from '../router.js';
 import { bridgeGate, pushCrew, sessionOnly } from './bridge.js';
 import { activeSeatMap, CREW_SEATS, ageLabel, isSeatId, liveDesk, offlineQueuedNotice, rosterChip, seatDisplayName, type BridgeBeat, type SeatId } from '../../../shared/hq.js';
@@ -23,17 +23,22 @@ async function readJson<T extends object>(req: http.IncomingMessage, res: http.S
     }
     return value;
   } catch (err) {
-    if (err instanceof BodyTooLarge) send(res, 413, { error: 'body too large' });
+    if (err instanceof BodyTooLarge) {
+      closeTooLarge(req, res);
+      return undefined;
+    }
     else send(res, 400, { error: 'bad json' });
     return undefined;
   }
 }
 
 function speaker(ctx: Ctx, req: http.IncomingMessage): { role: 'player' | 'guest'; by?: string; key: string } {
-  const session = ctx.auth.fromRequest(req) ?? (ctx.auth.fromAnyCookie(req) ? {} : undefined);
-  const id = session?.account?.id;
-  const role = ctx.meOf(id).admin ? 'player' : 'guest';
-  return { role, by: id, key: id ?? 'shared' };
+  const session = ctx.auth.sessionFromAnyCookie(req);
+  const account = session?.account;
+  if (session && !account) return { role: 'player', key: 'shared' };
+  if (account?.role === 'admin') return { role: 'player', by: account.id, key: account.id };
+  if (account) return { role: 'guest', by: account.id, key: account.id };
+  return { role: 'guest', key: 'unknown' };
 }
 
 function envOf(processEnv: NodeJS.ProcessEnv) {
@@ -129,7 +134,7 @@ export const hqRoutes = {
       const now = Date.now();
       const chip = rosterChip(beats(file?.seen ?? {}, file?.crew ?? {}, now)[seat], now);
       const noted = notePlayerChat(ctx.cfg.dataDir, { text, at: now, seat, kind: 'talk', role: who.role, by: who.by });
-      let messages = appendThread(ctx.cfg.dataDir, seat, { id: randomBytes(4).toString('hex'), role: who.role, text, at: now });
+      let messages = appendThread(ctx.cfg.dataDir, seat, { id: randomBytes(4).toString('hex'), role: who.role, text, at: now, ...(who.by ? { by: who.by } : {}) });
       const replied = messages.some((m) => m.role === 'bot');
       if (chip === 'offline' && !replied) {
         messages = appendThread(ctx.cfg.dataDir, seat, { id: randomBytes(4).toString('hex'), role: 'office', text: offlineQueuedNotice(name), at: Date.now() });
@@ -194,7 +199,7 @@ export const hqRoutes = {
       if (!body) return;
       const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
       const result = await switchOkkinModel(envOf(process.env), hq, String(body.model || ''), undefined, undefined, ctx.cfg.dataDir);
-      if (result.status === 200) markSwitch();
+      if (result.status === 200 || result.status === 502) markSwitch();
       return send(res, result.status, { ok: result.status === 200, error: result.error, okkin: okkinClient(result.snapshot) });
     },
   },
