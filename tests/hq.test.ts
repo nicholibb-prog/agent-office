@@ -1,16 +1,17 @@
 // Local HQ: lease, talk outbox, Okkin loopback, and the client view of /api/ps.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { CREW_SEATS, WORKING_LEASE_MS, chooseAgency, crewAutoReply, rosterChip } from '../src/shared/hq.js';
 import { applyCrewPresence, writeCrewPush } from '../src/server/workers/crew.js';
 import { notePlayerChat, outboxPath } from '../src/server/hq/relay.js';
-import { okkinClient, probeOkkin, resetOkkinForTests, setOkkinFetchForTests, switchOkkinModel } from '../src/server/hq/okkin.js';
-import { psView, resolveOllamaUrl, type OllamaFetch } from '../src/server/ollama.js';
+import { okkinClient, probeOkkin, resetOkkinForTests, setOkkinFetchForTests, switchOkkinModel, talkToOkkin } from '../src/server/hq/okkin.js';
+import { loopbackOrigin, probeOllama, psView, resolveOllamaUrl, type OllamaFetch } from '../src/server/ollama.js';
 import { hqRoutes } from '../src/server/http/routes/hq.js';
 import { bridgeRoutes } from '../src/server/http/routes/bridge.js';
 import { hasSavedCharacter, profileStorageKey, saveProfile } from '../src/client/state/persist.ts';
@@ -166,6 +167,133 @@ test('a non-loopback Ollama URL is refused and a request cannot supply one', asy
   assert.equal(snap.chip, 'offline');
   assert.equal(calls.length, 0);
   resetOkkinForTests();
+});
+
+function listen(server: ReturnType<typeof createServer>, host: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, host, () => {
+      const addr = server.address();
+      resolve(typeof addr === 'object' && addr ? addr.port : 0);
+    });
+  });
+}
+
+test('https is refused and localhost is rewritten to the 127.0.0.1 literal', () => {
+  assert.equal(loopbackOrigin('https://127.0.0.1:11434').ok, false);
+  assert.equal(loopbackOrigin('https://localhost:11434').ok, false);
+  assert.deepEqual(loopbackOrigin('http://localhost:11434'), { ok: true, origin: 'http://127.0.0.1:11434' });
+  assert.deepEqual(loopbackOrigin('http://LOCALHOST:9'), { ok: true, origin: 'http://127.0.0.1:9' });
+  assert.deepEqual(loopbackOrigin('http://[::1]:11434'), { ok: true, origin: 'http://[::1]:11434' });
+  assert.equal(loopbackOrigin('http://localhost.example:11434').ok, false);
+});
+
+test('a loopback 307 to another host is not followed', async () => {
+  let hits = 0;
+  const other = createServer((_req, res) => {
+    hits++;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ models: [{ name: 'demo:1b' }] }));
+  });
+  const loop = createServer((_req, res) => {
+    const port = other.address();
+    const otherPort = typeof port === 'object' && port ? port.port : 0;
+    res.writeHead(307, { location: `http://127.0.0.2:${otherPort}/api/tags` });
+    res.end();
+  });
+  const otherPort = await listen(other, '127.0.0.2');
+  const loopPort = await listen(loop, '127.0.0.1');
+  try {
+    const status = await probeOllama({ url: `http://127.0.0.1:${loopPort}`, model: null, refused: false });
+    assert.equal(status, 'offline');
+    assert.equal(hits, 0);
+    assert.ok(otherPort > 0);
+  } finally {
+    loop.close();
+    other.close();
+  }
+});
+
+test('a response over 1 MB is dropped and the stream is closed', async () => {
+  let written = 0;
+  let closed = false;
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    const chunk = Buffer.alloc(64 * 1024, 0x61);
+    const target = 8 * 1024 * 1024;
+    const write = () => {
+      while (written < target) {
+        const ok = res.write(chunk);
+        written += chunk.length;
+        if (!ok) {
+          res.once('drain', write);
+          return;
+        }
+      }
+      res.end();
+    };
+    res.on('close', () => {
+      closed = true;
+    });
+    res.on('error', () => {});
+    write();
+  });
+  const port = await listen(server, '127.0.0.1');
+  try {
+    const status = await probeOllama({ url: `http://127.0.0.1:${port}`, model: null, refused: false });
+    assert.equal(status, 'offline');
+    for (let i = 0; i < 20 && !closed; i++) await new Promise((r) => setTimeout(r, 25));
+    assert.equal(closed, true);
+    assert.ok(written < 8 * 1024 * 1024);
+  } finally {
+    server.close();
+  }
+});
+
+test('a second Okkin talk is rejected while the first call is in flight', async () => {
+  resetOkkinForTests();
+  let chats = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const fetchImpl: OllamaFetch = async (url) => {
+    if (url.endsWith('/api/chat')) {
+      chats++;
+      await gate;
+      return { ok: true, status: 200, text: async () => JSON.stringify({ message: { content: 'hi' } }) };
+    }
+    if (url.endsWith('/api/tags')) return { ok: true, status: 200, text: async () => JSON.stringify({ models: [{ name: 'demo:1b' }] }) };
+    if (url.endsWith('/api/ps')) return { ok: true, status: 200, text: async () => JSON.stringify({ models: [{ name: 'demo:1b' }] }) };
+    return { ok: false, status: 404, text: async () => '' };
+  };
+  const dataDir = dir('busy');
+  const env = { OLLAMA_URL: 'http://127.0.0.1:11434', OKKIN_MODEL: 'demo:1b', OKKIN_MODEL_ALLOW: 'demo:1b' };
+  const hq = { crewKeysLower: [], humanAliases: [], humanMapsTo: '', crewDesks: false, seats: {} };
+  const first = talkToOkkin(dataDir, env, hq, 'hello', fetchImpl);
+  for (let i = 0; i < 50 && chats === 0; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(chats, 1);
+  const second = await talkToOkkin(dataDir, env, hq, 'again', fetchImpl);
+  assert.equal(second.status, 409);
+  const switched = await switchOkkinModel(env, hq, 'demo:1b', fetchImpl);
+  assert.equal(switched.status, 409);
+  assert.equal(chats, 1);
+  release();
+  const done = await first;
+  assert.equal(done.status, 200);
+  resetOkkinForTests();
+  rmSync(dataDir, { recursive: true, force: true });
+});
+
+test('the outbox keeps the last 200 lines at mode 0600', () => {
+  const dataDir = dir('cap');
+  for (let i = 0; i < 201; i++) notePlayerChat(dataDir, { text: `line-${i}`, at: i, seat: 'seat-1', kind: 'talk' });
+  const lines = readFileSync(outboxPath(dataDir), 'utf8').trim().split('\n');
+  assert.equal(lines.length, 200);
+  assert.equal((JSON.parse(lines[0]!) as { text: string }).text, 'line-1');
+  assert.equal((JSON.parse(lines[199]!) as { text: string }).text, 'line-200');
+  assert.equal(statSync(outboxPath(dataDir)).mode & 0o777, 0o600);
+  rmSync(dataDir, { recursive: true, force: true });
 });
 
 test('switching unloads first, rejects an unknown tag, and hides the raw /api/ps body', async () => {
