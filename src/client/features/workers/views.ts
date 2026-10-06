@@ -29,6 +29,7 @@ import { renderUsage } from '../../ui/usage';
 import { Worker } from '../../world/character';
 import { Drifters } from './adrift';
 import { Jail } from './jail';
+import { deskFace, screenLines } from './desktop';
 import { Laptop } from './laptop';
 import { Arrivals, Departures } from './leaving';
 import { Sendoffs } from './sendhome';
@@ -295,16 +296,25 @@ export function installWorkerViews(ctx: Ctx, core: CoreState, parts: WorkerViews
     if (aging) agedAt = now;
     for (const [id, v] of workerViews) {
       const desk = plan().byId.get(v.deskId)!;
-      if (aging) {
-        const w = store.workers.get(id);
-        if (w) v.model.setAge(ageOf(w));
-      }
+      const w = store.workers.get(id);
+      if (aging && w) v.model.setAge(ageOf(w));
       // A jumping worker holds still while you're near enough to read its card, and jumps again once you walk away.
       const d = v.model.root.getWorldPosition(workerPos).distanceTo(player.pos);
       v.model.held = d < (v.model.held ? HOLD_LEAVE : HOLD_NEAR);
       v.model.update(dt, t);
-      // A board agent's kiosk has no laptop to paint (see buildKiosk).
-      if (!desk.station) v.laptop.update(dt, store.screens.get(id), Math.hypot(desk.x - camPos.x, desk.z - camPos.z));
+      // A board agent's kiosk has no laptop to paint (see buildKiosk). The desktop follows status.
+      if (!desk.station && w) {
+        const face = deskFace(w.status, w.lastInput?.at, Date.now());
+        const screen = store.screens.get(id);
+        v.laptop.update(dt, screen, Math.hypot(desk.x - camPos.x, desk.z - camPos.z), {
+          ...face,
+          now,
+          name: w.name,
+          activity: w.activity,
+          lines: screenLines(screen),
+          still: ctx.reduceMotion.matches,
+        });
+      }
     }
     for (const a of parts.worlds.idleAgents()) if (a.view.vacancy.visible) a.model.update(dt, t);
     departures.update(dt, t);
