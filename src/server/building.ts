@@ -5,6 +5,7 @@ import path from 'node:path';
 import { FLOOR_PALETTES, MAX_FLOORS, normalizeRepo, sameRepo } from '../shared/floors.js';
 import type { CloneProgress, ProjectsDirState, RepoChoice } from '../shared/protocol.js';
 import { CloneRun, dropLog, whyCloneFailed, type CloneEnd, type CloneRunOptions } from './clone.js';
+import { originRepo } from './git/remote-url.js';
 import { gh } from './github.js';
 
 /** A floor as floors.json keeps it. */
@@ -508,16 +509,6 @@ function unwritable(dir: string): string | undefined {
     return `The office can't write in ${tildify(at)}`;
   }
   return undefined;
-}
-
-/** The GitHub repository a checkout's origin points at. */
-export function originRepo(dir: string): string | undefined {
-  try {
-    const url = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 }).trim();
-    return /github\.com[/:]/i.test(url) ? normalizeRepo(url) : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 /**

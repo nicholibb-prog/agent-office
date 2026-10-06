@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import type { GhCheck, GhCloseReason, GhComment, GhIssue, GhIssueDetail, GhLabel, GhMergeMethod, GhPull, GhPullDetail, GhRepoInfo, GhReviewComment, GhState } from '../shared/protocol.js';
 import type { GhAs } from './signins.js';
+import { redactUserinfo } from './git/remote-url.js';
 
 const REFRESH_MS = 90_000;
 /** How long the repo's list of labels is kept before the label picker asks GitHub again. */
@@ -20,10 +21,10 @@ export function gh(args: string[], cwd: string, timeout = 30_000, env?: Record<s
   return new Promise((resolve, reject) => {
     execFile('gh', args, { cwd, maxBuffer: 32 * 1024 * 1024, timeout, env }, (err, stdout, stderr) => {
       if (err) {
-        const msg = (stderr || err.message || '').trim().split('\n').slice(-2).join(' ');
+        const msg = redactUserinfo((stderr || err.message || '').trim().split('\n').slice(-2).join(' '));
         const signedOut = env && /auth login|not logged in|authentication/i.test(msg);
         reject(new Error((err as NodeJS.ErrnoException).code === 'ENOENT' ? 'GitHub CLI (gh) is not installed on the server' : signedOut ? 'Your GitHub sign-in stopped working — sign in again (☰ → 🔐 Your sign-ins)' : friendly(msg)));
-      } else resolve(stdout);
+      } else resolve(redactUserinfo(stdout));
     });
   });
 }
