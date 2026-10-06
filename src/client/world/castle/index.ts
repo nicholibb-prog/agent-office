@@ -154,6 +154,7 @@ export function buildCastle(plan: MapPlan): World {
     meetingBoard: council.board,
     meetingSign: council.sign,
     gong: kit.gong,
+    jev: kit.jev,
     nav,
     ways: {
       home: (seat, from) => ({ way: [...(from ? nav.route(from, inside) : nav.wayFrom(seat, inside)), threshold, beyond], chute: false }),

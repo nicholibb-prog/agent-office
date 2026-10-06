@@ -8,6 +8,7 @@ import type { AirlockView } from './station/airlock';
 import type { Person } from './character';
 import type { Area } from './confetti';
 import type { Gong } from '../features/gong/world';
+import type { JevLeaderboard } from '../features/jev/world';
 import type { Collider, DeskView, Interactable, Office } from './types';
 import type { SkyLights } from './sky';
 
@@ -45,6 +46,8 @@ export interface World {
   meetingSign?: THREE.Mesh;
   /** The gong a merged pull request rings, if the map has one. */
   gong?: Gong;
+  /** The local Jev leaderboard, if this map placed one (the office always does). */
+  jev?: JevLeaderboard;
   nav: NavGrid;
   ways: Ways;
   /** Where confetti rains when a pull request merges, and from how high over each spot. */
@@ -108,6 +111,7 @@ export function officeWorld(office: Office, upstairs: () => boolean, wing: () =>
     meetingBoard: office.meetingBoard,
     meetingSign: office.meetingSign,
     gong: office.gong,
+    jev: office.jev,
     get nav() {
       return officeNav(wing());
     },

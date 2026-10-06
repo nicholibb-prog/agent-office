@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { PropConfig } from '../../../shared/maps';
 import { STATION_SIZE, type StationPropKind } from '../../../shared/maps/station-props';
 import { buildGong } from '../../features/gong/world';
+import { mountJevLeaderboard } from '../../features/jev/world';
 import type { Interactable } from '../types';
 import { canvasTexture } from '../texture';
 import { mesh, roundedBox, textPlane, toon } from '../toon';
@@ -221,6 +222,9 @@ export const PROPS: Record<StationPropKind, (kit: Kit, p: PropConfig) => void> =
     kit.colliders.push(...gong.colliders);
     kit.interactables.push(gong.interactable);
     kit.gong = gong;
+  },
+  jev: (kit, p) => {
+    mountJevLeaderboard(kit, p);
   },
   dispenser: (kit, p) => kit.interactables.push(dispenser(kit, p)),
   table: plainTable,

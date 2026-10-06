@@ -1,4 +1,5 @@
 import type { Circle, Rect } from '../nav.js';
+import { JEV_FOOTPRINT } from '../jev.js';
 import type { PropConfig } from './types.js';
 
 /*
@@ -34,6 +35,8 @@ export const PROP_KINDS = {
   hearth: 'A fireplace',
   /** The gong a merged pull request rings (one per map). */
   gong: 'The merge gong',
+  /** The local Jev leaderboard (one per map). Rankings stay on this computer. */
+  jev: 'The Jev leaderboard',
   /** Casks of ale on a rack: a drink perks you up, like the office's coffee. */
   cask: 'Casks of ale (the coffee)',
   /** A table with nothing to sit at, `width` by `length`. */
@@ -60,6 +63,7 @@ export const PROP_SIZE = {
   armor: 0.42,
   hearth: { width: 3.6, depth: 1.1 },
   gong: { width: 2.1, depth: 0.7 },
+  jev: JEV_FOOTPRINT,
   cask: { width: 1.7, depth: 1.0 },
   candles: 0.3,
 } as const;
@@ -83,6 +87,8 @@ export function propFootprint(p: PropConfig): { rect?: Rect; circle?: Circle } |
       return { rect: boxFootprint(p.x, p.z, (p.width ?? PROP_SIZE.hearth.width) * s, PROP_SIZE.hearth.depth * s, r) };
     case 'gong':
       return { rect: boxFootprint(p.x, p.z, PROP_SIZE.gong.width, PROP_SIZE.gong.depth, r) };
+    case 'jev':
+      return { rect: boxFootprint(p.x, p.z, PROP_SIZE.jev.width, PROP_SIZE.jev.depth, r) };
     case 'cask':
       return { rect: boxFootprint(p.x, p.z, PROP_SIZE.cask.width * s, PROP_SIZE.cask.depth * s, r) };
     case 'table':

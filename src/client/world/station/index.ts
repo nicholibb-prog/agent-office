@@ -130,6 +130,7 @@ export function buildStation(plan: MapPlan): World {
     meetingBoard: briefing.board,
     meetingSign: briefing.sign,
     gong: kit.gong,
+    jev: kit.jev,
     nav,
     ways: {
       home: (seat, from) => ({ way: [...(from ? nav.route(from, inside) : nav.wayFrom(seat, inside)), threshold, beyond], chute: false }),

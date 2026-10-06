@@ -27,6 +27,8 @@ export const STATION_PROP_KINDS = {
   crate: 'Cargo crates',
   /** The gong a merged pull request rings (one per map). */
   gong: 'The merge gong',
+  /** The local Jev leaderboard (one per map). Rankings stay on this computer. */
+  jev: 'The Jev leaderboard',
   /** A drinks dispenser: a cup perks you up, like the office's coffee. */
   dispenser: 'A drinks dispenser (the coffee)',
   /** A console table with nothing to sit at, `width` by `length`. */
@@ -56,6 +58,8 @@ export function stationFootprint(p: PropConfig): { rect?: Rect; circle?: Circle 
       return { rect: boxFootprint(p.x, p.z, STATION_SIZE.crate * s, STATION_SIZE.crate * s, r) };
     case 'gong':
       return { rect: boxFootprint(p.x, p.z, PROP_SIZE.gong.width, PROP_SIZE.gong.depth, r) };
+    case 'jev':
+      return { rect: boxFootprint(p.x, p.z, PROP_SIZE.jev.width, PROP_SIZE.jev.depth, r) };
     case 'dispenser':
       return { rect: boxFootprint(p.x, p.z, STATION_SIZE.dispenser.width * s, STATION_SIZE.dispenser.depth * s, r) };
     case 'table':

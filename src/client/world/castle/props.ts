@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { PropConfig } from '../../../shared/maps';
 import { PROP_SIZE, type PropKind } from '../../../shared/maps/props';
 import { buildGong } from '../../features/gong/world';
+import { mountJevLeaderboard } from '../../features/jev/world';
 import type { Interactable } from '../types';
 import { canvasTexture } from '../texture';
 import { mesh, roundedBox, textPlane, toon, toonUnique } from '../toon';
@@ -426,6 +427,9 @@ export const PROPS: Record<PropKind, (kit: Kit, p: PropConfig) => void> = {
     kit.colliders.push(...gong.colliders);
     kit.interactables.push(gong.interactable);
     kit.gong = gong;
+  },
+  jev: (kit, p) => {
+    mountJevLeaderboard(kit, p);
   },
   cask: (kit, p) => kit.interactables.push(cask(kit, p)),
   table: plainTable,
