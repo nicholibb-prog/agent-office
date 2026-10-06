@@ -46,7 +46,7 @@ A bridge push records a seat and the time it was seen. **Working** lasts 15 minu
 
 Press **Y**. Near a crew desk (about 2.5 m) that opens a thread with that seat. Otherwise it opens the roster: ten rows, each with a chip, an age, a one-line task, and **Go**, **Talk**, and **Desk**. **Desk** is a card (condition, actions, needs, task, milestone, link). **✕** or **Esc** closes it and returns you to mouse-look.
 
-Player lines are appended to `.agent-office/chat-outbox.jsonl`. A separate process can sync that file. This repo does not know folder ids or API tokens. Inbox lines dropped in `chat-inbox.jsonl` are ingested for the nine generic seats only, and only when they are `{ "v": 1, "role": "bot", "seat": "seat-N", "text": "...", "at": "<ISO-8601>" }`. Okkin is never spoken from the inbox or from `POST /api/bridge/say`.
+Player lines are written to `.agent-office/chat-outbox.jsonl`. The file keeps the last 200 lines and is replaced as a whole (mode `0600`). A separate process can sync that file. This repo does not know folder ids or API tokens. Inbox lines dropped in `chat-inbox.jsonl` are ingested for the nine generic seats only, and only when they are `{ "v": 1, "role": "bot", "seat": "seat-N", "text": "...", "at": "<ISO-8601>" }`. Okkin is never spoken from the inbox or from `POST /api/bridge/say`.
 
 ```json
 { "v": 1, "kind": "talk", "seat": "seat-1", "thread": "seat-1", "role": "player", "text": "hello", "at": "2026-01-01T00:00:00.000Z" }
@@ -60,13 +60,13 @@ There is no canned reply in a crew member's name.
 
 Okkin is one seat (`crew-okkin`). Talk goes to Ollama on the office machine.
 
-- `OLLAMA_URL` (env, else `ollamaUrl` in `hq-local.json`). Unset means `http://127.0.0.1:11434`. A URL that is not `127.0.0.1`, `localhost`, or `::1` is refused and Okkin stays offline. A URL in a request is ignored.
+- `OLLAMA_URL` (env, else `ollamaUrl` in `hq-local.json`). Unset means `http://127.0.0.1:11434`. Only `http`. `https` is refused. `localhost` is rewritten to the literal `127.0.0.1` (the office does not ask the OS resolver). `::1` stays the literal `[::1]`. Any other host is refused and Okkin stays offline. Redirects are not followed. A response over about 1 MB is dropped. A URL in a request is ignored.
 - `OKKIN_MODEL` (env, else `okkinModel`). Not hardcoded.
 - `OKKIN_MODEL_ALLOW` (comma-separated env, else `okkinAllow`). The switch lists the intersection of that allowlist and `GET /api/tags`.
 
 The desk shows the loaded model name and a state word from `GET /api/ps`: `loaded`, `unloaded`, or `unknown`. The browser is not sent the Ollama body (no digest, size, expiry, or VRAM).
 
-`POST /api/bridge/okkin/model` with `{ "model": "<exact tag>" }` is behind the same gate. The tag must be in the allowlist ∩ installed tags, or the office returns 400. Switching unloads the previous model with `POST /api/generate` and `keep_alive: 0`, then warms the next one. The chip is `switching`, never working. Working is only while a real `POST /api/chat` is in flight. Unreachable Ollama, including a machine that is asleep, is offline.
+`POST /api/bridge/okkin/model` with `{ "model": "<exact tag>" }` is behind the same gate. The tag must be in the allowlist ∩ installed tags, or the office returns 400. Switching unloads the previous model with `POST /api/generate` and `keep_alive: 0`, then warms the next one. The chip is `switching`, never working. Working is only while a real `POST /api/chat` is in flight. A second talk or switch while one is in flight is rejected (409). Unreachable Ollama, including a machine that is asleep, is offline.
 
 Allowed calls are `GET /api/tags`, `GET /api/ps`, `POST /api/chat`, and `POST /api/generate`. There is no pull, delete, create, copy, push, or raw proxy. Every caller uses `src/server/ollama.ts`. A later change that also talks to Ollama imports that module.
 
@@ -78,6 +78,6 @@ When a seat's chip is idle, the desk card is quiet, and you are not in its talk 
 
 ## Not in this change
 
-A morning delta and a Needs-Nick strip are not here. They belong in a later change.
+A morning delta and a needsOwner strip are not here. They belong in a later change.
 
 After you edit `hq-local.json`, restart the office. A sync process of your own has to move `chat-outbox.jsonl` and `chat-inbox.jsonl`. Ollama has to be listening on loopback, with `OKKIN_MODEL` and `OKKIN_MODEL_ALLOW` set to tags you have already pulled.

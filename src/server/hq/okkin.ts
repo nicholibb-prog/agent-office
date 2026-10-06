@@ -32,7 +32,7 @@ export function okkinClient(snap: OkkinSnapshot) {
 
 type Phase = (chip: OkkinChip) => void;
 
-let chain: Promise<void> = Promise.resolve();
+let held = false;
 let depth = 0;
 let switching = false;
 let reachable = false;
@@ -58,13 +58,8 @@ export function okkinSnapshot(): OkkinSnapshot {
   return { seat: OKKIN_SEAT, chip: chip(), configured, options: [...options], model, state };
 }
 
-function enqueue<T>(fn: () => Promise<T>): Promise<T> {
-  const run = chain.then(fn, fn);
-  chain = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  return run;
+function busy() {
+  return held || depth > 0 || switching;
 }
 
 export function okkinSettings(env: { OLLAMA_URL?: string; OKKIN_MODEL?: string; OKKIN_MODEL_ALLOW?: string }, hq: HqLocal) {
@@ -78,8 +73,14 @@ export function okkinSettings(env: { OLLAMA_URL?: string; OKKIN_MODEL?: string; 
   return { url, model, allow };
 }
 
-/** Probe /api/tags and /api/ps. Does not mark WORKING. */
-export async function probeOkkin(env: { OLLAMA_URL?: string; OKKIN_MODEL?: string; OKKIN_MODEL_ALLOW?: string }, hq: HqLocal, fetchImpl?: OllamaFetch): Promise<OkkinSnapshot> {
+/** Probe /api/tags and /api/ps. Does not mark WORKING. Skips the network while a talk or switch holds the seat. */
+export async function probeOkkin(
+  env: { OLLAMA_URL?: string; OKKIN_MODEL?: string; OKKIN_MODEL_ALLOW?: string },
+  hq: HqLocal,
+  fetchImpl?: OllamaFetch,
+  opts?: { force?: boolean },
+): Promise<OkkinSnapshot> {
+  if (busy() && !opts?.force) return okkinSnapshot();
   const settings = okkinSettings(env, hq);
   configured = settings.model;
   if ('refused' in settings.url) {
@@ -124,10 +125,12 @@ export async function talkToOkkin(
   const at = Date.now();
   const player: TalkMessage = { id: randomBytes(4).toString('hex'), role: 'player', text: text.slice(0, 500).trim(), at };
   if (!player.text) return { status: 400, snapshot: okkinSnapshot(), messages: readThread(dataDir, OKKIN_SEAT) };
-  appendOutbox(dataDir, { kind: 'talk', role: 'player', text: player.text, at, seat: OKKIN_SEAT });
-  appendThread(dataDir, OKKIN_SEAT, player);
-  return enqueue(async () => {
-    const snap = await probeOkkin(env, hq, fetchImpl);
+  if (busy()) return { status: 409, snapshot: okkinSnapshot(), messages: readThread(dataDir, OKKIN_SEAT) };
+  held = true;
+  try {
+    appendOutbox(dataDir, { kind: 'talk', role: 'player', text: player.text, at, seat: OKKIN_SEAT });
+    appendThread(dataDir, OKKIN_SEAT, player);
+    const snap = await probeOkkin(env, hq, fetchImpl, { force: true });
     phase?.(chip());
     const model = talkModel(snap);
     if (snap.chip === 'offline' || !model) {
@@ -164,7 +167,9 @@ export async function talkToOkkin(
     }
     phase?.(chip());
     return { status: 200, snapshot: okkinSnapshot(), messages: readThread(dataDir, OKKIN_SEAT) };
-  });
+  } finally {
+    held = false;
+  }
 }
 
 function talkModel(snap: OkkinSnapshot): string | null {
@@ -184,16 +189,21 @@ export async function switchOkkinModel(
   fetchImpl?: OllamaFetch,
   phase?: Phase,
 ): Promise<{ status: number; error?: string; snapshot: OkkinSnapshot }> {
-  if (depth > 0) return { status: 409, error: 'Okkin is in a request', snapshot: okkinSnapshot() };
+  if (busy()) return { status: 409, error: 'Okkin is in a request', snapshot: okkinSnapshot() };
   const name = requested.trim();
-  const snap = await probeOkkin(env, hq, fetchImpl);
-  if (snap.chip === 'offline') return { status: 503, error: 'Okkin is offline', snapshot: snap };
-  if (!snap.options.includes(name)) return { status: 400, error: 'model is not an installed allowed tag', snapshot: okkinSnapshot() };
-  if (snap.state === 'loaded' && snap.model === name) return { status: 200, snapshot: okkinSnapshot() };
-  const settings = okkinSettings(env, hq);
-  const made = createOllama('url' in settings.url ? settings.url.url : undefined, fetchOf(fetchImpl));
-  if ('refused' in made) return { status: 503, error: made.refused, snapshot: okkinSnapshot() };
-  return enqueue(() => runSwitch(made.client, snap.state === 'loaded' ? snap.model : null, name, phase));
+  held = true;
+  try {
+    const snap = await probeOkkin(env, hq, fetchImpl, { force: true });
+    if (snap.chip === 'offline') return { status: 503, error: 'Okkin is offline', snapshot: snap };
+    if (!snap.options.includes(name)) return { status: 400, error: 'model is not an installed allowed tag', snapshot: okkinSnapshot() };
+    if (snap.state === 'loaded' && snap.model === name) return { status: 200, snapshot: okkinSnapshot() };
+    const settings = okkinSettings(env, hq);
+    const made = createOllama('url' in settings.url ? settings.url.url : undefined, fetchOf(fetchImpl));
+    if ('refused' in made) return { status: 503, error: made.refused, snapshot: okkinSnapshot() };
+    return await runSwitch(made.client, snap.state === 'loaded' ? snap.model : null, name, phase);
+  } finally {
+    held = false;
+  }
 }
 
 async function runSwitch(client: OllamaClient, prev: string | null, next: string, phase?: Phase): Promise<{ status: number; error?: string; snapshot: OkkinSnapshot }> {
@@ -226,7 +236,7 @@ export function setOkkinFetchForTests(fn: OllamaFetch | undefined) {
 }
 
 export function resetOkkinForTests() {
-  chain = Promise.resolve();
+  held = false;
   depth = 0;
   switching = false;
   reachable = false;

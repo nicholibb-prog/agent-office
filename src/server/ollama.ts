@@ -12,7 +12,8 @@ export const CHAT_TIMEOUT_MS = 20_000;
 export const MAX_PREDICT = 256;
 
 const ALLOWED_PATHS = new Set(['/api/tags', '/api/ps', '/api/chat', '/api/generate']);
-const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);
+/** A response larger than this is dropped. The body is read as a stream and cancelled past the cap. */
+const MAX_RESPONSE_BYTES = 1024 * 1024;
 
 export interface OllamaSettings {
   /** Origin, or empty when the configured URL was refused. */
@@ -48,15 +49,20 @@ export function loopbackOrigin(raw: string): { ok: true; origin: string } | { ok
   } catch {
     return { ok: false };
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return { ok: false };
+  // http only. https would send the prompt through a TLS stack we do not pin.
+  if (url.protocol !== 'http:') return { ok: false };
   if (url.username || url.password) return { ok: false };
   // Node reports an IPv6 hostname with brackets (`[::1]`).
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  if (!LOOPBACK.has(host)) return { ok: false };
+  // `localhost` is rewritten to the IPv4 literal so the OS resolver is never asked.
+  const literal = host === 'localhost' ? '127.0.0.1' : host;
+  if (literal !== '127.0.0.1' && literal !== '::1') return { ok: false };
   // The setting is an origin. A path would let a URL aim at some other route.
   if (url.pathname !== '/' && url.pathname !== '') return { ok: false };
   if (url.search || url.hash) return { ok: false };
-  return { ok: true, origin: url.origin };
+  const port = url.port ? `:${url.port}` : '';
+  const origin = literal === '::1' ? `http://[::1]${port}` : `http://127.0.0.1${port}`;
+  return { ok: true, origin };
 }
 
 /**
@@ -91,7 +97,61 @@ export function ollamaEndpoint(origin: string, route: string): string | null {
   return origin + route;
 }
 
-export type OllamaFetch = (url: string, init: { method: string; headers?: Record<string, string>; body?: string; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
+export type OllamaFetch = (
+  url: string,
+  init: { method: string; headers?: Record<string, string>; body?: string; signal: AbortSignal; redirect: 'error' },
+) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
+
+async function readCapped(res: Response): Promise<string> {
+  const reader = res.body?.getReader();
+  if (!reader) {
+    const text = await res.text();
+    if (text.length > MAX_RESPONSE_BYTES) throw new Error('response too large');
+    return text;
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let tooBig = false;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      total += value.byteLength;
+      if (total > MAX_RESPONSE_BYTES) {
+        tooBig = true;
+        break;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      /* the stream may already be closed */
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      /* cancel already released it */
+    }
+  }
+  if (tooBig) throw new Error('response too large');
+  const buf = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buf.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(buf);
+}
+
+/** Redirects are an error. The body is capped so a stream cannot grow without a bound. */
+async function defaultFetch(url: string, init: { method: string; headers?: Record<string, string>; body?: string; signal: AbortSignal; redirect: 'error' }): Promise<{ ok: boolean; status: number; text(): Promise<string> }> {
+  const res = await fetch(url, { method: init.method, headers: init.headers, body: init.body, signal: init.signal, redirect: 'error' });
+  const text = await readCapped(res);
+  return { ok: res.ok, status: res.status, text: async () => text };
+}
 
 async function call(origin: string, route: string, method: 'GET' | 'POST', body: unknown, timeoutMs: number, fetchImpl?: OllamaFetch): Promise<{ ok: boolean; status: number; text: string }> {
   const url = ollamaEndpoint(origin, route);
@@ -100,9 +160,10 @@ async function call(origin: string, route: string, method: 'GET' | 'POST', body:
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   timer.unref?.();
   try {
-    const res = await (fetchImpl ?? fetch)(url, {
+    const res = await (fetchImpl ?? defaultFetch)(url, {
       method,
       signal: ac.signal,
+      redirect: 'error',
       headers: body === undefined ? undefined : { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -173,7 +234,7 @@ export type OllamaClient = {
 export function resolveOllamaUrl(explicit: string | undefined): { url: string } | { refused: string } {
   if (explicit === undefined || explicit.trim() === '') return { url: DEFAULT_OLLAMA_URL };
   const parsed = loopbackOrigin(explicit.trim());
-  if (!parsed.ok) return { refused: 'Ollama URL must be 127.0.0.1, localhost, or ::1' };
+  if (!parsed.ok) return { refused: 'Ollama URL must be http on 127.0.0.1 or ::1' };
   return { url: parsed.origin };
 }
 

@@ -70,7 +70,7 @@ See [Local HQ](hq.md). The floor's gitignored `.agent-office/hq-local.json` turn
 
 | Variable | Meaning |
 | --- | --- |
-| `OLLAMA_URL` | Loopback Ollama origin. Unset uses `http://127.0.0.1:11434`. Any other host is refused. |
+| `OLLAMA_URL` | Loopback Ollama origin, `http` only. Unset uses `http://127.0.0.1:11434`. `localhost` is rewritten to `127.0.0.1`. `https` and any other host are refused. |
 | `OKKIN_MODEL` | The tag Okkin talks with. Not set in source. |
 | `OKKIN_MODEL_ALLOW` | Comma-separated tags the desk may switch to. Intersected with the tags Ollama has installed. |
 

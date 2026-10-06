@@ -1,19 +1,17 @@
 // Gitignored relay files under the office data dir (.agent-office/). Mode 0600.
-// George (a separate process) syncs the outbox and inbox. This module does not know Drive ids.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+// A separate process syncs the outbox and inbox. This module does not know Drive ids.
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { EMPTY_CARD, isSeatId, outboxLine, sanitizeCard, type DeskCard, type OutboxLine, type SeatId, type TalkMessage } from '../../shared/hq.js';
+import { writePrivate } from '../private-file.js';
+
+const OUTBOX_CAP = 200;
 
 type ThreadsFile = { threads: Partial<Record<SeatId, TalkMessage[]>> };
 type CardsFile = { updatedAt: string; cards: Partial<Record<SeatId, DeskCard>> };
 
-function dirMode(file: string) {
-  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-}
-
 function writeJson(file: string, value: unknown) {
-  dirMode(file);
-  writeFileSync(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
+  writePrivate(file, JSON.stringify(value, null, 2) + '\n');
 }
 
 function readJson<T>(file: string, fallback: T): T {
@@ -41,13 +39,19 @@ function cardsPath(dataDir: string) {
   return path.join(dataDir, 'desk-cards.json');
 }
 
-/** Appends one outbox line. Returns the line, or null when there is nothing to say. Never writes a crew reply by itself. */
+/** Appends one outbox line and keeps the last 200. Returns the line, or null when there is nothing to say. Never writes a crew reply by itself. */
 export function appendOutbox(dataDir: string, input: { kind: OutboxLine['kind']; role: OutboxLine['role']; text: string; at: number; seat?: string }): OutboxLine | null {
   const line = outboxLine(input);
   if (!line) return null;
   const file = outboxPath(dataDir);
-  dirMode(file);
-  appendFileSync(file, JSON.stringify(line) + '\n', { mode: 0o600 });
+  let prev: string[] = [];
+  try {
+    if (existsSync(file)) prev = readFileSync(file, 'utf8').split('\n').filter((row) => row.trim());
+  } catch {
+    prev = [];
+  }
+  const kept = [...prev, JSON.stringify(line)].slice(-OUTBOX_CAP);
+  writePrivate(file, kept.join('\n') + '\n');
   return line;
 }
 
