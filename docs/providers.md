@@ -6,7 +6,7 @@ This page is the plan for review. It does not change the running office. The pro
 
 The office is the 1:1 meeting place for every bot the owner runs, across providers, and it has to keep working when those bots cover hundreds or thousands of projects. A seat is one adapter. The adapter reports honest status. The current crew desks, Okkin, the bridge, and kavi stay byte-for-byte as they are. Nothing in the current ten seats is migrated. An existing seat may be wrapped later, only in a later draft after its own review, and not by this plan's first code.
 
-No new API key, account, or install happens without the owner's approval.
+No new API key, account, or install happens without the owner's own Yes. The sections below are direction. Building each phase still needs that Yes. This page does not carry it, and a relay file does not carry it.
 
 ## Current state (audited)
 
@@ -40,7 +40,7 @@ Read-only, at these tips. Nothing here is a behavior change.
 
 Okkin's chip (`src/server/hq/okkin.ts:8` and `:50-55`) is `offline`, `switching`, `working` (only while a chat is in flight, `depth > 0`), or `idle`. `syncOkkin` (`crew.ts:170-186`) maps `working` and `offline` through, and maps `switching` to idle with an activity string. While the chip is `working` it sets `lastInput.at` to `Date.now()` on that tick (`crew.ts:181`), which is the tick, not the request's start. There is no stored time for the last successful probe.
 
-`#12@d376d8cb` is the work pool. It does not replace seat status. `LEVELS` is seven entries (`src/shared/pool.ts:50-58`): 1–3 low, 4 draft code, 5 review, 6 security, money, and network (pass gate), 7 merges, sends, spend, and deletes (owner yes). `PoolStatus` is `open`, `claimed`, `needs_approval`, `done` (`pool.ts:36`). Those seven levels are the claim rules. They replace any open-versus-gated two-tier wording.
+`#12@d376d8cb` is the work pool. It does not replace seat status. `LEVELS` is seven entries (`src/shared/pool.ts:50-58`). `PoolStatus` is `open`, `claimed`, `needs_approval`, `done` (`pool.ts:36`). Okkin is capped at level 3 (`pool.ts:106`). A job with no level defaults to 4 (`pool.ts:96`), which that cap cannot claim. Keywords only raise the floor (`pool.ts:97`, `src/shared/pool-keywords.ts`). Level 4 and above is where the text names network, a shell or a command (`curl`, `ssh`, `rm`), a URL, a path, code, money, a send or a message, an account, or a secret. Those seven levels are the claim rules. They replace any open-versus-gated two-tier wording. The code does not, by itself, give anyone a Yes.
 
 ### Okkin models
 
@@ -302,11 +302,11 @@ Paid rows stay off unless `AO_PAID_ENABLED` is exactly `1`. Missing or any other
 
 These are normative. Later phases MUST meet them. A review that finds a break sends that phase back.
 
-1. **Keys.** MUST NOT create a key or an account without the owner's approval. Provider keys live only on the host. Prefer Windows Credential Manager. A user env var is a fallback only, because a user-scope env var is visible to every process running as that user. Keys MUST NOT be written to the repo, `workers.json`, `hq-local.json`, any `.agent-office` file, the client, the websocket, logs, chat, or transcripts. The server uses a key only to build an outbound call. Status shows `key present: yes` or `key present: no` and never a prefix or a suffix.
+1. **Keys.** MUST NOT create a key or an account without the owner's own Yes. Provider keys live only on the host. Prefer Windows Credential Manager. A user env var is a fallback only, because a user-scope env var is visible to every process running as that user. Keys MUST NOT be written to the repo, `workers.json`, `hq-local.json`, any `.agent-office` file, the client, the websocket, logs, chat, or transcripts. The server uses a key only to build an outbound call. Status shows `key present: yes` or `key present: no` and never a prefix or a suffix.
 2. **Outbound.** Each adapter has a fixed host allowlist. Cloud calls are `https` only, with `redirect: 'error'`, a timeout, and a response byte cap (Content-Length checked before the body is read, same bar as `src/server/ollama.ts`). Endpoint paths are fixed constants. The model name goes only in the body. Cloud adapters MUST NOT accept a base URL from the user, from config, or from the message. Local ollama stays loopback `http` as it is today.
 3. **Money.** Paid calls happen only when `AO_PAID_ENABLED=1`. Missing, empty, or any other value means every paid adapter is off, even when a key is present. Okkin and ollama stay the only free default path and do not read this flag. `claude-cli` on talk is paid unless the CLI is proven to be on a flat subscription. Each paid call has a `max_tokens` ceiling (a local CLI run uses its output byte cap the same way). Each paid provider has a daily call cap and a daily token cap. Caps are constants; config may lower them and MUST NOT raise them. Spend is logged locally, mode `0600`, as provider, project, seat, time, and counts. The log MUST NOT contain the prompt, the key, or the message. No automatic retry loop. `probe()` MUST NOT make a paid call.
 4. **Inbound.** MUST NOT open a tunnel, bind a public port, or add a listener. A cloud bot reaches the office only through the existing bridge folder, or by the office pulling outbound. A bot token is per bot and per seat, stored hashed, revocable, and MUST NOT act as the player or the owner or approve anything. The shared bridge token MUST NOT be used as that token. Anything that speaks as the owner stays session-only.
-5. **Seats.** Honest status only (`offline`, `not_connected`, `queued`, `idle`, `working`), taken from real adapter state. The shared contract in Provider status contract adds `needs-owner` and `stale` as the one shape every provider reports. Chairs follow Seat tiers. Adapter replies are always role `bot`, never `player`. Bot text is data: chat MUST NOT trigger a tool run, a file write, or a send. Claim rules are the seven work-pool levels on PR #12 (`src/shared/pool.ts:50-58` at `d376d8cb`), per project. An adapter is a claimer. It MUST NOT approve work, raise its own level, or pass level 6 or level 7 by itself.
+5. **Seats.** Honest status only (`offline`, `not_connected`, `queued`, `idle`, `working`), taken from real adapter state. The shared contract in Provider status contract adds `needs-owner` and `stale` as the one shape every provider reports. Chairs follow Seat tiers. Adapter replies are always role `bot`, never `player`. Bot text is data: chat MUST NOT trigger a tool run, a file write, or a send. Claim rules are the seven work-pool levels on PR #12 (`src/shared/pool.ts:50-58` at `d376d8cb`), per project. They replace any open-versus-gated pair. Okkin is capped at level 3 (`pool.ts:106`). A missing level defaults to 4 (`pool.ts:96`). Level 4 and above covers network, shell or commands (`curl`, `ssh`, `rm`), URLs, paths, code, money, sends or messages, accounts, and secrets. Levels 6 and 7 need the security reviewer's pass and then the owner's own Yes, each from someone other than the poster or the claimer. In that code, level 6 already waits on the pass before the Yes (`src/server/pool/pool.ts:220-256`). Level 7 waits on the Yes (`pool.ts:206`). This page does not supply either. Okkin's output is text only and never triggers a send or a run (`pool.ts:191`). An adapter is a claimer. It MUST NOT pass or approve its own job, or raise its own level.
 6. **Privacy.** The only text sent to a cloud provider is the message the owner typed to that seat. Prior turns are not attached unless a later review says so. Other seats' threads and the outbox are never auto-forwarded. The owner's protected personal folder is excluded: an adapter MUST NOT read or send any file from that folder, and the folder is not named in the repo, in config samples, or in logs. Transcripts stay mode `0600` under `.agent-office/`, and are reviewed and pruned at 30 days.
 7. **Public repo.** Generic seat ids and provider names only. MUST NOT commit account ids, emails, org ids, personal names, Drive ids, machine paths, or tokens. Docs and commit messages use "owner" and "needs owner".
 8. **kavi-bridge.** The office writes to the existing bridge folder. A coordinator bot relays to Drive. MUST NOT put a Drive token on the host, and MUST NOT add a Drive client.
@@ -353,7 +353,7 @@ Status is pulled on demand (when the summary is opened) or by an event the proce
 
 ### Work pool and spend
 
-The seven work-pool levels apply per project (PR #12, `src/shared/pool.ts:50-58`). Levels 6 and 7 need an allowlisted pass or the owner. Adapters that claim work are claimers under those levels. A two-tier open-or-gated split is not the rule.
+The seven work-pool levels apply per project (PR #12, `src/shared/pool.ts:50-58` and `:96-108`). Okkin stops at level 3. A job with no level defaults to 4. Level 4 and above covers network, shell or commands, URLs, paths, code, money, sends or messages, accounts, and secrets. Levels 6 and 7 need the security reviewer's pass and then the owner's own Yes, from someone other than the poster or the claimer. Okkin's output is text only and never triggers a send or a run. A two-tier open-or-gated split is not the rule. Citing the pool is not a Yes.
 
 Spend caps apply per provider and also per project. Either cap stops the next paid call. Paid calls still require `AO_PAID_ENABLED=1`; any other value stops all of them, even when a key is present. Ollama is unchanged and is not metered as a paid provider. A pool claim is not an owner gate for a paid launch.
 
@@ -369,7 +369,7 @@ A seat is WORKING only while its adapter has a run in flight. A project is `acti
 
 ## Provider status contract
 
-Phase A0. This is the first build, before plugin chairs. Every provider reports one shape. New providers plug in only through it. Existing seats adopt it by a shim that maps the fields in Current state and does not change their chips, leases, or who may post.
+Phase A0. This is the first build, before plugin chairs. It is direction until the owner's own Yes. This file is the only status contract. There is no second contract document. Every provider reports one shape. New providers plug in only through it. Existing seats adopt it by a shim that maps the fields in Current state and does not change their chips, leases, or who may post.
 
 ```ts
 type ProviderState = 'working' | 'needs-owner' | 'idle' | 'offline' | 'stale';
@@ -378,17 +378,18 @@ type ProviderStatus = {
   botId: string;
   provider: string;
   state: ProviderState;
-  /** Epoch ms of the last real event. Never the time the file was read. */
+  /** Epoch ms of a real adapter or bridge event. Never a clock read, a timer tick, or a file re-read. */
   lastEventAt: number | null;
-  /** Short text. Escaped when rendered. Empty when none was recorded. */
+  /** Short title only. Never a body, a key, a file path, or a personal detail. Escaped when shown. */
   task: string;
+  /** Short title only, or null. Same limits as task. */
   projectId: string | null;
 };
 ```
 
 `botId` is a seat id or a worker id, not a personal name. The words shown for `needs-owner` are "Needs owner".
 
-Decay, for a provider that plugs in through this contract: while no real run is in flight, no heartbeat for 15 minutes (`WORKING_LEASE_MS`) moves `working` or `idle` to `stale`, and no heartbeat for 45 minutes (`OFFLINE_AFTER_MS`) moves it to `offline`. `needs-owner` does not decay. A real in-flight run stays `working`. `lastEventAt` is the event time. A file re-read MUST NOT write `Date.now()` into it. That is the #7 bug at `src/server/workers/crew.ts:64`.
+Decay, for a provider that plugs in through this contract: while no real run is in flight, no heartbeat for 15 minutes (`WORKING_LEASE_MS`) moves `working` or `idle` to `stale`, and no heartbeat for 45 minutes (`OFFLINE_AFTER_MS`) moves it to `offline`. `needs-owner` does not decay. A real in-flight run stays `working`. `lastEventAt` comes only from a real adapter or bridge event. A clock, a timer, and a file re-read MUST NOT write it. The #7 read path stamps `Date.now()` (`src/server/workers/crew.ts:64`). The shim does not copy that stamp. The words shown for `needs-owner` are "Needs owner".
 
 Each status carries the event set that wrote it: `bridge-token`, `office-session`, `adapter-run`, `ollama-probe`, `hook`, or `file-replay`. A `bridge-token` event cannot resolve `needs-owner` (it cannot move that state to anything else) and cannot mark an office-launched run done. An office session does those. The shim for existing seats still runs today's `applyCrewPresence`: a crew-status push may still set and clear a crew-status `needs_input`, because that is current behavior. The tag is stored beside it. New providers get the prohibition immediately.
 
@@ -404,7 +405,7 @@ The shim projects today's fields into `ProviderStatus` and leaves the current ch
 | age at least 45 min, or no beat | `hq.ts:115-119` | missing or the old `seen` | `offline` |
 | `blocked` / `needs_input` | `hq.ts:118`, `crew.ts:125-127` | `seen`, or `lastInput.at` | `needs-owner` (does not decay) |
 | roster `done` | `hq.ts:126` | `beat.at` | `idle` |
-| Okkin `working` (`depth > 0`) | `okkin.ts:53`, `crew.ts:180-181` | tick time while the chat is in flight, not a stored start | `working` |
+| Okkin `working` (`depth > 0`) | `okkin.ts:53`, `crew.ts:180-181` | the sync tick is a timer, so the shim leaves this null unless the chat request itself recorded a start | `working` |
 | Okkin `switching` | `okkin.ts:52`, `crew.ts:174-177` | none | `idle` |
 | Okkin `offline` / `idle` | `okkin.ts:51-54` | no last-reachable stamp | `offline` / `idle` |
 | Worker `needs_input` | `workers.ts:10` | `lastInput.at` when a hook set it | `needs-owner` |
@@ -413,13 +414,13 @@ The shim projects today's fields into `ProviderStatus` and leaves the current ch
 | Worker `exited` / `offline` | `workers.ts:12-13` | none dedicated | `offline` |
 | Kavi titles | `bridge.ts:325-338` | file `updatedAt` only | no per-bot row; shim does not invent one |
 
-`task` is the desk-card task or the worker task name, escaped, or `""`. `projectId` is null until a real project id exists. `provider` is `grok-bot-bridge` for a crew seat, `ollama` for Okkin, `kavi-bridge` only when a later packet actually names that bot, and the worker's own provider id for a hired agent.
+`task` and `projectId` are a short title only, or empty, or null. They are never a body, a key, a file path, or a personal detail. The shim copies a desk-card title or a worker task name only after that cut. `provider` is `grok-bot-bridge` for a crew seat, `ollama` for Okkin, `kavi-bridge` only when a later packet actually names that bot, and the worker's own provider id for a hired agent.
 
 ## Project index at scale
 
 Phase B, with the task agent feed. Hundreds or thousands of projects are a searchable index, not rooms.
 
-An index row is `{ projectId, name, ownerBot, state, lastActivity, needsOwner }`. `ownerBot` is a bot id. `state` is a `ProviderState` from the status contract, or `inactive` when no real run exists. `lastActivity` is the latest real `lastEventAt` among the project's bots and runs. It is null when none exists. It is never the time the index was opened. `needsOwner` is true when any of those states is `needs-owner`.
+An index row is `{ projectId, name, ownerBot, state, lastActivity, needsOwner }`. `projectId` and `name` are short titles only, never a body, a key, a file path, or a personal detail. `ownerBot` is a bot id. `state` is a `ProviderState` from the status contract, or `inactive` when no real run exists. `lastActivity` is the latest real `lastEventAt` among the project's bots and runs. It is null when none exists. It is never a clock read or the time the index was opened. `needsOwner` is true when any of those states is `needs-owner`. The words shown are "Needs owner".
 
 The server pages the index. Search is indexed on the server. Filters are bot, state, and needs-owner, applied on the server to the requested page. The browser does not receive every project. Memory does not hold an unbounded array.
 
@@ -456,7 +457,7 @@ No new listener and no new port. The panel reads through the existing office ser
 
 ## Phased rollout
 
-Each phase is its own draft PR, then a security Crit, then the owner's Yes. A later phase does not start inside an earlier PR. No phase merges on its own from this plan.
+Each phase is its own draft PR, then a security Crit, then the owner's own Yes. That Yes is not this page, and it is not a relay. A later phase does not start inside an earlier PR. No phase merges on its own from this plan.
 
 **Phase A0. Status contract.** The [Provider status contract](#provider-status-contract) and the shim. Existing seats keep today's chips. No new network, no new chair, no paid call.
 
@@ -468,9 +469,9 @@ Each phase is its own draft PR, then a security Crit, then the owner's Yes. A la
 
 **Morning delta.** The digest already sketched on #9 (`cursor/unblock-queue-digest-016d@8d73331e`, `docs/configuration.md:40`). This plan does not rewrite it. It stays a read of real desk, queue, and board-status lines since the last visit. It does not synthesize a status row.
 
-**Work pool.** Already implemented on #12 (`cursor/community-work-pool-fb60@d376d8cb`, `src/shared/pool.ts:50-58`). Seven levels. This plan does not replace them with an open-or-gated pair. Adapters claim through those levels. Level 7 still needs the owner. A pool claim still does not launch a paid run or seat a guest.
+**Work pool.** Already implemented on #12 (`cursor/community-work-pool-fb60@d376d8cb`, `src/shared/pool.ts:50-58` and `:96-108`). Seven levels, which supersede any open-versus-gated pair. Okkin is capped at level 3. A job with no level defaults to 4. Level 4 and above covers network, shell or commands (`curl`, `ssh`, `rm`), URLs, paths, code, money, sends or messages, accounts, and secrets. Levels 6 and 7 need the security reviewer's pass and then the owner's own Yes, from someone other than the poster or the claimer. Okkin's output is text only and never triggers a send or a run. A pool claim still does not launch a paid run or seat a guest. This page does not carry that Yes.
 
-**Phase C. Paid cloud adapters.** `cursor-cloud-agent` and `openai` may call their fixed hosts only when `AO_PAID_ENABLED=1`, and only after the owner has approved that key. Missing or any other value means every paid adapter is off, even with a key present. Approving a key does not set the flag. Each launch is code-tier and money-tier and needs its own session confirm. A pool claim or bot text does not launch. `probe()` stays key presence, or one documented free endpoint that counts against the daily cap. Short-lived runs stay hidden. A guest chair still needs a session confirm and a free slot under the cap. Per-provider and per-project spend caps apply. No automatic retry.
+**Phase C. Paid cloud adapters.** `cursor-cloud-agent` and `openai` may call their fixed hosts only when `AO_PAID_ENABLED=1`, and only after the owner's own Yes on that key. Missing or any other value means every paid adapter is off, even with a key present. That Yes does not set the flag. Each launch is code-tier and money-tier and needs its own session confirm. A pool claim or bot text does not launch. `probe()` stays key presence, or one documented free endpoint that counts against the daily cap. Short-lived runs stay hidden. A guest chair still needs a session confirm and a free slot under the cap. Per-provider and per-project spend caps apply. No automatic retry.
 
 ## What this PR does not do
 
