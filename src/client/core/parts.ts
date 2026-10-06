@@ -44,6 +44,7 @@ import type { installVoice } from '../features/voice';
 import type { installWaiting } from '../features/waiting';
 import type { installWalking } from '../features/walking';
 import type { installWorkerActions } from '../features/workers/actions';
+import type { installDeskScreen } from '../features/workers/screenview';
 import type { installWorkerViews } from '../features/workers/views';
 import type { installFocus } from '../input/focus';
 import type { installPointer } from '../input/pointer';
@@ -110,6 +111,8 @@ export interface Parts {
   peers: Made<typeof installPeers>;
   walking: Made<typeof installWalking>;
   views: Made<typeof installWorkerViews>;
+  /** Enlarged desk desktop, opened by clicking a laptop. */
+  screen: Made<typeof installDeskScreen>;
   actions: Made<typeof installWorkerActions>;
   waiting: Made<typeof installWaiting>;
   needsYou: Made<typeof installNeedsYou>;

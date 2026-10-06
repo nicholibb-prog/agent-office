@@ -1,7 +1,8 @@
 // The picture on a desk laptop. The terminal mirror only repaints when a row changes, so a worker
 // that sits on one screen looks frozen. This draws a small desktop instead, and keeps redrawing it
 // from the worker's own status (setStatus / mid-turn) and from lastInput, with no capture of
-// anyone's real desktop. Press E at the desk for the real terminal.
+// anyone's real desktop. Click the laptop to see the same picture large. Press E at the desk for
+// the real terminal.
 import type { WorkerStatus } from '../../../shared/protocol';
 import { isAsleep } from '../../../shared/status';
 import type { ScreenState } from '../../state/store';
@@ -205,4 +206,39 @@ function paintActivity(
   ctx.font = `600 ${Math.max(12, Math.round(h / 10))}px ${FONT}`;
   ctx.fillStyle = '#c8c9d8';
   ctx.fillText(note, x - (live ? (t / 40) % Math.max(80, note.length * 8) : 0), y + base + 10);
+}
+
+/** What the laptop shows before its terminal has printed a line. */
+export interface DeskWorker {
+  status: WorkerStatus;
+  name: string;
+  activity?: string;
+  lastInput?: { at: number };
+  kind?: 'agent' | 'shell';
+  lost?: unknown;
+}
+
+/** The stand-in line on an empty laptop, for a shell or an agent. */
+export function laptopPlaceholder(w: DeskWorker): string {
+  const again = w.kind === 'shell' ? 'restart' : 'resume';
+  if (w.lost) return `🌿 ${w.name}'s worktree was deleted — press E to fix it`;
+  if (w.status === 'offline') return `💤 ${w.name} is asleep — press R to ${again}`;
+  if (w.status === 'exited') return `${w.name} exited`;
+  return 'booting…';
+}
+
+/**
+ * The desktop both the laptop lid and the enlarged overlay paint. `animNow` drives the blink and
+ * the scroll (and the clock on the bar). `wallNow` is only for how recently someone typed.
+ */
+export function workerDesktop(w: DeskWorker, screen: ScreenState | undefined, animNow: number, wallNow: number, still = false): DeskFace {
+  const lines = screenLines(screen);
+  return {
+    ...deskFace(w.status, w.lastInput?.at, wallNow),
+    now: animNow,
+    name: w.name,
+    activity: w.activity,
+    lines: lines.length ? lines : [laptopPlaceholder(w)],
+    still,
+  };
 }
