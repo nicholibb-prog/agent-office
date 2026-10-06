@@ -3,6 +3,7 @@
 // seconds of silence puts it back to idle. Agents stay on their hooks and on OSC progress
 // (see lifecycle.ts and ProviderAdapter.screen). The desk laptops read the status this sets.
 import { providerAdapter } from '../providers/index.js';
+import { clockWork } from './clock.js';
 import { flushScreens, screenText } from './terminal.js';
 import type { Worker, WorkerEvents } from './types.js';
 import type { WorkerStatus } from '../../shared/protocol.js';
@@ -50,6 +51,48 @@ function checkBlocked(w: Worker, setStatus: (status: WorkerStatus) => void) {
     w.info.activity = undefined;
     setStatus('idle');
   }
+}
+
+/** What committing a status still asks the manager for: telling everyone, saving, and catching a new branch. */
+export type StatusFx = {
+  emit(): void;
+  persist(): void;
+  syncBranch(): void;
+};
+
+/**
+ * Applies `status` to a worker: the worked-time clock, the waiting flag, then everyone hears it.
+ * At rest, a branch it made this turn is picked up. Same status twice is a no-op.
+ */
+export function commitStatus(w: Worker, status: WorkerStatus, fx: StatusFx) {
+  if (w.info.status === status) return;
+  if (w.info.status === 'needs_input') w.leftNeedsInputAt = Date.now();
+  clockWork(w.info, status);
+  w.info.status = status;
+  // Done, idle or asleep: it's not acting anything out any more.
+  if (status !== 'working' && status !== 'needs_input') w.info.action = undefined;
+  // Nobody is looking at the terminal right now -> raise the flag (the worker jumps). A worker at the
+  // meeting table that ends its part is waiting on the meeting, not on anyone, so it stays quiet.
+  if (status === 'done' || status === 'needs_input') {
+    w.info.acked = status === 'done' && (w.viewers.size > 0 || !!w.info.meeting);
+    w.info.waitingSince = Date.now();
+  } else w.info.acked = true;
+  fx.emit();
+  // What a restarted office picks the worker back up as, should its terminal outlive this one.
+  if (w.pty?.id || w.dsh) fx.persist();
+  // At rest: it may have made a branch of its own this turn, and opened its PR from there.
+  if (status === 'done' || status === 'idle') fx.syncBranch();
+}
+
+/** Copies who is watching a terminal onto the worker everyone else sees. False when nothing changed. */
+export function syncViewerList(w: Worker): boolean {
+  const names = [...new Set(w.viewers.values())];
+  const ids = [...w.viewers.keys()];
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every((n, i) => n === b[i]);
+  if (same(names, w.info.viewers) && same(ids, w.info.viewerIds)) return false;
+  w.info.viewers = names;
+  w.info.viewerIds = ids;
+  return true;
 }
 
 /** Once a screen interval: shells that have gone quiet sit down, then screens that changed are sent. */

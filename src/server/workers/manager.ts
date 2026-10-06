@@ -24,12 +24,13 @@ import { restoreWorkers, saveWorkers } from './persist.js';
 import { WorkerPrs } from './pr.js';
 import { WIN, binScript, defaultShell, resolveCommand, shellRun, shq, writeOfficeCommands } from './process.js';
 import { CARRY_ON_PROMPT, WorkerTasks } from './tasks.js';
-import { noteShellOutput, tickWorkers } from './presence.js';
+import { commitStatus, noteShellOutput, syncViewerList, tickWorkers } from './presence.js';
 import { fullScreens, newTerm, offlineBanner, type HeadlessTerminal } from './terminal.js';
 import type { HookEnv, OpenedPr, RepoSource, RunAs, Worker, WorkerContext, WorkerEvents, WorkerHandle } from './types.js';
 import { clamp, safeEq, truncate } from './util.js';
 import { COLORS, NAMES, newWorker } from './worker.js';
 import { WorkerTrees, lostMessage } from './worktree.js';
+import { createCrewWatch, settleQuietShell, type CrewWatch } from './crew.js';
 
 const SCREEN_INTERVAL_MS = 250;
 /** How often a steady typist's "last typed" time is refreshed for everyone. */
@@ -70,6 +71,8 @@ export class WorkerManager {
   private scrollback: ScrollbackStore;
   private drops: DropStore;
   private saveTimer: NodeJS.Timeout;
+  /** Bridge crew presence and the WORKING lease (see crew.ts). */
+  private crew: CrewWatch;
   /** How many rows the floor's back office is built out: its desks past that aren't there to hire at (see WING). */
   wing: () => number = () => 0;
 
@@ -93,6 +96,7 @@ export class WorkerManager {
     this.defaultProvider = configuredProvider(agentCmd);
     this.trees = new Worktrees(dir);
     this.statePath = path.join(dataDir, 'workers.json');
+    this.crew = createCrewWatch(this.workers, this.statePath, (w, status) => this.setStatus(w, status), (w) => this.emitUpdate(w));
     // bin/office-workers.js is also the office's MCP server, for the agents that take one.
     const floor: ProviderFloor = { dataDir, mcpScript: binScript('office-workers.js'), dshProfile };
     for (const p of AGENT_PROVIDERS) this.setups[p] = PROVIDERS[p].prepare?.(floor);
@@ -163,6 +167,7 @@ export class WorkerManager {
     // Whoever's worktree was deleted while the office was down stays asleep, marked lost, rather than failing to start.
     for (const w of this.workers.values()) this.worktrees.checkLost(w);
     this.wakeAll();
+    this.crew.start();
     // It may have switched branches while the office was down, its terminal still going.
     void this.syncBranches();
   }
@@ -601,6 +606,7 @@ export class WorkerManager {
     clearInterval(this.screenTimer);
     clearInterval(this.usageTimer);
     clearInterval(this.saveTimer);
+    this.crew.stop();
     for (const w of this.workers.values()) {
       clearTimeout(w.scanTimer);
       this.scanUsage(w);
@@ -906,37 +912,28 @@ export class WorkerManager {
     else if (!busy && (s === 'working' || (s === 'needs_input' && !w.bootBlocked))) this.setStatus(w, 'done');
   }
 
+  applyCrewPresence(crew: Record<string, string>): { applied: string[] } {
+    return this.crew.apply(crew);
+  }
+
+  chatWorking(name: string, text?: string): void {
+    this.crew.chat(name, text);
+  }
+
   private setStatus(w: Worker, status: WorkerStatus) {
-    if (w.info.status === status) return;
-    if (w.info.status === 'needs_input') w.leftNeedsInputAt = Date.now();
-    clockWork(w.info, status);
-    w.info.status = status;
-    // Done, idle or asleep: it's not acting anything out any more.
-    if (status !== 'working' && status !== 'needs_input') w.info.action = undefined;
-    // Nobody is looking at the terminal right now -> raise the flag (the worker jumps). A worker at the
-    // meeting table that ends its part is waiting on the meeting, not on anyone, so it stays quiet.
-    if (status === 'done' || status === 'needs_input') {
-      w.info.acked = status === 'done' && (w.viewers.size > 0 || !!w.info.meeting);
-      w.info.waitingSince = Date.now();
-    } else w.info.acked = true;
-    this.emitUpdate(w);
-    // What a restarted office picks the worker back up as, should its terminal outlive this one.
-    if (w.pty?.id || w.dsh) this.persist();
-    // At rest: it may have made a branch of its own this turn, and opened its PR from there.
-    if (status === 'done' || status === 'idle') void this.worktrees.syncBranch(w);
+    commitStatus(w, status, {
+      emit: () => this.emitUpdate(w),
+      persist: () => this.persist(),
+      syncBranch: () => void this.worktrees.syncBranch(w),
+    });
   }
 
   private syncViewers(w: Worker): boolean {
-    const names = [...new Set(w.viewers.values())];
-    const ids = [...w.viewers.keys()];
-    const same = (a: string[], b: string[]) => a.length === b.length && a.every((n, i) => n === b[i]);
-    if (same(names, w.info.viewers) && same(ids, w.info.viewerIds)) return false;
-    w.info.viewers = names;
-    w.info.viewerIds = ids;
-    return true;
+    return syncViewerList(w);
   }
 
   private emitUpdate(w: Worker) {
+    settleQuietShell(w);
     this.events.update({ ...w.info });
   }
 
