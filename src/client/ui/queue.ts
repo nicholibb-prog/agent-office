@@ -1,5 +1,5 @@
 import './queue.css';
-import type { AgentProvider, QueueTask, Usage } from '../../shared/protocol';
+import { ghBoardHint, ghListsBlock, type AgentProvider, type QueueTask, type Usage } from '../../shared/protocol';
 import type { Net } from '../net';
 import { store } from '../state';
 import { h, openModal, timeAgo, STATUS_LABEL } from './dom';
@@ -155,7 +155,9 @@ export function openQueue(net: Net, actions: QueueActions) {
     const queued = q.tasks.filter((t) => t.status === 'queued');
     const done = q.tasks.filter((t) => t.status === 'done').slice().reverse();
     const m = store.machine;
+    const block = ghListsBlock(store.issues, store.pulls);
     const parts: (HTMLElement | null)[] = [
+      block ? h('div.queue-empty', {}, block, h('br'), h('small', {}, ghBoardHint(block))) : null,
       h(
         'p.note',
         {},
@@ -171,7 +173,7 @@ export function openQueue(net: Net, actions: QueueActions) {
       section('🤖 Working on it', running),
       section('⏳ Up next', queued),
       section('✅ Finished', done, h('button.btn', { type: 'button', onclick: () => net.send({ t: 'queue.clear' }) }, 'Clear')),
-      running.length + queued.length + done.length ? null : h('div.queue-empty', {}, 'Nothing on the queue yet.'),
+      running.length + queued.length + done.length || block ? null : h('div.queue-empty', {}, 'Nothing on the queue yet.'),
     ];
     list.replaceChildren(...parts.filter((n): n is HTMLElement => n !== null));
   };
@@ -184,7 +186,7 @@ export function openQueue(net: Net, actions: QueueActions) {
     full = k;
     render();
   };
-  const unsubs = [store.on('queue', render), store.on('workers', render), store.on('issues', render), store.on('machine', machineChanged)];
+  const unsubs = [store.on('queue', render), store.on('workers', render), store.on('issues', render), store.on('pulls', render), store.on('machine', machineChanged)];
   const tick = setInterval(render, 30_000);
   const modal = openModal(el, {
     doing: '📥 at the queue',
