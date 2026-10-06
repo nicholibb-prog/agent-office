@@ -49,7 +49,8 @@ export function loopbackOrigin(raw: string): { ok: true; origin: string } | { ok
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return { ok: false };
   if (url.username || url.password) return { ok: false };
-  const host = url.hostname.toLowerCase();
+  // Node reports an IPv6 hostname with brackets (`[::1]`).
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
   if (!LOOPBACK.has(host)) return { ok: false };
   // The setting is an origin. A path would let a URL aim at some other route.
   if (url.pathname !== '/' && url.pathname !== '') return { ok: false };
