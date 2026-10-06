@@ -1,0 +1,74 @@
+.hq-roster .body,
+.hq-talk .body,
+.hq-desk .body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.hq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.hq-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}
+
+.hq-who,
+.hq-actions,
+.hq-switch {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.hq-chip {
+  font-size: 0.75rem;
+  text-transform: lowercase;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.hq-chip[data-chip='working'] {
+  background: #2a6f4e;
+}
+.hq-chip[data-chip='blocked'] {
+  background: #8a3a3a;
+}
+.hq-chip[data-chip='switching'] {
+  background: #6a5a20;
+}
+.hq-chip[data-chip='offline'],
+.hq-chip[data-chip='stale'] {
+  opacity: 0.7;
+}
+
+.hq-task,
+.hq-model,
+.hq-line {
+  margin: 0;
+}
+
+.hq-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-height: 8rem;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.hq-age {
+  opacity: 0.7;
+  font-size: 0.8rem;
+}

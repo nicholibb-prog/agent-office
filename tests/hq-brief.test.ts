@@ -175,9 +175,18 @@ test('files keep actionable blocks and status lines, and a tap removes the block
       }),
     );
     const hq = loadHqLocal(path.join(dir, 'workers.json'));
-    assert.equal(hq.seats['desk-1'], 'seat-a');
-    assert.equal(hq.seats['real name'], undefined);
+    assert.equal(hq.deskSeats['desk-1'], 'seat-a');
+    assert.equal(hq.deskSeats['real name'], undefined);
     assert.equal(hq.humanMapsTo, 'operator');
+    // One `seats` object can hold both maps: crew seat ids go to the crew desks, the rest to the seat book.
+    writeFileSync(path.join(dir, 'hq-local.json'), JSON.stringify({ crewDesks: true, seats: { 'seat-1': 'desk-3', okkin: 'desk-4', 'desk-1': 'seat-a' } }));
+    const both = loadHqLocal(path.join(dir, 'workers.json'));
+    assert.deepEqual(both.seats, { 'seat-1': 'desk-3', okkin: 'desk-4' });
+    assert.deepEqual(both.deskSeats, { 'desk-1': 'seat-a' });
+    writeFileSync(
+      path.join(dir, 'hq-local.json'),
+      JSON.stringify({ crewKeysLower: ['seat-a'], seats: { 'desk-1': 'seat-a', 'real name': 'not a seat' }, humanMapsTo: 'operator' }),
+    );
 
     const accepted = saveBlocks(dir, [
       { id: 'b1', seat: 'seat-a', title: 'Approve npm test', kind: 'yesno', actionable: true, at: 20 },
