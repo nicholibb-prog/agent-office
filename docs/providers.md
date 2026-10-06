@@ -157,7 +157,7 @@ Default tier: hidden. A Claude Code run does not get a chair unless the owner pi
 
 Status: `probe()` checks PATH with the same executable check the office already uses (`X_OK` on the resolved command). The command name is fixed as `claude`. The connector has no keys, so it cannot set a path or another command. Missing or not executable: `not_connected`, reason `not connected — needs owner`, `keyPresent: no`. Present: `idle` when nothing is spawned, `working` only while a spawned run is in flight. `probe()` does not spawn and does not make a paid call.
 
-Talk is phase B. It is a tool run and it may cost money. It counts as paid (daily call cap, token cap, and the kill switch) unless the CLI is proven to be on a flat subscription. A PATH hit is not that proof. The proof is a local fact the owner recorded, not a guess from a successful run. Until that proof is on file, spawn happens only when `AO_PAID_ENABLED=1`. Missing, empty, or any other value means `talk()` returns `queued` and nothing is spawned.
+Talk is phase B. It is a tool run and it may cost money. It counts as paid (daily call cap, token cap, and the kill switch) unless the CLI is proven to be on a flat subscription. A PATH hit is not that proof. The proof is a file the owner wrote, not a guess from a successful run: gitignored `.agent-office/claude-cli-flat-subscription.json`, mode `0600`, in the same data directory as `hq-local.json`. The office reads it and does not create it, rewrite it, or log its body. It counts only when it is that path, that mode, and the JSON is `{ "flat": true }` with no other fields. Until that file is present, spawn happens only when `AO_PAID_ENABLED=1`. Missing, empty, or any other value means `talk()` returns `queued` and nothing is spawned.
 
 Spawn rules:
 
@@ -167,13 +167,13 @@ Spawn rules:
 - The child cwd is a fixed sandbox directory for this run, outside the owner's home documents and outside the protected personal folder. The cwd is not taken from the message or from the connector.
 - Triggered only by an owner session, the same session bar as talk. A pool claim, a bot line, or a file change does not spawn.
 - A timeout, an output byte cap, and at most one concurrent run. A second talk while that run is in flight is rejected.
-- The child environment is clean: `PATH` and the minimum the process needs to start. No provider keys, no office session, no bridge token.
+- The child environment is a named allowlist, never a copy of the office process environment. The names are `PATH` and `CLAUDE_CONFIG_DIR` (the CLI's own config-dir variable, so it can find the login it already has). No other name is passed. `HOME` is not passed. No provider keys, no office session, no bridge token. Adding another name needs its own security review.
 
 `probe()` does not spawn and does not make a paid call. It is the PATH check only. When the process exits, status leaves `working`. There is no synthesized assistant line.
 
 Network: none. This adapter does not open a socket.
 
-Env: `PATH` for the parent check. The child gets the clean env above. This adapter does not read a provider key.
+Env: `PATH` for the parent check. The child gets only the allowlist above (`PATH` and `CLAUDE_CONFIG_DIR`). This adapter does not read a provider key, and it does not read the config directory. The directory that `CLAUDE_CONFIG_DIR` names must not be the protected personal folder.
 
 Failure: command missing, kill switch not exactly `AO_PAID_ENABLED=1` while the subscription is unproven, spawn error, timeout, output over the cap, or a non-zero exit with no text. Status stays honest. `talk()` returns `queued` when nothing was spawned. No bot line is written.
 
@@ -243,7 +243,7 @@ Failure: unreadable feed is `offline`. The adapter does not invent titles or a b
 
 | provider | status source | talk path | outbound hosts | key source | paid? | default state | default tier |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| claude-cli | PATH `X_OK` on `claude`; no spawn on probe | phase B `execFile` on talk; queued if it cannot start | none | none (child env is PATH and the minimum) | yes, unless a flat subscription is proven | `not_connected` until the CLI is on PATH; off unless `AO_PAID_ENABLED=1` or that proof exists | hidden |
+| claude-cli | PATH `X_OK` on `claude`; no spawn on probe | phase B `execFile` on talk; queued if it cannot start | none | none (child env is only `PATH` and `CLAUDE_CONFIG_DIR`) | yes, unless `.agent-office/claude-cli-flat-subscription.json` proves a flat plan | `not_connected` until the CLI is on PATH; off unless `AO_PAID_ENABLED=1` or that file exists | hidden |
 | cursor-cloud-agent | key presence, or one documented free endpoint in phase C; no paid probe | queued until a session-confirmed launch | Cursor API host, https, phase C only; none before that | Windows Credential Manager; user env var is fallback only | yes | off unless `AO_PAID_ENABLED=1` | hidden |
 | openai | key presence, or one documented free endpoint in phase C; no paid probe | queued until a session-confirmed call | `api.openai.com` only, phase C; none before that | Windows Credential Manager; user env var is fallback only | yes | off unless `AO_PAID_ENABLED=1` | hidden |
 | grok-bot-bridge | existing crew-status heartbeat for that seat id | existing outbox and inbox | loopback `127.0.0.1` bridge only | none (shared bridge token is not a bot token) | no | `offline` until a real heartbeat | resident |
@@ -321,13 +321,40 @@ Retention: transcripts and the spend log are reviewed and pruned at 30 days. Dai
 
 A seat is WORKING only while its adapter has a run in flight. A project is `active` only while a real run exists. A count on the summary is the number of those real states. Empty, unknown, and not-yet-loaded are not shown as active or WORKING.
 
+## Task agent feed
+
+Phase B. Hidden task agents get no chair. Cursor cloud agent runs, Claude Code runs, and any other hidden run show in this panel instead of on the floor.
+
+The panel is a live feed styled like a trading-floor ticker, with a clean, calm, feng-shui look: a soft palette, gentle motion, and no flashing. Nothing blinks, strobes, or snaps between alarm colors.
+
+Each run in the ticker shows a loading spinner while it is actually running. The spinner stops when a real finish event arrives.
+
+- A real success becomes a check mark.
+- A real failure becomes a failed mark, not a check.
+- A real cancel becomes a cancelled mark, not a check.
+- A timeout from the adapter is a failure, not a check.
+
+A missing event does not become a check. The office does not invent a finish.
+
+When a run finishes, its ticker row drops into a persistent list below the ticker. That list stays on screen, scrolls, and does not clear when the ticker moves on. Each row is clickable and opens details for that run only: project, provider, started time, finished time, status, and a link. The link renders only when it is `http:` or `https:` with no userinfo, using `rel="noopener noreferrer"`. Any other scheme, including `javascript:`, is omitted. Opening details does not launch, talk, or spawn.
+
+The visible list resets on a fixed weekly rollover: Monday 00:00 in the office host's local timezone, the zone configured on that machine. The repo does not name a city, an offset, or a zone. A run whose finish time is before that Monday moves into the local archive and leaves the panel. The archive is gitignored `.agent-office/task-feed-archive.jsonl`, mode `0600`, and it is not returned to the panel. Archive rows follow the same 30-day review and prune as other transcripts. The office does not show them after the rollover.
+
+The feed has to hold hundreds or thousands of runs. The panel virtualizes the list (it draws only the rows on screen). The server pages the current week. Filter by project and search run on the server, on the requested page, not by shipping every run to the browser. Memory does not keep an unbounded array of runs.
+
+Status comes only from a real adapter event or an existing bridge event. A row is not synthesized from a clock, a chat line, or a desk card.
+
+Feed files stay local: gitignored `.agent-office/task-feed.json`, mode `0600`, current week only, same retention rules. Run titles and bot text are data. The panel renders them as escaped text. It does not parse them as HTML, does not evaluate them, and does not treat them as a tool call.
+
+No new listener and no new port. The panel reads through the existing office server. The feed is read-only for bots: a bot token cannot post a row, edit a row, or confirm a launch. A feed row never starts a run. A launch still needs the owner session confirm.
+
 ## Phased rollout
 
 Each phase is its own draft PR, then a security Crit, then the owner's Yes. A later phase does not start inside an earlier PR. No phase merges on its own from this plan.
 
 **Phase A. Plugin seats (additive).** New `src/server/providers/seats/` registry. Resident entries, and guest requests that still need a session confirm. Existing crew desks, Okkin, the bridge, and kavi are not edited. No new outbound network. No paid call, and `probe()` does not make one. `cursor-cloud-agent` and `openai`, if a file exists at all, are skeletons: `probe()` is `not_connected`, and tests assert `fetch` is never called. Task agents are not seated and are not spawned yet. `guestChairCap` is enforced. A file edit does not seat a guest. Acceptance includes: each adapter's status mapping; a missing provider is never WORKING; WORKING only while an in-flight promise is pending and clears on error; the registry rejects an unknown provider; an unknown connector or entry key, including a nested one, refuses the whole entry; a string that looks like a key refuses the entry; a plugin `displayName` that fails the say-name fold is not shown; a task run does not create a chair; a guest request past the cap stays hidden; the current honesty tests (offline queued notice, no fake WORKING, no synthesized bot lines), Okkin model switch, bridge auth, rate limits, and 413 still pass without modification.
 
-**Phase B. Project registry and summary board.** The project record, the lazy gitignored loader, and the summary (counts, Needs-owner, active runs, filter and search). Hidden runs appear here and only here. `repo` and `links` render only as `http:` or `https:` anchors with `rel="noopener noreferrer"`. Local `claude-cli` may spawn on talk into a hidden run, under the paid spawn rules in Per-provider design, and still with no chair unless a session confirm pinned a guest. No cloud paid call is added in this phase. Storage and retention from Scale direction land here. The floor still draws only residents, seated guests, and the active subset.
+**Phase B. Project registry, summary board, and task agent feed.** The project record, the lazy gitignored loader, the summary (counts, Needs-owner, active runs, filter and search), and the [Task agent feed](#task-agent-feed). Hidden runs appear in that feed and on the summary, not as chairs. `repo` and `links` render only as `http:` or `https:` anchors with `rel="noopener noreferrer"`. Local `claude-cli` may spawn on talk into a hidden run, under the paid spawn rules in Per-provider design (named env allowlist, flat-subscription file), and still with no chair unless a session confirm pinned a guest. No cloud paid call is added in this phase. Storage and retention from Scale direction land here. The floor still draws only residents, seated guests, and the active subset.
 
 **Phase C. Paid cloud adapters.** `cursor-cloud-agent` and `openai` may call their fixed hosts only when `AO_PAID_ENABLED=1`, and only after the owner has approved that key. Missing or any other value means every paid adapter is off, even with a key present. Approving a key does not set the flag. Each launch is code-tier and money-tier and needs its own session confirm. A pool claim or bot text does not launch. `probe()` stays key presence, or one documented free endpoint that counts against the daily cap. Short-lived runs stay hidden. A guest chair still needs a session confirm and a free slot under the cap. Per-provider and per-project spend caps apply. No automatic retry.
 
