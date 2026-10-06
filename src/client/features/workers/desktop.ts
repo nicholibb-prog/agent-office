@@ -257,6 +257,7 @@ export interface DeskWorker {
 export function laptopPlaceholder(w: DeskWorker): string {
   const again = w.kind === 'shell' ? 'restart' : 'resume';
   if (w.lost) return `🌿 ${w.name}'s worktree was deleted — press E to fix it`;
+  if (w.status === 'offline' && w.kind === 'crew') return `💤 ${w.name} is offline`;
   if (w.status === 'offline') return `💤 ${w.name} is asleep — press R to ${again}`;
   if (w.status === 'exited') return `${w.name} exited`;
   return 'booting…';

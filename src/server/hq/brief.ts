@@ -53,7 +53,7 @@ function writeJson(file: string, body: unknown) {
 }
 
 export function bookOf(hq: HqLocal): SeatBook {
-  return { seats: hq.seats, crewKeysLower: hq.crewKeysLower };
+  return { seats: hq.deskSeats, crewKeysLower: hq.crewKeysLower };
 }
 
 export function loadBook(dataDir: string): { hq: HqLocal; book: SeatBook } {
