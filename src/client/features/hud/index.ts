@@ -3,6 +3,7 @@
  * and F to hang a picture; the project in the corner (click it for the floors); Settings, and your
  * character.
  */
+import { ghListsBlock } from '../../../shared/protocol';
 import { ROOF } from '../../../shared/rooftop';
 import type { Ctx } from '../../core/context';
 import type { CoreState } from '../../core/ctx';
@@ -49,9 +50,9 @@ export function installHud(ctx: Ctx, core: CoreState, parts: HudParts) {
   const noMedia = () => (window.isSecureContext ? undefined : 'Voice and screen sharing need HTTPS or localhost — use a TLS proxy, --self-signed, or an SSH tunnel');
   const hud = mountHud(
     [
-      { id: 'issues', icon: '📌', label: 'Issues', section: 'Open', count: () => store.issues.items.filter((i) => i.state === 'OPEN').length, run: () => openBoard('issues', net, actions.boardActions()) },
-      { id: 'pulls', icon: '🔀', label: 'Pull requests', section: 'Open', count: () => store.pulls.items.filter((p) => p.state === 'OPEN').length, run: () => openBoard('pulls', net, actions.boardActions()) },
-      { id: 'queue', icon: '📋', label: 'Task queue', section: 'Open', count: () => store.queue.tasks.filter((t) => t.status !== 'done').length, title: () => 'Issues and tasks waiting for a worker', run: waiting.showQueue },
+      { id: 'issues', icon: '📌', label: 'Issues', section: 'Open', count: () => (ghListsBlock(store.issues, store.pulls) ? 0 : store.issues.items.filter((i) => i.state === 'OPEN').length), title: () => ghListsBlock(store.issues, store.pulls) ?? 'GitHub issues on this floor', run: () => openBoard('issues', net, actions.boardActions()) },
+      { id: 'pulls', icon: '🔀', label: 'Pull requests', section: 'Open', count: () => (ghListsBlock(store.issues, store.pulls) ? 0 : store.pulls.items.filter((p) => p.state === 'OPEN').length), title: () => ghListsBlock(store.issues, store.pulls) ?? 'Pull requests on this floor', run: () => openBoard('pulls', net, actions.boardActions()) },
+      { id: 'queue', icon: '📋', label: 'Task queue', section: 'Open', count: () => store.queue.tasks.filter((t) => t.status !== 'done').length, title: () => ghListsBlock(store.issues, store.pulls) ?? 'Issues and tasks waiting for a worker', run: waiting.showQueue },
       { id: 'services', icon: '🌐', label: 'Services', section: 'Open', count: () => store.services.items.length, title: () => 'Web servers the workers are running', run: () => openServices() },
       { id: 'whiteboard', icon: '📝', label: 'Whiteboard', section: 'Open', title: () => 'Draw together, live', run: () => openWhiteboard(net) },
       // Up on the top bar while a meeting is on: what's being worked through in the meeting room.
