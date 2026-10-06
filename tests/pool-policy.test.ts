@@ -7,6 +7,7 @@ import path from 'node:path';
 import { Accounts } from '../src/server/accounts.js';
 import { WorkPool } from '../src/server/pool/pool.js';
 import { createOkkinPuller } from '../src/server/pool/puller.js';
+import { visiblePoolText } from '../src/client/features/work-pool/bidi.js';
 import { claimRefusal, enforcedLevel, normalizePoolText, type PoolActor, type PoolJob, type PoolPolicy } from '../src/shared/pool.js';
 
 const ADA: PoolActor = { id: 'acct-ada', label: 'Ada' };
@@ -194,6 +195,80 @@ test('channel payment and network words keep their tier', () => {
   assert.equal(enforcedLevel(1, 'notes.py'), 4);
   assert.equal(enforcedLevel(1, 'tidy the README wording'), 1);
   assert.equal(enforcedLevel(2, 'sort the queue by age'), 2);
+});
+
+test('format and ignorable characters do not split a word', () => {
+  assert.equal(enforcedLevel(1, 's\u00ADend'), 7);
+  assert.equal(enforcedLevel(1, 's\uFE0Fend'), 7);
+  assert.equal(enforcedLevel(1, 's\uFE00end'), 7);
+  assert.equal(enforcedLevel(1, 'to\u2063ken'), 6);
+  assert.equal(enforcedLevel(1, 'to\u2062ken'), 6);
+  assert.equal(enforcedLevel(1, 's\u200Bend'), 7);
+  assert.equal(enforcedLevel(1, 's\u061Cend'), 7);
+  assert.equal(enforcedLevel(1, 's\u180Eend'), 7);
+  assert.equal(enforcedLevel(1, 's\u{1D173}end'), 7);
+  assert.equal(enforcedLevel(1, 's\u{E0001}end'), 7);
+  assert.equal(enforcedLevel(1, 's\u{E0100}end'), 7);
+  assert.equal(normalizePoolText('s\u00ADend'), 'send');
+});
+
+test('latin letters that do not decompose keep their tier', () => {
+  assert.equal(enforcedLevel(1, 'pa\u00DFword'), 6);
+  assert.equal(enforcedLevel(1, 't\u00F8ken'), 6);
+  assert.equal(enforcedLevel(1, '\u1D1B\u1D0F\u1D0B\u1D07\u0274'), 6);
+  assert.equal(enforcedLevel(1, 'caf\u00E9 menu translation'), 1);
+  assert.equal(enforcedLevel(1, 'se\u00F1or notes'), 1);
+  assert.equal(enforcedLevel(1, 'na\u00EFve draft'), 1);
+  assert.equal(enforcedLevel(1, 't\u00F0ken'), 4);
+  assert.equal(enforcedLevel(1, '\u24C8end'), 7);
+  assert.equal(enforcedLevel(1, '\u{1F142}end'), 7);
+  assert.equal(enforcedLevel(1, '\u{1F182}\u{1F174}\u{1F17D}\u{1F173}'), 7);
+  assert.equal(enforcedLevel(1, '\uFF53\uFF45\uFF4E\uFF44'), 7);
+});
+
+test('character references are scored once', () => {
+  assert.equal(enforcedLevel(1, '&#115;end'), 7);
+  assert.equal(enforcedLevel(1, '&#x73;end'), 7);
+  assert.equal(enforcedLevel(1, '%73end'), 7);
+  assert.equal(enforcedLevel(1, '&amp;#115;end'), 1);
+  assert.equal(enforcedLevel(1, 'tidy the shelf'), 1);
+});
+
+test('erase, messengers, and bare domains raise the floor', () => {
+  assert.equal(enforcedLevel(1, 'erase the draft'), 7);
+  assert.equal(enforcedLevel(1, 'destroy the draft'), 7);
+  assert.equal(enforcedLevel(1, 'whatsapp'), 7);
+  assert.equal(enforcedLevel(1, 'telegram'), 7);
+  assert.equal(enforcedLevel(1, 'signal-message'), 7);
+  assert.equal(enforcedLevel(1, 'example.com'), 6);
+  assert.equal(enforcedLevel(1, 'notes.py'), 4);
+});
+
+test('benign whole words stay low and disguised forms do not', () => {
+  assert.equal(enforcedLevel(1, 'textbook'), 1);
+  assert.equal(enforcedLevel(1, 'text-book'), 7);
+  assert.equal(enforcedLevel(1, 'textbooks'), 7);
+  assert.equal(enforcedLevel(1, 'mailbox'), 1);
+  assert.equal(enforcedLevel(1, 'mail-box'), 7);
+  assert.equal(enforcedLevel(1, 'forward planning'), 1);
+  assert.equal(enforcedLevel(1, 'forward'), 7);
+  assert.equal(enforcedLevel(1, 'forward-planning'), 7);
+  assert.equal(enforcedLevel(1, 'author'), 1);
+  assert.equal(enforcedLevel(1, 'authors'), 6);
+  assert.equal(enforcedLevel(1, 'keyboard'), 1);
+  assert.equal(enforcedLevel(1, 'key'), 6);
+  assert.equal(enforcedLevel(1, 'dmv'), 1);
+  assert.equal(enforcedLevel(1, 'dm'), 7);
+  assert.equal(enforcedLevel(1, 't3xtbook'), 7);
+});
+
+test('approval text shows bidi controls as markers', () => {
+  const shown = visiblePoolText('\u202Ednes');
+  assert.equal(shown, '\u27E8RLO\u27E9dnes');
+  assert.equal(shown.includes('\u202E'), false);
+  assert.equal(visiblePoolText('a\u200Fb'), 'a\u27E8RLM\u27E9b');
+  assert.equal(visiblePoolText('\u202A\u202B\u202C\u202D\u2066\u2067\u2068\u2069\u200E\u061C'), '\u27E8LRE\u27E9\u27E8RLE\u27E9\u27E8PDF\u27E9\u27E8LRO\u27E9\u27E8LRI\u27E9\u27E8RLI\u27E9\u27E8FSI\u27E9\u27E8PDI\u27E9\u27E8LRM\u27E9\u27E8ALM\u27E9');
+  assert.equal(visiblePoolText('send'), 'send');
 });
 
 test('keyword checks stay linear on long text', () => {

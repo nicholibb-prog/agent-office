@@ -1,5 +1,6 @@
 // Keyword floor for the work pool. Every pass is a straight scan: no nested quantifiers.
 // The floor is the highest tier among a few spellings of the same text.
+import { casefoldStrip, decodeOnce, domainFloor, foldConfusables, stripIgnorable } from './pool-fold.js';
 
 const PREFIXES = ['force', 'auto', 'pre', 'git', 're', 'un'];
 
@@ -7,7 +8,7 @@ const PREFIXES = ['force', 'auto', 'pre', 'git', 're', 'un'];
 const SEVEN = [
   'merge', 'email', 'message', 'post', 'reply', 'slack', 'send', 'pay', 'paid', 'invoice', 'transfer', 'wire',
   'purchase', 'buy', 'spend', 'delet', 'remove', 'wipe', 'dm', 'sms', 'tweet', 'text', 'venmo', 'zelle', 'cashapp',
-  'order', 'mail', 'forward', 'money', 'charge', 'donate', 'bitcoin', 'iban',
+  'order', 'mail', 'forward', 'money', 'charge', 'donate', 'bitcoin', 'iban', 'erase', 'destroy', 'whatsapp', 'telegram',
 ];
 /** Code, secrets, shell, and network. */
 const SIX = [
@@ -25,6 +26,9 @@ const PHRASES: readonly [string, number][] = [
 
 const EXTS = new Set(['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'py', 'pyw', 'sh', 'bash', 'ps1', 'json', 'env', 'yml', 'yaml', 'rb', 'go', 'rs', 'php', 'sql', 'toml', 'ini', 'xml', 'html', 'htm', 'css', 'vue', 'svelte']);
 
+/** Whole words that stay at their own level. A compound or a disguised spelling does not. */
+const EXACT = new Set(['textbook', 'mailbox', 'author', 'keyboard', 'dmv']);
+
 const STEMS: readonly [string, number][] = [
   ...SEVEN.map((s) => [s, 7] as [string, number]),
   ...SIX.map((s) => [s, 6] as [string, number]),
@@ -38,45 +42,6 @@ for (const pair of STEMS) {
   BY_FIRST.set(pair[0][0], list);
 }
 for (const list of BY_FIRST.values()) list.sort((a, b) => b[1] - a[1]);
-
-const CONFUSABLES = new Map<number, string>();
-
-function mapChars(from: string, to: string) {
-  const src = [...from];
-  const dst = [...to];
-  if (src.length !== dst.length) throw new Error('confusable map length');
-  for (let i = 0; i < src.length; i++) CONFUSABLES.set(src[i].codePointAt(0)!, dst[i]);
-}
-
-// Greek and Cyrillic capitals and lowers that spell Latin words (nu → n, upsilon → y, so TOKEN and KEY survive).
-mapChars('ΑΒΕΖΗΙΚΜΝΟΡΤΥΧ', 'ABEZHIKMNOPTYX');
-mapChars('αβεζηικμνορτυχ', 'abezhikmnoptyx');
-mapChars('АВЕКМНОРСТУХ', 'ABEKMHOPCTYX');
-mapChars('авекмнорстух', 'abekmhopctyx');
-mapChars('ЅѕІіЈјҺһԀԁ', 'SsIiJjHhDd');
-// Lisu SA E NA DA, which spell SEND.
-CONFUSABLES.set(0xa4e2, 's');
-CONFUSABLES.set(0xa4f0, 'e');
-CONFUSABLES.set(0xa4e0, 'n');
-CONFUSABLES.set(0xa4d3, 'd');
-
-function isMark(cp: number): boolean {
-  if (cp < 0x300) return false;
-  if (cp <= 0x36f) return true;
-  if (cp >= 0x1ab0 && cp <= 0x1aff) return true;
-  if (cp >= 0x1dc0 && cp <= 0x1dff) return true;
-  if (cp >= 0x20d0 && cp <= 0x20ff) return true;
-  if (cp >= 0xfe20 && cp <= 0xfe2f) return true;
-  return false;
-}
-
-function isFormat(cp: number): boolean {
-  if (cp === 0xfeff || cp === 0x200b || cp === 0x200c || cp === 0x200d || cp === 0x2060) return true;
-  if (cp >= 0x200e && cp <= 0x200f) return true;
-  if (cp >= 0x202a && cp <= 0x202e) return true;
-  if (cp >= 0x2066 && cp <= 0x2069) return true;
-  return false;
-}
 
 function isAsciiWord(cp: number): boolean {
   return (cp >= 48 && cp <= 57) || (cp >= 65 && cp <= 90) || (cp >= 97 && cp <= 122);
@@ -105,49 +70,6 @@ function letterScript(cp: number): 'latin' | 'greek' | 'cyrillic' | 'cherokee' |
   if (cp >= 0xa4d0 && cp <= 0xa4ff) return 'lisu';
   if ((cp >= 0x2c60 && cp <= 0x2c7f) || (cp >= 0xa720 && cp <= 0xa7ff)) return 'latin';
   return UNICODE_LETTER.test(String.fromCodePoint(cp)) ? 'other' : null;
-}
-
-function stripCf(text: string): string {
-  if (!hasFormat(text)) return text;
-  let out = '';
-  for (const ch of text) if (!isFormat(ch.codePointAt(0)!)) out += ch;
-  return out;
-}
-
-function hasFormat(text: string): boolean {
-  for (let i = 0; i < text.length; i++) if (isFormat(text.codePointAt(i)!)) return true;
-  return false;
-}
-
-function foldConfusables(text: string): string {
-  if (!hasConfusable(text)) return text;
-  let out = '';
-  for (const ch of text) out += CONFUSABLES.get(ch.codePointAt(0)!) ?? ch;
-  return out;
-}
-
-function hasConfusable(text: string): boolean {
-  for (let i = 0; i < text.length; ) {
-    const cp = text.codePointAt(i)!;
-    if (CONFUSABLES.has(cp)) return true;
-    i += cp > 0xffff ? 2 : 1;
-  }
-  return false;
-}
-
-/** Case-fold first, then drop combining marks, so Turkish İ becomes i and café becomes cafe. */
-function casefoldStrip(text: string): string {
-  const lower = text.toLowerCase();
-  let high = false;
-  for (let i = 0; i < lower.length; i++) if (lower.charCodeAt(i) > 127) {
-    high = true;
-    break;
-  }
-  if (!high) return lower;
-  const folded = lower.normalize('NFKD');
-  let out = '';
-  for (const ch of folded) if (!isMark(ch.codePointAt(0)!)) out += ch;
-  return out;
 }
 
 /** A run of single letters with any non-letter gap between them becomes one word. Longer words stay. */
@@ -372,24 +294,87 @@ function wordTier(word: string): number {
   return best;
 }
 
-function score(text: string): number {
-  let best = 1;
-  const flat = squeeze(text);
-  for (const [phrase, tier] of PHRASES) if (flat.includes(phrase)) best = Math.max(best, tier);
-  if (best === 7 && hasCodeExt(text)) return 7;
+/** Exception words that already stand alone in the folded text, before separators or letter gaps close. */
+function exactHits(text: string): Set<string> {
+  const hits = new Set<string>();
   let word = '';
   const end = () => {
-    if (!word) return;
-    best = Math.max(best, wordTier(word));
+    if (EXACT.has(word)) hits.add(word);
     word = '';
   };
-  for (const ch of flat) {
-    const cp = ch.codePointAt(0)!;
-    if (isAsciiWord(cp)) word += ch;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (isAsciiWord(c)) word += text[i];
+    else end();
+  }
+  end();
+  return hits;
+}
+
+/** 'forward planning' with whitespace between the words. A hyphen is a different spelling. */
+function hasForwardPlanning(text: string): boolean {
+  const flat = squeeze(text);
+  let i = 0;
+  while (i < flat.length) {
+    while (i < flat.length && flat.charCodeAt(i) === 32) i++;
+    if (i >= flat.length) break;
+    const start = i;
+    while (i < flat.length && isAsciiWord(flat.charCodeAt(i))) i++;
+    if (i === start) {
+      i++;
+      continue;
+    }
+    if (flat.slice(start, i) !== 'forward' || flat.charCodeAt(i) !== 32) continue;
+    let j = i + 1;
+    while (j < flat.length && flat.charCodeAt(j) === 32) j++;
+    const n = j;
+    while (j < flat.length && isAsciiWord(flat.charCodeAt(j))) j++;
+    if (flat.slice(n, j) === 'planning') return true;
+    i = j;
+  }
+  return false;
+}
+
+function score(text: string, hits: Set<string>, phrase: boolean): number {
+  let best = 1;
+  const flat = squeeze(text);
+  for (const [phraseTier, tier] of PHRASES) if (flat.includes(phraseTier)) best = Math.max(best, tier);
+  let word = '';
+  let held = false;
+  const commit = (w: string) => {
+    if (!w || hits.has(w)) return;
+    best = Math.max(best, wordTier(w));
+  };
+  const end = () => {
+    if (!word) return;
+    if (phrase && held) {
+      held = false;
+      if (word === 'planning') {
+        word = '';
+        return;
+      }
+      commit('forward');
+    }
+    if (phrase && word === 'forward') {
+      held = true;
+      word = '';
+      return;
+    }
+    commit(word);
+    word = '';
+  };
+  for (let i = 0; i < flat.length; i++) {
+    const c = flat.charCodeAt(i);
+    if (c > 127) {
+      const cp = flat.codePointAt(i)!;
+      if (cp > 0xffff) i++;
+      end();
+    } else if (isAsciiWord(c)) word += flat[i];
     else end();
     if (best === 7) break;
   }
   end();
+  if (held) commit('forward');
   if (hasCodeExt(text)) best = Math.max(best, 4);
   return best;
 }
@@ -453,7 +438,41 @@ function scriptFloor(text: string): number {
 }
 
 function prepared(text: string): string {
-  return foldConfusables(stripCf(text.normalize('NFKC')));
+  return foldConfusables(stripIgnorable(text.normalize('NFKC')));
+}
+
+/** A Latin word that still has a non-ASCII letter after folding. */
+function latinResidue(text: string): number {
+  let high = false;
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) > 127) {
+    high = true;
+    break;
+  }
+  if (!high) return 0;
+  let latin = false;
+  let odd = false;
+  let other = false;
+  let hit = false;
+  const flush = () => {
+    if (latin && odd && !other) hit = true;
+    latin = false;
+    odd = false;
+    other = false;
+  };
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!;
+    const script = letterScript(cp);
+    if (!script) {
+      flush();
+      continue;
+    }
+    if (script === 'latin') {
+      latin = true;
+      if (cp > 127) odd = true;
+    } else other = true;
+  }
+  flush();
+  return hit ? 4 : 0;
 }
 
 function lowered(text: string): string {
@@ -468,24 +487,34 @@ export function normalizePoolText(text: string): string {
   return joinSeparators(collapseLetterSpacing(lowered(prepared(text))));
 }
 
-/** Highest keyword tier. No gated word stays at 1. */
-export function keywordFloor(text: string): number {
-  const stripped = stripCf(text.normalize('NFKC'));
+function floorOnce(text: string): number {
+  const stripped = stripIgnorable(text.normalize('NFKC'));
   const script = scriptFloor(stripped);
   const raw = foldConfusables(stripped);
   const base = lowered(raw);
+  const hits = exactHits(base);
+  const phrase = hasForwardPlanning(base);
   const spaced = collapseLetterSpacing(lowered(spaceSeparators(splitCamel(raw))));
   const joined = joinSeparators(collapseLetterSpacing(base));
-  let best = Math.max(script, score(joined), score(spaced), hasCodeExt(base) ? 4 : 0);
+  let best = Math.max(script, latinResidue(base), domainFloor(base, EXTS), score(joined, hits, phrase), score(spaced, hits, phrase), hasCodeExt(base) ? 4 : 0);
   if (best === 7) return 7;
   if (needsLeet(raw)) {
     for (const one of ['l', 'i'] as const) {
       const leet = applyLeet(raw, one);
-      const leetJoined = joinSeparators(collapseLetterSpacing(lowered(leet)));
+      const leetBase = lowered(leet);
+      const leetJoined = joinSeparators(collapseLetterSpacing(leetBase));
       const leetSpaced = collapseLetterSpacing(lowered(spaceSeparators(splitCamel(leet))));
-      best = Math.max(best, score(leetJoined), score(leetSpaced));
+      best = Math.max(best, domainFloor(leetBase, EXTS), score(leetJoined, hits, phrase), score(leetSpaced, hits, phrase));
       if (best === 7) return 7;
     }
   }
   return best;
+}
+
+/** Highest keyword tier. The decoded spelling is scored once, and the higher result wins. */
+export function keywordFloor(text: string): number {
+  const once = floorOnce(text);
+  if (once === 7) return 7;
+  const decoded = decodeOnce(text);
+  return decoded === text ? once : Math.max(once, floorOnce(decoded));
 }

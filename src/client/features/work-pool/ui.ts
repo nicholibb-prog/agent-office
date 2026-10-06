@@ -2,6 +2,7 @@ import './ui.css';
 import type { PoolCard } from '../../../shared/pool';
 import { store } from '../../state';
 import { h, openModal, toast } from '../../ui/dom';
+import { visiblePoolText } from './bidi';
 
 interface JobText {
   id: string;
@@ -71,7 +72,7 @@ export function openPoolApproval() {
       target.textContent = '';
       return;
     }
-    body.textContent = job.body;
+    body.textContent = visiblePoolText(job.body);
     hashLine.textContent = job.hash;
     target.textContent = `Target: ${job.targetBot || '—'}`;
     arm(job);
