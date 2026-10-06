@@ -4,6 +4,7 @@
 import type { Route } from '../router.js';
 import { agentRoutes } from './agents.js';
 import { authRoutes } from './auth.js';
+import { bridgeRoutes } from './bridge.js';
 import { fileRoutes } from './files.js';
 import { githubRoutes } from './github.js';
 import { pageRoutes } from './pages.js';
@@ -20,6 +21,8 @@ export const routes: readonly Route[] = [
   authRoutes.link,
   authRoutes.logout,
   pageRoutes.health,
+  bridgeRoutes.statusGet,
+  bridgeRoutes.statusPost,
   pageRoutes.assets,
   pageRoutes.login,
   pageRoutes.claim,

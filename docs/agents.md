@@ -72,6 +72,18 @@ OpenCode metrics come from assistant-message token/cost records exposed by its p
 
 DeepSeek Harness metrics come from ACP `usage_update`: tokens in context and the window's size, shown per worker and for the current desks, plus a session cost only when the harness reports one. The daily budget and historical ledger remain Claude-only.
 
+## Desk status from outside the worker
+
+Hooks report what the process at the desk is doing. A bot whose turn happens somewhere else (Grok Bot, another Cursor agent) can push the desk to match. On this machine:
+
+```bash
+curl -s -X POST http://127.0.0.1:4600/api/bridge/status \
+  -H 'content-type: application/json' \
+  -d '{"name":"george","status":"working"}'
+```
+
+`status` is `working` or `idle`. `working` seats that worker at the desk they already have. `idle` clears WORKING. The office does not hire a desk for a name it doesn't have, and it does not mark a parked worker (offline, exited, or no process) as working. Prefer this push. A poller on the same machine, if the bot cannot call out, POSTs the same body when it sees a turn start or end. `GET /api/bridge/status` lists the desks. There is no session cookie; the connection has to come from this machine. See [Desk status from this machine](../README.md#desk-status-from-this-machine).
+
 ## The office's prompts
 
 Everything the office tells a worker by itself can be rewritten in ⚙️ Settings → **🤖 Workers** → **📝 Edit the prompts…**: what **🤖 Hand to a worker**, **🔍 Review**, **Fix up & merge**, **Fix conflicts & merge** and **✍️ Ask a worker** send from the boards, what a meeting about an issue or a review panel starts with, the note the queue adds to a worktree task, the three board agents' briefs, every part the meeting room hands out, and the instructions for the model that writes the signs over workers' heads. Each one lists its `{{placeholders}}` (the issue number, the PR's branch, the file a meeting waits for…), which the office fills in when it sends it, and warns when one the office counts on is missing. **↺ Default** puts the office's own wording back. Admins edit them; they're the same on every floor and kept in `.agent-office/prompts.json` with the Default worker.

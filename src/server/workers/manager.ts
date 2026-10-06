@@ -24,7 +24,9 @@ import { restoreWorkers, saveWorkers } from './persist.js';
 import { WorkerPrs } from './pr.js';
 import { WIN, binScript, defaultShell, resolveCommand, shellRun, shq, writeOfficeCommands } from './process.js';
 import { CARRY_ON_PROMPT, WorkerTasks } from './tasks.js';
-import { flushScreens, fullScreens, newTerm, offlineBanner, screenText, type HeadlessTerminal } from './terminal.js';
+import { noteBlocked } from './blocked.js';
+import { deskLive, pushDeskStatus } from './crew.js';
+import { flushScreens, fullScreens, newTerm, offlineBanner, type HeadlessTerminal } from './terminal.js';
 import type { HookEnv, OpenedPr, RepoSource, RunAs, Worker, WorkerContext, WorkerEvents, WorkerHandle } from './types.js';
 import { clamp, safeEq, truncate } from './util.js';
 import { COLORS, NAMES, newWorker } from './worker.js';
@@ -993,28 +995,18 @@ export class WorkerManager {
     return fullScreens(this.workers.values());
   }
 
-  /**
-   * An agent can sit at its prompt without being usable: Claude stuck on a first-run screen, or not
-   * signed in on this machine (see ProviderAdapter.screen). Flag that as needing a human, and clear
-   * it once the screen moves on.
-   */
   private checkBlocked(w: Worker) {
-    const blockedBy = w.info.kind === 'agent' ? providerAdapter(w.info.provider)?.screen?.blocked : undefined;
-    if (!w.term || !blockedBy) return;
-    const s = w.info.status;
-    if (s !== 'starting' && s !== 'idle' && !(w.bootBlocked && s === 'needs_input')) return;
-    // Only this run's output counts: a "Not logged in" in the scrollback from before is old news.
-    const text = screenText(w.term, w.term.buffer.active.type === 'normal' ? Math.max(0, w.fresh?.line ?? 0) : 0);
-    const blocked = blockedBy(text, s === 'starting' || !!w.bootBlocked);
-    if (blocked && s !== 'needs_input') {
-      w.bootBlocked = true;
-      w.info.activity = blocked;
-      this.setStatus(w, 'needs_input');
-    } else if (!blocked && w.bootBlocked && s === 'needs_input') {
-      w.bootBlocked = false;
-      w.info.activity = undefined;
-      this.setStatus(w, 'idle');
-    }
+    noteBlocked(w, (status) => this.setStatus(w, status));
+  }
+
+  /** A process is running at this desk. A parked offline worker has none. */
+  live(id: string): boolean {
+    return deskLive(this.workers.get(id));
+  }
+
+  /** Loopback crew report: working seats a live worker; idle clears WORKING. Parked desks stay put. */
+  reportStatus(id: string, status: 'working' | 'idle'): WorkerStatus | 'parked' | 'missing' {
+    return pushDeskStatus(this.workers.get(id), status, (w, next) => this.setStatus(w, next));
   }
 
   private saveScrollback(w: Worker) {

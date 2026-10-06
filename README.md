@@ -383,6 +383,29 @@ deploy/coolify.sh ssh 'node /opt/agent-office/bin/agent-office.js accounts invit
 
 The full list is in [docs/controls.md](docs/controls.md).
 
+## Desk status from this machine
+
+A worker's desk shows *working* when its own hooks say so. Something else on this computer — Grok Bot, a Cursor agent that isn't the desk's process — can push the same thing. The office listens on `127.0.0.1`, and this route answers only a connection from this machine. It does not check a session cookie. `name` is the worker already sitting at a desk (any case; a shell's 🐚 is optional). It does not hire a worker, and it will not mark a parked one *working* (offline, exited, or no process left).
+
+Push when a turn starts, and again when it ends. That is the path to use. If the bot cannot call out, a small program on this machine can watch it and POST the same JSON.
+
+```bash
+# George is mid-turn. He sits at his desk and the bulb says WORKING.
+curl -s -X POST http://127.0.0.1:4600/api/bridge/status \
+  -H 'content-type: application/json' \
+  -d '{"name":"george","status":"working"}'
+
+# The turn ended. WORKING clears. A shell's own quiet timer, if it has one, is left alone.
+curl -s -X POST http://127.0.0.1:4600/api/bridge/status \
+  -H 'content-type: application/json' \
+  -d '{"name":"george","status":"idle"}'
+
+# Every desk, for debugging.
+curl -s http://127.0.0.1:4600/api/bridge/status
+```
+
+`working` seats them at the desk they were hired to (they type; on the castle map they leave the line and go back to their seat). `idle` clears WORKING. Kavi, who walks the aisles, has no desk and is never marked working. During `npm run dev` the same URLs work on port 4600; Vite's 5173 proxies `/api` there.
+
 ## Development
 
 ```bash

@@ -14,3 +14,5 @@ npm run dev
 # or, from a build:
 agent-office --host 127.0.0.1 --port 4600 --no-open
 ```
+
+`POST /api/bridge/status` and `GET /api/bridge/status` have no session cookie. They still answer only when the socket is `127.0.0.1` or `::1`, so a bind of `127.0.0.1` is what keeps them on this machine.

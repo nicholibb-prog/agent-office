@@ -49,6 +49,7 @@ import { installHerald } from './features/herald';
 import { installHud } from './features/hud';
 import { installJev } from './features/jev';
 import { installJukebox } from './features/jukebox';
+import { installKavi } from './features/kavi';
 import { installMeeting } from './features/meeting';
 import { installNeedsYou } from './features/needsyou';
 import { installPalette } from './features/palette';
@@ -124,6 +125,7 @@ parts.reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 parts.sound = makeSound(parts.settings);
 
 parts.dog = installDog(ctx);
+installKavi(ctx);
 parts.jukebox = installJukebox(ctx, { showSettings: (pane) => parts.hud.showSettings(pane) });
 parts.cabinet = installCabinet(ctx, { openTerminal: (id) => parts.waiting.openWorkerTerminal(id) });
 parts.notifier = new DesktopNotifier(() => parts.settings.notify, (id) => parts.waiting.answerWorker(id));
