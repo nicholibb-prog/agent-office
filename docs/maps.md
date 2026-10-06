@@ -160,6 +160,7 @@ A castle's:
 | `shield` | A shield and crossed swords, hung at `y`. |
 | `hearth` | A fireplace against a wall, `width` wide, facing `rotY`. |
 | `gong` | The merge gong (one at most). |
+| `jev` | The local Jev leaderboard (one at most). Rankings from this computer's `.agent-office/jev-metrics.json`. |
 | `cask` | Casks of ale: **E** for a drink that perks you up, like the office's coffee. |
 | `table` | A table with nothing to sit at, `width` by `length`. |
 | `candles` | A tall iron candle stand. |
@@ -179,6 +180,7 @@ A station's:
 | `planter` | A hydroponics planter, `width` wide. |
 | `crate` | Cargo crates. |
 | `gong` | The merge gong (one at most). |
+| `jev` | The local Jev leaderboard (one at most). Rankings from this computer's `.agent-office/jev-metrics.json`. |
 | `dispenser` | A drinks dispenser: **E** for a cup that perks you up, like the office's coffee. |
 | `table` | A console table with nothing to sit at, `width` by `length`. |
 

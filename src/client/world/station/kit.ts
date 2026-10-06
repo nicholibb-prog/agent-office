@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { MapPlan } from '../../../shared/maps';
 import { boxFootprint } from '../../../shared/maps/props';
 import type { Gong } from '../../features/gong/world';
+import type { JevLeaderboard } from '../../features/jev/world';
 import type { Collider, DeskView, Interactable } from '../types';
 import { mesh, toon } from '../toon';
 
@@ -37,6 +38,8 @@ export interface Kit {
   /** What pulses: `set` is handed 0–1, `rate` times a second, each `phase` out of step. */
   pulses: { set(k: number): void; rate: number; phase: number }[];
   gong?: Gong;
+  /** The Jev board, when the map places one. */
+  jev?: JevLeaderboard;
 }
 
 export interface Mats {

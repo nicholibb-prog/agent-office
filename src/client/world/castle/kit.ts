@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 import { boxFootprint } from '../../../shared/maps/props';
 import type { Gong } from '../../features/gong/world';
+import type { JevLeaderboard } from '../../features/jev/world';
 import type { Collider, DeskView, Interactable } from '../types';
 import { toon } from '../toon';
 import { shade } from './textures';
@@ -39,6 +40,8 @@ export interface Kit {
   /** How many windows so far, so each one's glass is its own pattern. */
   windows: number;
   gong?: Gong;
+  /** The Jev board, when the map places one. */
+  jev?: JevLeaderboard;
 }
 
 export interface Mats {
