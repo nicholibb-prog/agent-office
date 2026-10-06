@@ -421,7 +421,7 @@ test('Dan and an owner approver cannot approve work they already touched, and th
 test('caller names dan and okkin are reserved, and a policy name cannot be reused', (t) => {
   const dir = dirOf(t, { reservedNames: ['quinn'] });
   const pool = new WorkPool(dir);
-  for (const name of ['dan', 'okkin', 'quinn']) {
+  for (const name of ['dan', 'okkin', 'quinn', 'seat-1', 'seat-12']) {
     const made = pool.registerCaller(name);
     assert.equal('error' in made, true);
     assert.equal((made as { error: string }).error, 'that name is reserved');

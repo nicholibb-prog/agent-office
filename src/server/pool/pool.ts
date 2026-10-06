@@ -3,7 +3,6 @@ import {
   LEASE_MS,
   actorId,
   boardFrom,
-  botName,
   claimRefusal,
   displayName,
   emptyBoard,
@@ -24,8 +23,11 @@ import type { WorkPuller } from './puller.js';
 
 export interface PoolEvents {
   update?(board: PoolBoard): void;
-  /** working only with a live heartbeat. idle when the claim has none. needs_input is the floor's to keep. */
-  presence?(name: string, desired: 'working' | 'idle'): void;
+  /**
+   * Presence is keyed by seatId from the callerId→seatId map, never by display label.
+   * `seen` is claim.heartbeatAt when a real heartbeat happened; omit when there was none.
+   */
+  presence?(seatId: string, desired: 'working' | 'idle', seen?: number): void;
 }
 
 export type PoolFail = { ok: false; status: number; error: string };
@@ -75,13 +77,18 @@ export class WorkPool {
     this.timer = undefined;
   }
 
-  registerCaller(name: unknown, accountNames: readonly string[] = []) {
-    return this.callers.register(name, accountNames);
+  registerCaller(name: unknown, accountNames: readonly string[] = [], seatId?: unknown) {
+    return this.callers.register(name, accountNames, seatId);
   }
 
   callerByToken(token: string): PoolActor | undefined {
     const who = this.callers.who(token);
     return who ? { id: who.id, label: who.label } : undefined;
+  }
+
+  /** Seat bound to this caller id, if any. Presence uses this map only. */
+  seatOf(callerId: string): string | undefined {
+    return this.callers.seatOf(callerId);
   }
 
   board(): PoolBoard {
@@ -357,15 +364,23 @@ export class WorkPool {
 
   private syncPresence() {
     const now = this.now();
-    const want = new Map<string, 'working' | 'idle'>();
+    const want = new Map<string, { desired: 'working' | 'idle'; seen?: number }>();
     for (const job of this.jobs) {
       if (job.status !== 'claimed' || !job.claim) continue;
-      const name = botName(job.claim.label || job.claim.by);
-      want.set(name, showsWorking(job, now) ? 'working' : 'idle');
+      // Presence resolves via callerId→seatId only. Display label is never enough.
+      const seatId = this.callers.seatOf(job.claim.by);
+      if (!seatId) continue;
+      const working = showsWorking(job, now);
+      const seen = job.claim.heartbeatAt;
+      want.set(seatId, {
+        desired: working ? 'working' : 'idle',
+        // seen is the real heartbeat only — never a clock nudge / updatedAt bump.
+        ...(typeof seen === 'number' ? { seen } : {}),
+      });
     }
-    for (const name of this.working) if (!want.has(name)) want.set(name, 'idle');
-    this.working = new Set([...want.entries()].filter(([, s]) => s === 'working').map(([n]) => n));
-    for (const [name, desired] of want) this.events.presence?.(name, desired);
+    for (const seatId of this.working) if (!want.has(seatId)) want.set(seatId, { desired: 'idle' });
+    this.working = new Set([...want.entries()].filter(([, v]) => v.desired === 'working').map(([n]) => n));
+    for (const [seatId, { desired, seen }] of want) this.events.presence?.(seatId, desired, seen);
   }
 
   private changed() {

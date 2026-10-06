@@ -4,6 +4,8 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import type { Ctx } from '../../office/context.js';
 import type { ChatLine } from '../../../shared/protocol.js';
+import { isPoolSeatId } from '../../../shared/pool.js';
+import { writeCrewPush } from '../../workers/crew.js';
 import { send } from '../util.js';
 import type { Route } from '../router.js';
 
@@ -145,13 +147,13 @@ export const bridgeRoutes = {
       const name = String(body.name || 'agent').slice(0, 32).trim() || 'agent';
       const text = String(body.text || '').slice(0, 500).trim();
       if (!text) return send(res, 400, { error: 'empty text' });
+      // Shared bridge token must not stamp account:true from a free body name (signed-in badge spoof).
       const line: ChatLine = {
         from: 'bridge',
         name,
         color: typeof body.color === 'string' ? body.color.slice(0, 16) : '#8d99ae',
         text,
         at: Date.now(),
-        account: true,
       };
       ctx.chat.add(line);
       ctx.broadcast({ t: 'chat', ...line });
@@ -174,19 +176,19 @@ export const bridgeRoutes = {
         return send(res, 400, { error: 'bad json' });
       }
       const crew = body.crew || {};
-      const payload = { updatedAt: new Date().toISOString(), crew, source: 'bridge' };
+      let file;
       try {
-        const file = path.join(ctx.cfg.dataDir, 'crew-status.json');
-        writeFileSync(file, JSON.stringify(payload, null, 2) + '\n', { mode: 0o600 });
+        // Seat ids only; display names never flip a desk. seen is stamped on this push.
+        file = writeCrewPush(ctx.cfg.dataDir, crew, 'bridge');
       } catch (e) {
         return send(res, 500, { error: String(e) });
       }
       const results: { floor: string; applied: string[] }[] = [];
       for (const floor of ctx.floors.values()) {
-        const r = floor.workers.applyCrewPresence(crew);
+        const r = floor.workers.applyCrewPresence(file.crew, { seen: file.seen });
         results.push({ floor: floor.id, applied: r.applied });
       }
-      return send(res, 200, { ok: true, ...payload, results });
+      return send(res, 200, { ok: true, updatedAt: file.updatedAt, crew: file.crew, seen: file.seen, source: file.source, results });
     },
   },
   crewStatusGet: {
@@ -216,29 +218,23 @@ export const bridgeRoutes = {
       } catch {
         return send(res, 400, { error: 'bad json' });
       }
-      const name = String(body.name || '').trim();
+      const name = String(body.name || '').trim().toLowerCase();
       const st = String(body.status || '').toLowerCase();
       if (!name) return send(res, 400, { error: 'name required' });
       if (st !== 'working' && st !== 'idle') return send(res, 400, { error: 'status working|idle' });
-      const crew: Record<string, string> = { [name]: st };
-      let merged = crew;
+      // Shared token must bind to a seat id — display labels alone cannot flip a desk.
+      if (!isPoolSeatId(name)) {
+        return send(res, 400, { error: 'seat id required' });
+      }
+      let file;
       try {
-        const file = path.join(ctx.cfg.dataDir, 'crew-status.json');
-        if (existsSync(file)) {
-          const prev = JSON.parse(readFileSync(file, 'utf8')) as { crew?: Record<string, string> };
-          merged = { ...(prev.crew || {}), ...crew };
-        }
-        writeFileSync(
-          file,
-          JSON.stringify({ updatedAt: new Date().toISOString(), crew: merged, source: 'bridge-status' }, null, 2) + '\n',
-          { mode: 0o600 },
-        );
+        file = writeCrewPush(ctx.cfg.dataDir, { [name]: st }, 'bridge-status');
       } catch (e) {
         return send(res, 500, { error: String(e) });
       }
       const results: { floor: string; applied: string[] }[] = [];
       for (const floor of ctx.floors.values()) {
-        results.push({ floor: floor.id, applied: floor.workers.applyCrewPresence(merged).applied });
+        results.push({ floor: floor.id, applied: floor.workers.applyCrewPresence(file.crew, { seen: file.seen }).applied });
       }
       return send(res, 200, { ok: true, name, status: st, results });
     },

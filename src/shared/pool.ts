@@ -5,6 +5,17 @@ export const LEASE_MS = 15 * 60 * 1000;
 /** Role names nobody may register as a caller or an account. Authority is an id in the pool policy, not a name. */
 export const RESERVED_POOL_NAMES = ['dan', 'okkin'] as const;
 
+/** Seat ids for pool presence. Display names that look like these are reserved at mint. */
+export function isPoolSeatId(value: string): boolean {
+  return /^seat-[1-9][0-9]?$/.test(value) || value === 'okkin';
+}
+
+/** Conventional desk for a numbered seat (`seat-3` → `desk-3`). */
+export function deskForPoolSeat(seatId: string): string | undefined {
+  const m = /^seat-([1-9][0-9]?)$/.exec(seatId);
+  return m ? `desk-${m[1]}` : undefined;
+}
+
 /** Who is acting. `id` is the account id or the caller-token id. `label` is only for the board. */
 export interface PoolActor {
   id: string;
@@ -74,7 +85,12 @@ export function botName(raw: unknown): string {
 }
 
 export function reservedPoolName(name: unknown): boolean {
-  return (RESERVED_POOL_NAMES as readonly string[]).includes(botName(name));
+  const key = botName(name);
+  if (!key) return false;
+  if ((RESERVED_POOL_NAMES as readonly string[]).includes(key)) return true;
+  // Seat ids are not caller display names; reserve the whole seat-* prefix.
+  if (key.startsWith('seat-')) return true;
+  return false;
 }
 
 /** An account id or caller id: no spaces, no path characters. */

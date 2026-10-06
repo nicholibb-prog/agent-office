@@ -21,7 +21,7 @@ import { Jail } from './jail.js';
 import { Garage } from './garage.js';
 import { JevStore } from './jev.js';
 import { WorkPool } from './pool/pool.js';
-import { botName, nextPresence } from '../shared/pool.js';
+import { deskForPoolSeat, nextPresence } from '../shared/pool.js';
 import { Jukebox } from './jukebox.js';
 import { Whiteboard } from './whiteboard.js';
 import { MeetingRoom } from './meetings.js';
@@ -318,10 +318,17 @@ export class Floor {
     this.jev = new JevStore(dataDir);
     this.pool = new WorkPool(dataDir, {
       update: (board) => ctx.emit(this, { t: 'pool', board }),
-      presence: (name, desired) => {
-        const hit = this.workers.list().find((w) => botName(w.name) === name);
+      presence: (seatId, desired, seen) => {
+        // Resolve by seatId / desk id only — never by a free display label.
+        const deskId = deskForPoolSeat(seatId);
+        const hit = this.workers.list().find(
+          (w) => w.id === seatId || w.id === `crew-${seatId}` || (!!deskId && w.deskId === deskId),
+        );
         if (hit && nextPresence(hit.status, desired) === 'needs_input') return;
-        this.workers.applyCrewPresence({ [name]: desired });
+        this.workers.applyCrewPresence(
+          { [seatId]: desired },
+          { seen: typeof seen === 'number' ? { [seatId]: seen } : undefined },
+        );
       },
     });
     this.ready = this.workers.start();

@@ -50,7 +50,7 @@ function clock() {
   return { now: () => now, advance(ms: number) { now += ms; } };
 }
 
-function poolAt(dir: string, time = clock(), presence?: (name: string, desired: 'working' | 'idle') => void) {
+function poolAt(dir: string, time = clock(), presence?: (seatId: string, desired: 'working' | 'idle', seen?: number) => void) {
   return new WorkPool(dir, presence ? { presence } : {}, { now: time.now });
 }
 
@@ -211,19 +211,28 @@ test('completing 1–5 is done, and 6 and 7 wait on a Dan pass', (t) => {
 
 test('WORKING is only a live claim with a heartbeat, and needs_input stays put', (t) => {
   const time = clock();
-  const seen: [string, string][] = [];
-  const pool = poolAt(dirOf(t), time, (name, desired) => seen.push([name, desired]));
-  const job = post(pool, 'Tidy', 'Notes only.', { level: 1 });
-  must(pool.claim(job.id, PIPER, 5_000));
-  assert.equal(showsWorking(pool.get(job.id)!, time.now()), false);
-  assert.deepEqual(seen.at(-1), ['piper', 'idle']);
-  must(pool.heartbeat(job.id, PIPER));
-  assert.equal(showsWorking(pool.get(job.id)!, time.now()), true);
-  assert.equal(pool.board().columns.claimed[0].status, 'working');
-  assert.deepEqual(seen.at(-1), ['piper', 'working']);
+  const dir = dirOf(t);
+  const beats: { seatId: string; desired: string; seen?: number }[] = [];
+  // Bind PIPER's id to a seat so presence can fire (map is required).
+  writeFileSync(path.join(dir, 'work-pool-callers.json'), JSON.stringify({
+    callers: [{ id: PIPER.id, name: PIPER.label, tokenHash: 'ab'.repeat(32), seatId: 'seat-1' }],
+  }) + '\n', { mode: 0o600 });
+  const bound = poolAt(dir, time, (seatId, desired, seen) => beats.push({ seatId, desired, seen }));
+  const job = post(bound, 'Tidy', 'Notes only.', { level: 1 });
+  must(bound.claim(job.id, PIPER, 5_000));
+  assert.equal(showsWorking(bound.get(job.id)!, time.now()), false);
+  assert.equal(beats.at(-1)?.seatId, 'seat-1');
+  assert.equal(beats.at(-1)?.desired, 'idle');
+  assert.equal(beats.at(-1)?.seen, undefined);
+  must(bound.heartbeat(job.id, PIPER));
+  assert.equal(showsWorking(bound.get(job.id)!, time.now()), true);
+  assert.equal(bound.board().columns.claimed[0].status, 'working');
+  assert.equal(beats.at(-1)?.seatId, 'seat-1');
+  assert.equal(beats.at(-1)?.desired, 'working');
+  assert.equal(beats.at(-1)?.seen, time.now());
   time.advance(LEASE);
-  assert.equal(pool.get(job.id)!.status, 'open');
-  assert.deepEqual(seen.at(-1), ['piper', 'idle']);
+  assert.equal(bound.get(job.id)!.status, 'open');
+  assert.equal(beats.at(-1)?.desired, 'idle');
   assert.equal(nextPresence('needs_input', 'working'), 'needs_input');
   assert.equal(nextPresence('idle', 'working'), 'working');
 });
@@ -588,4 +597,64 @@ test('a pool error is a fixed message', async (t) => {
   await bridge(jsonReq('/api/bridge/pool/complete', { id: 'missing' }, { 'x-bridge-token': BRIDGE }), blown.res);
   assert.equal(blown.got.status, 500);
   assert.equal(blown.got.raw.includes(marker), false);
+});
+
+test('presence match fails when only display label matches without callerId map', (t) => {
+  const time = clock();
+  const beats: { seatId: string; desired: string; seen?: number }[] = [];
+  const dir = dirOf(t);
+  // Map binds a different caller id to seat-1. Impostor shares the display label only.
+  writeFileSync(path.join(dir, 'work-pool-callers.json'), JSON.stringify({
+    callers: [{ id: 'id-real', name: 'piper', tokenHash: 'cd'.repeat(32), seatId: 'seat-1' }],
+  }) + '\n', { mode: 0o600 });
+  writePolicy(dir, { crew: ['id-stranger', 'id-real', ADA.id] });
+  const pool = poolAt(dir, time, (seatId, desired, seen) => beats.push({ seatId, desired, seen }));
+  const impostor: PoolActor = { id: 'id-stranger', label: 'piper' };
+  const job = post(pool, 'Tidy', 'Notes only.', { level: 1 });
+  must(pool.claim(job.id, impostor, 5_000));
+  must(pool.heartbeat(job.id, impostor));
+  // Label matches the mapped caller, but callerId does not — no presence event.
+  assert.equal(beats.length, 0);
+  assert.equal(pool.seatOf(impostor.id), undefined);
+  assert.equal(pool.seatOf('id-real'), 'seat-1');
+});
+
+test('seen on presence comes from heartbeatAt, not a clock nudge', (t) => {
+  const time = clock();
+  const dir = dirOf(t);
+  writeFileSync(path.join(dir, 'work-pool-callers.json'), JSON.stringify({
+    callers: [{ id: PIPER.id, name: PIPER.label, tokenHash: 'ef'.repeat(32), seatId: 'seat-2' }],
+  }) + '\n', { mode: 0o600 });
+  const beats: { desired: string; seen?: number }[] = [];
+  const pool = poolAt(dir, time, (_s, desired, seen) => beats.push({ desired, seen }));
+  const job = post(pool, 'Tidy', 'Notes only.', { level: 1 });
+  must(pool.claim(job.id, PIPER, 60_000));
+  const afterClaim = beats.at(-1)!;
+  assert.equal(afterClaim.desired, 'idle');
+  assert.equal(afterClaim.seen, undefined);
+  const beforeHb = time.now();
+  must(pool.heartbeat(job.id, PIPER));
+  const afterHb = beats.at(-1)!;
+  assert.equal(afterHb.desired, 'working');
+  assert.equal(afterHb.seen, beforeHb);
+  assert.equal(pool.get(job.id)!.claim!.heartbeatAt, beforeHb);
+  // updatedAt may nudge, but seen stays the heartbeat.
+  assert.ok((pool.get(job.id)!.updatedAt) >= beforeHb);
+  assert.equal(afterHb.seen, pool.get(job.id)!.claim!.heartbeatAt);
+});
+
+test('mint refuses seat-* and okkin as caller names', (t) => {
+  const pool = poolAt(dirOf(t));
+  for (const name of ['seat-1', 'seat-9', 'Seat-3', 'okkin', 'dan']) {
+    const made = pool.registerCaller(name);
+    assert.equal('error' in made, true, name);
+    assert.equal((made as { error: string }).error, 'that name is reserved', name);
+  }
+  const ok = pool.registerCaller('quill');
+  assert.equal('token' in ok, true);
+  assert.equal((ok as { seatId: string }).seatId, 'seat-1');
+  const two = pool.registerCaller('quill2', [], 'seat-5');
+  assert.equal((two as { seatId: string }).seatId, 'seat-5');
+  const clash = pool.registerCaller('quill3', [], 'seat-5');
+  assert.equal((clash as { error: string }).error, 'that seat is already taken');
 });

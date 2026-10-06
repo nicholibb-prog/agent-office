@@ -236,9 +236,9 @@ export const poolRoutes = {
         const body = await readJson(req, res);
         if (!body) return;
         const names = ctx.accounts.state(new Set()).accounts.map((a) => a.name);
-        const made = floor.pool.registerCaller(body.name, names);
+        const made = floor.pool.registerCaller(body.name, names, body.seatId);
         if ('error' in made) return send(res, 400, { error: made.error });
-        return send(res, 200, { ok: true, id: made.id, name: made.name, token: made.token });
+        return send(res, 200, { ok: true, id: made.id, name: made.name, token: made.token, seatId: made.seatId });
       });
     },
   },
