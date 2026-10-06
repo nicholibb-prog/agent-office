@@ -18,6 +18,7 @@ import { dog } from './dog';
 import { floorPlan } from './floor-plan';
 import { jail } from './jail';
 import { jev } from './jev';
+import { pool } from './pool';
 import { jukebox } from './jukebox';
 import { leaveOnMerge } from './leave-on-merge';
 import { machine } from './machine';
@@ -63,4 +64,5 @@ export const SLICES: readonly Slice[] = [
   accounts,
   signins,
   jev,
+  pool,
 ];

@@ -20,6 +20,8 @@ import { Court } from './court.js';
 import { Jail } from './jail.js';
 import { Garage } from './garage.js';
 import { JevStore } from './jev.js';
+import { WorkPool } from './pool/pool.js';
+import { botName, nextPresence } from '../shared/pool.js';
 import { Jukebox } from './jukebox.js';
 import { Whiteboard } from './whiteboard.js';
 import { MeetingRoom } from './meetings.js';
@@ -125,6 +127,8 @@ export class Floor {
   readonly whiteboard: Whiteboard;
   /** Local Jev rankings and desk cups for this floor. */
   readonly jev: JevStore;
+  /** Community work pool: claimed jobs with a lease, beside the task queue. */
+  readonly pool: WorkPool;
   /** The meeting room, where workers work through a question together (see meetings.ts). */
   readonly meetings: MeetingRoom;
   /** The bookshelf: the project's Markdown files (see docs.ts). */
@@ -312,6 +316,14 @@ export class Floor {
     this.jukebox = new Jukebox(dataDir);
     this.whiteboard = new Whiteboard(dataDir);
     this.jev = new JevStore(dataDir);
+    this.pool = new WorkPool(dataDir, {
+      update: (board) => ctx.emit(this, { t: 'pool', board }),
+      presence: (name, desired) => {
+        const hit = this.workers.list().find((w) => botName(w.name) === name);
+        if (hit && nextPresence(hit.status, desired) === 'needs_input') return;
+        this.workers.applyCrewPresence({ [name]: desired });
+      },
+    }, { autoPull: true });
     this.ready = this.workers.start();
 
     void this.github.refresh();
@@ -419,6 +431,7 @@ export class Floor {
     this.dog.stop();
     this.github.stop();
     this.queue.shutdown();
+    this.pool.stop();
     this.meetings.shutdown();
     this.changes.stop();
     this.whiteboard.flush();

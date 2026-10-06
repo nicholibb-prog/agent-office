@@ -47,6 +47,31 @@ function contentTypeOk(req: http.IncomingMessage): boolean {
   return ct.startsWith('application/json');
 }
 
+/** True when the request presents a bridge token. A human session route must reject these. */
+export function bridgeCredentialPresent(req: http.IncomingMessage): boolean {
+  const hdr = req.headers['x-bridge-token'];
+  if (typeof hdr === 'string' && hdr.trim()) return true;
+  const auth = req.headers.authorization;
+  return typeof auth === 'string' && /^Bearer\s+\S+/i.test(auth);
+}
+
+/** Host allowlist, Origin, and JSON content-type. Sends the error response when it fails. */
+export function officeRequestShape(req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  if (!hostOk(req)) {
+    send(res, 403, { error: 'host not allowed' });
+    return false;
+  }
+  if (!originOk(req)) {
+    send(res, 403, { error: 'origin not allowed' });
+    return false;
+  }
+  if (!contentTypeOk(req)) {
+    send(res, 415, { error: 'Content-Type must be application/json' });
+    return false;
+  }
+  return true;
+}
+
 function safeTokenEq(a: string, b: string): boolean {
   const ba = Buffer.from(a);
   const bb = Buffer.from(b);
@@ -84,18 +109,7 @@ function tokenFromReq(req: http.IncomingMessage): string {
 
 /** Bridge auth: Host allowlist + Origin check + (token OR office session). Loopback alone is not enough. */
 export function bridgeGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): boolean {
-  if (!hostOk(req)) {
-    send(res, 403, { error: 'host not allowed' });
-    return false;
-  }
-  if (!originOk(req)) {
-    send(res, 403, { error: 'origin not allowed' });
-    return false;
-  }
-  if (!contentTypeOk(req)) {
-    send(res, 415, { error: 'Content-Type must be application/json' });
-    return false;
-  }
+  if (!officeRequestShape(req, res)) return false;
   const expected = bridgeToken(ctx.cfg.dataDir);
   const got = tokenFromReq(req);
   if (got && safeTokenEq(got, expected)) return true;

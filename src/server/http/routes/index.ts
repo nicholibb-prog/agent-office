@@ -10,6 +10,7 @@ import { pageRoutes } from './pages.js';
 import { searchRoutes } from './search.js';
 import { serviceRoutes } from './services.js';
 import { bridgeRoutes } from './bridge.js';
+import { poolRoutes } from './pool.js';
 
 export const routes: readonly Route[] = [
   // Anyone.
@@ -30,6 +31,14 @@ export const routes: readonly Route[] = [
   bridgeRoutes.kaviFeedGet,
   bridgeRoutes.kaviOutbox,
   bridgeRoutes.kaviOutboxGet,
+  poolRoutes.list,
+  poolRoutes.post,
+  poolRoutes.claim,
+  poolRoutes.heartbeat,
+  poolRoutes.release,
+  poolRoutes.complete,
+  poolRoutes.pull,
+  poolRoutes.danPass,
   pageRoutes.assets,
   pageRoutes.login,
   pageRoutes.claim,
@@ -37,6 +46,8 @@ export const routes: readonly Route[] = [
   pageRoutes.favicon,
   // Signed in.
   authRoutes.whoami,
+  poolRoutes.callers,
+  poolRoutes.nickYes,
   agentRoutes.models,
   fileRoutes.image,
   fileRoutes.whiteboardFile,

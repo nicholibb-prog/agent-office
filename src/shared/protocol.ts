@@ -10,6 +10,7 @@ import type { FloorClientMsg, FloorServerMsg, PlanClientMsg } from './protocol/f
 import type { GitHubClientMsg, GitHubServerMsg } from './protocol/github.js';
 import type { MeetingClientMsg, MeetingServerMsg } from './protocol/meetings.js';
 import type { PresenceClientMsg, PresenceServerMsg } from './protocol/presence.js';
+import type { PoolServerMsg } from './protocol/pool.js';
 import type { QueueClientMsg, QueueServerMsg } from './protocol/queue.js';
 import type { RooftopClientMsg, RooftopServerMsg } from './protocol/rooftop.js';
 import type { SettingsClientMsg, SettingsServerMsg } from './protocol/settings.js';
@@ -24,6 +25,7 @@ export * from './protocol/floors.js';
 export * from './protocol/github.js';
 export * from './protocol/meetings.js';
 export * from './protocol/presence.js';
+export * from './protocol/pool.js';
 export * from './protocol/queue.js';
 export * from './protocol/rooftop.js';
 export * from './protocol/settings.js';
@@ -60,6 +62,7 @@ export type ServerMsg =
   | WorkerServerMsg
   | GitHubServerMsg
   | QueueServerMsg
+  | PoolServerMsg
   | MeetingServerMsg
   | FloorServerMsg
   | ChangesServerMsg

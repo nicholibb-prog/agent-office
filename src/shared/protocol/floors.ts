@@ -7,6 +7,7 @@ import type { FloorPlan } from '../floorplan.js';
 import type { CarState } from '../garage.js';
 import type { BallState } from '../hoop.js';
 import type { JevBoard } from '../jev.js';
+import type { PoolBoard } from '../pool.js';
 import type { JukeboxState } from '../jukebox.js';
 import type { WhiteboardView } from '../whiteboard.js';
 import type { AgentProvider } from './agents.js';
@@ -127,6 +128,8 @@ export interface FloorView {
   jail: JailState;
   /** Local Jev rankings on the center-room board. Names and counts only. */
   jev: JevBoard;
+  /** Community work pool on this floor: open, claimed, needs approval, done. */
+  pool: PoolBoard;
 }
 
 export type FloorClientMsg =
