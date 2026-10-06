@@ -8,6 +8,52 @@ The office is the 1:1 meeting place for every bot the owner runs, across provide
 
 No new API key, account, or install happens without the owner's approval.
 
+## Current state (audited)
+
+Read-only, at these tips. Nothing here is a behavior change.
+
+| PR | Branch @ sha |
+| --- | --- |
+| main | `main@a08bc78` |
+| #7 | `forgel/core-hq@5c2ae276` |
+| #8 | `cursor/gh-boards-fail-closed-3e5e@15f8f0c0` |
+| #9 | `cursor/unblock-queue-digest-016d@8d73331e` |
+| #10 | `cursor/huddle-ollama-64e4@559f5d96` |
+| #11 | `cursor/hq-crew-okkin-7ab2@cf6500cc` |
+| #12 | `cursor/community-work-pool-fb60@d376d8cb` (branch tip while auditing was `760c628`; the seven levels are the same array) |
+
+### Where a seat gets a state
+
+`main@a08bc78` has hired workers only. `WorkerStatus` is `starting`, `idle`, `working`, `needs_input`, `done`, `exited`, `offline` (`src/shared/protocol/workers.ts:6-13`). There is no crew seat, no roster chip, and no `stale`. `lastInput.at` is the last input time when a hook or a person typed (`src/shared/protocol/workers.ts:92` on #11; the field exists on main). A quiet shell goes idle after 12s. Nothing records a per-bot `lastEventAt` that survives a file re-read.
+
+`#7@5c2ae276` adds bridge presence for **shells**. `applyCrewPresence` (`src/server/workers/crew.ts:46-73`) maps a name to `working` or `idle` and skips `needs_input`. A working push sets `lastInput` to `{ by: 'crew-status', at: Date.now() }` (`crew.ts:64`). Re-reading `crew-status.json` (`crew.ts:81-86`) calls that again, so the stored time is the read, not the push. The lease is 15 minutes (`crew.ts:10`), then `tickWorkingLease` (`crew.ts:96-109`) sets `idle`. There is no `stale` and no `offline` chip. `POST /api/bridge/status` accepts `{ name: string, status: "working" | "idle" }` (`src/server/http/routes/bridge.ts:193-208`). `POST /api/bridge/crew-status` accepts `{ crew: Record<string, string> }` and writes `{ updatedAt: string, crew, source: "bridge" }` (`bridge.ts:150-175`). No `seen` map.
+
+`#8@15f8f0c0` does not change `crew.ts`, `bridge.ts`, or `hq.ts` relative to #7.
+
+`#9@8d73331e` adds the morning delta and the unblock queue (`docs/configuration.md:40` and `:53`, `GET /api/bridge/hq-brief`). A bridge token cannot approve. `board-status.json` lines are `done`, `progress`, or `blocked`. That is a digest, not a per-bot `lastEventAt`. `crew.ts` gains a seat map for the digest; it does not add `stale`.
+
+`#10@559f5d96` is the huddle branch (PR #10). `SeatBoard.probedAt` (`src/server/seat-provider.ts:49`, refreshed at `:90-91`) only throttles probes. It is not a per-run event time. Faces are a label string: `offline`, `no provider — needs owner`, `bridge`, or queued (`seat-provider.ts:160-167`). No shared state enum.
+
+`#11@cf6500cc` is the crew-seat code this plan stacks on. `WorkerStatus` adds nothing to the main union; `WorkerKind` adds `crew` (`src/shared/protocol/workers.ts:6-15`). Roster chips are separate: `working`, `blocked`, `idle`, `done`, `stale`, `offline`, `switching` (`src/shared/hq.ts:111`). `rosterChip` (`hq.ts:114-127`) uses `beat.at`. Decay for a `working` beat: under 15 minutes `working` (`WORKING_LEASE_MS`, `hq.ts:16`), from 15 to 30 minutes `idle`, from 30 to 45 minutes `stale` (`STALE_AFTER_MS`, `hq.ts:19`), at 45 minutes `offline` (`OFFLINE_AFTER_MS`, `hq.ts:20`). Any other beat is `stale` at 30 minutes and `offline` at 45. `blocked` never decays. A missing or future `at` is `offline`.
+
+`writeCrewPush` (`src/server/workers/crew.ts:90-102`) stores `seen[seat] = now` on the push and does not refresh it when the file is re-read (`tickCrewStatusFile`, `crew.ts:158-164`). Okkin is not in that file. `applyCrewPresence` (`crew.ts:111-142`) paints crew seats only, never shells. `working` applies only when `seen` is inside the 15-minute lease. `blocked` sets `needs_input` with `lastInput.by = 'crew-status'` and `at` from `seen` (`crew.ts:125-127`). A later push clears that needs-input. A `needs_input` from any other `by` stays. Chat does not set working (`crew.ts:153-156`). The lease timer (`crew.ts:193-203`) drops `working` to `idle` after 15 minutes. It does not itself write `stale` or `offline`; those exist on the roster chip only.
+
+Okkin's chip (`src/server/hq/okkin.ts:8` and `:50-55`) is `offline`, `switching`, `working` (only while a chat is in flight, `depth > 0`), or `idle`. `syncOkkin` (`crew.ts:170-186`) maps `working` and `offline` through, and maps `switching` to idle with an activity string. While the chip is `working` it sets `lastInput.at` to `Date.now()` on that tick (`crew.ts:181`), which is the tick, not the request's start. There is no stored time for the last successful probe.
+
+`#12@d376d8cb` is the work pool. It does not replace seat status. `LEVELS` is seven entries (`src/shared/pool.ts:50-58`): 1–3 low, 4 draft code, 5 review, 6 security, money, and network (pass gate), 7 merges, sends, spend, and deletes (owner yes). `PoolStatus` is `open`, `claimed`, `needs_approval`, `done` (`pool.ts:36`). Those seven levels are the claim rules. They replace any open-versus-gated two-tier wording.
+
+### Okkin models
+
+No model tag is hardcoded. `qwen3.5:9b` appears once, as a doc example on `#10` (`docs/configuration.md:69`). It is not in `#11` source.
+
+On `#11`, the configured tag is `OKKIN_MODEL`, else `model` in gitignored `ollama.json`, else `hq.okkinModel`, else empty (`src/server/hq/okkin.ts:65-70`, `src/server/ollama.ts:79`). The allowlist is `OKKIN_MODEL_ALLOW`, else `hq.okkinAllow`, split on commas and checked with `modelTagOk` (`okkin.ts:70-74`, `src/shared/hq.ts:279-280`). `modelTagOk` checks length and path characters. It is not a list of tags. The switch list is that allowlist intersected with names from live `GET /api/tags` (`modelChoices`, `hq.ts:269-276`; applied in `okkin.ts:112`). Installed tags are read live. The allowlist is not.
+
+### Bridge packets, and what the contract still lacks
+
+`#11` `POST /api/bridge/crew-status` body is `{ crew?: Record<string, string> }` (`src/server/http/routes/bridge.ts:260`). The file and the response add `updatedAt` (ISO string), `seen` (seat id to epoch ms), and `source` (string) (`bridge.ts:275`, `crew.ts:100`). `POST /api/bridge/status` body is `{ name: string, status: "working" | "idle" }` (`bridge.ts:299-304`). Seat id is the key. There is no `provider`, `task`, `projectId`, or `botId`.
+
+`POST /api/bridge/kavi-feed` body is `{ titles?: { name?: string, id?: string, modifiedTime?: string }[] }` (`bridge.ts:325-332`). The file is `{ updatedAt: string, source: "bridge", allowlist: string, titles }` (`bridge.ts:334-338`). `id` is an optional string on a title, not a bot id. There is no state, no `lastEventAt` per bot, no task, and no `projectId`. The outbox items are `{ title, text, at }` plus a note string. That feed cannot fill the status contract below without a shim that leaves those packets as they are and sets the missing fields to empty.
+
 ## What stays
 
 These keep their current behavior. The plugin does not edit them, replace their routes, or move them onto the registry:
@@ -260,7 +306,7 @@ These are normative. Later phases MUST meet them. A review that finds a break se
 2. **Outbound.** Each adapter has a fixed host allowlist. Cloud calls are `https` only, with `redirect: 'error'`, a timeout, and a response byte cap (Content-Length checked before the body is read, same bar as `src/server/ollama.ts`). Endpoint paths are fixed constants. The model name goes only in the body. Cloud adapters MUST NOT accept a base URL from the user, from config, or from the message. Local ollama stays loopback `http` as it is today.
 3. **Money.** Paid calls happen only when `AO_PAID_ENABLED=1`. Missing, empty, or any other value means every paid adapter is off, even when a key is present. Okkin and ollama stay the only free default path and do not read this flag. `claude-cli` on talk is paid unless the CLI is proven to be on a flat subscription. Each paid call has a `max_tokens` ceiling (a local CLI run uses its output byte cap the same way). Each paid provider has a daily call cap and a daily token cap. Caps are constants; config may lower them and MUST NOT raise them. Spend is logged locally, mode `0600`, as provider, project, seat, time, and counts. The log MUST NOT contain the prompt, the key, or the message. No automatic retry loop. `probe()` MUST NOT make a paid call.
 4. **Inbound.** MUST NOT open a tunnel, bind a public port, or add a listener. A cloud bot reaches the office only through the existing bridge folder, or by the office pulling outbound. A bot token is per bot and per seat, stored hashed, revocable, and MUST NOT act as the player or the owner or approve anything. The shared bridge token MUST NOT be used as that token. Anything that speaks as the owner stays session-only.
-5. **Seats.** Honest status only (`offline`, `not_connected`, `queued`, `idle`, `working`), taken from real adapter state. Chairs follow Seat tiers. Adapter replies are always role `bot`, never `player`. Bot text is data: chat MUST NOT trigger a tool run, a file write, or a send. Work-pool gated-tier rules apply to adapters as claimers: level caps and an owner gate, per project. An adapter MUST NOT approve work, raise its own level, or pass the owner gate by itself.
+5. **Seats.** Honest status only (`offline`, `not_connected`, `queued`, `idle`, `working`), taken from real adapter state. The shared contract in Provider status contract adds `needs-owner` and `stale` as the one shape every provider reports. Chairs follow Seat tiers. Adapter replies are always role `bot`, never `player`. Bot text is data: chat MUST NOT trigger a tool run, a file write, or a send. Claim rules are the seven work-pool levels on PR #12 (`src/shared/pool.ts:50-58` at `d376d8cb`), per project. An adapter is a claimer. It MUST NOT approve work, raise its own level, or pass level 6 or level 7 by itself.
 6. **Privacy.** The only text sent to a cloud provider is the message the owner typed to that seat. Prior turns are not attached unless a later review says so. Other seats' threads and the outbox are never auto-forwarded. The owner's protected personal folder is excluded: an adapter MUST NOT read or send any file from that folder, and the folder is not named in the repo, in config samples, or in logs. Transcripts stay mode `0600` under `.agent-office/`, and are reviewed and pruned at 30 days.
 7. **Public repo.** Generic seat ids and provider names only. MUST NOT commit account ids, emails, org ids, personal names, Drive ids, machine paths, or tokens. Docs and commit messages use "owner" and "needs owner".
 8. **kavi-bridge.** The office writes to the existing bridge folder. A coordinator bot relays to Drive. MUST NOT put a Drive token on the host, and MUST NOT add a Drive client.
@@ -307,7 +353,7 @@ Status is pulled on demand (when the summary is opened) or by an event the proce
 
 ### Work pool and spend
 
-Gated tiers apply per project: level caps and an owner gate. Adapters that claim work are claimers under those rules.
+The seven work-pool levels apply per project (PR #12, `src/shared/pool.ts:50-58`). Levels 6 and 7 need an allowlisted pass or the owner. Adapters that claim work are claimers under those levels. A two-tier open-or-gated split is not the rule.
 
 Spend caps apply per provider and also per project. Either cap stops the next paid call. Paid calls still require `AO_PAID_ENABLED=1`; any other value stops all of them, even when a key is present. Ollama is unchanged and is not metered as a paid provider. A pool claim is not an owner gate for a paid launch.
 
@@ -320,6 +366,66 @@ Retention: transcripts and the spend log are reviewed and pruned at 30 days. Dai
 ### Honest status at every level
 
 A seat is WORKING only while its adapter has a run in flight. A project is `active` only while a real run exists. A count on the summary is the number of those real states. Empty, unknown, and not-yet-loaded are not shown as active or WORKING.
+
+## Provider status contract
+
+Phase A0. This is the first build, before plugin chairs. Every provider reports one shape. New providers plug in only through it. Existing seats adopt it by a shim that maps the fields in Current state and does not change their chips, leases, or who may post.
+
+```ts
+type ProviderState = 'working' | 'needs-owner' | 'idle' | 'offline' | 'stale';
+
+type ProviderStatus = {
+  botId: string;
+  provider: string;
+  state: ProviderState;
+  /** Epoch ms of the last real event. Never the time the file was read. */
+  lastEventAt: number | null;
+  /** Short text. Escaped when rendered. Empty when none was recorded. */
+  task: string;
+  projectId: string | null;
+};
+```
+
+`botId` is a seat id or a worker id, not a personal name. The words shown for `needs-owner` are "Needs owner".
+
+Decay, for a provider that plugs in through this contract: while no real run is in flight, no heartbeat for 15 minutes (`WORKING_LEASE_MS`) moves `working` or `idle` to `stale`, and no heartbeat for 45 minutes (`OFFLINE_AFTER_MS`) moves it to `offline`. `needs-owner` does not decay. A real in-flight run stays `working`. `lastEventAt` is the event time. A file re-read MUST NOT write `Date.now()` into it. That is the #7 bug at `src/server/workers/crew.ts:64`.
+
+Each status carries the event set that wrote it: `bridge-token`, `office-session`, `adapter-run`, `ollama-probe`, `hook`, or `file-replay`. A `bridge-token` event cannot resolve `needs-owner` (it cannot move that state to anything else) and cannot mark an office-launched run done. An office session does those. The shim for existing seats still runs today's `applyCrewPresence`: a crew-status push may still set and clear a crew-status `needs_input`, because that is current behavior. The tag is stored beside it. New providers get the prohibition immediately.
+
+### Mapping from the audit
+
+The shim projects today's fields into `ProviderStatus` and leaves the current chip on screen.
+
+| Today | Where | lastEventAt | Contract state |
+| --- | --- | --- | --- |
+| `working` and `seen` under 15 min | `#11` `hq.ts:120-121`, `crew.ts:131-136` | `seen[seat]` from the push (`crew.ts:98`) | `working` |
+| `working` beat, 15–30 min | `hq.ts:122` | same `seen` | `idle` (shim keeps today's chip) |
+| `working` beat, 30–45 min | `hq.ts:123` | same `seen` | `stale` |
+| age at least 45 min, or no beat | `hq.ts:115-119` | missing or the old `seen` | `offline` |
+| `blocked` / `needs_input` | `hq.ts:118`, `crew.ts:125-127` | `seen`, or `lastInput.at` | `needs-owner` (does not decay) |
+| roster `done` | `hq.ts:126` | `beat.at` | `idle` |
+| Okkin `working` (`depth > 0`) | `okkin.ts:53`, `crew.ts:180-181` | tick time while the chat is in flight, not a stored start | `working` |
+| Okkin `switching` | `okkin.ts:52`, `crew.ts:174-177` | none | `idle` |
+| Okkin `offline` / `idle` | `okkin.ts:51-54` | no last-reachable stamp | `offline` / `idle` |
+| Worker `needs_input` | `workers.ts:10` | `lastInput.at` when a hook set it | `needs-owner` |
+| Worker `working` | `workers.ts:9` | `lastInput.at` | `working` while the process is in flight |
+| Worker `done` / `idle` / `starting` | `workers.ts:7-11` | `lastInput.at` or null | `idle` |
+| Worker `exited` / `offline` | `workers.ts:12-13` | none dedicated | `offline` |
+| Kavi titles | `bridge.ts:325-338` | file `updatedAt` only | no per-bot row; shim does not invent one |
+
+`task` is the desk-card task or the worker task name, escaped, or `""`. `projectId` is null until a real project id exists. `provider` is `grok-bot-bridge` for a crew seat, `ollama` for Okkin, `kavi-bridge` only when a later packet actually names that bot, and the worker's own provider id for a hired agent.
+
+## Project index at scale
+
+Phase B, with the task agent feed. Hundreds or thousands of projects are a searchable index, not rooms.
+
+An index row is `{ projectId, name, ownerBot, state, lastActivity, needsOwner }`. `ownerBot` is a bot id. `state` is a `ProviderState` from the status contract, or `inactive` when no real run exists. `lastActivity` is the latest real `lastEventAt` among the project's bots and runs. It is null when none exists. It is never the time the index was opened. `needsOwner` is true when any of those states is `needs-owner`.
+
+The server pages the index. Search is indexed on the server. Filters are bot, state, and needs-owner, applied on the server to the requested page. The browser does not receive every project. Memory does not hold an unbounded array.
+
+The floor draws persistent bots only (residents, and guests that already have a session confirm). Projects are not desks, chairs, or other furniture. They appear in this index, on the boards, and in the coordinator console. Task agents do not get chairs. They roll up under their project and show in the task agent feed.
+
+The index file is gitignored under `.agent-office/`, mode `0600`, with the same 30-day review for finished rows. No new listener. Bots cannot post index rows. A row does not launch a run.
 
 ## Task agent feed
 
@@ -352,9 +458,17 @@ No new listener and no new port. The panel reads through the existing office ser
 
 Each phase is its own draft PR, then a security Crit, then the owner's Yes. A later phase does not start inside an earlier PR. No phase merges on its own from this plan.
 
-**Phase A. Plugin seats (additive).** New `src/server/providers/seats/` registry. Resident entries, and guest requests that still need a session confirm. Existing crew desks, Okkin, the bridge, and kavi are not edited. No new outbound network. No paid call, and `probe()` does not make one. `cursor-cloud-agent` and `openai`, if a file exists at all, are skeletons: `probe()` is `not_connected`, and tests assert `fetch` is never called. Task agents are not seated and are not spawned yet. `guestChairCap` is enforced. A file edit does not seat a guest. Acceptance includes: each adapter's status mapping; a missing provider is never WORKING; WORKING only while an in-flight promise is pending and clears on error; the registry rejects an unknown provider; an unknown connector or entry key, including a nested one, refuses the whole entry; a string that looks like a key refuses the entry; a plugin `displayName` that fails the say-name fold is not shown; a task run does not create a chair; a guest request past the cap stays hidden; the current honesty tests (offline queued notice, no fake WORKING, no synthesized bot lines), Okkin model switch, bridge auth, rate limits, and 413 still pass without modification.
+**Phase A0. Status contract.** The [Provider status contract](#provider-status-contract) and the shim. Existing seats keep today's chips. No new network, no new chair, no paid call.
 
-**Phase B. Project registry, summary board, and task agent feed.** The project record, the lazy gitignored loader, the summary (counts, Needs-owner, active runs, filter and search), and the [Task agent feed](#task-agent-feed). Hidden runs appear in that feed and on the summary, not as chairs. `repo` and `links` render only as `http:` or `https:` anchors with `rel="noopener noreferrer"`. Local `claude-cli` may spawn on talk into a hidden run, under the paid spawn rules in Per-provider design (named env allowlist, flat-subscription file), and still with no chair unless a session confirm pinned a guest. No cloud paid call is added in this phase. Storage and retention from Scale direction land here. The floor still draws only residents, seated guests, and the active subset.
+**Talk binding, Needs-owner queue, desk surface, honest roster.** Already on the stacked branches: talk and the desk card on #11, the roster chip on #11 (`src/shared/hq.ts:114-127`), and the Needs-owner queue on #9 (`GET /api/bridge/hq-brief`). This step binds those surfaces to the shim. It does not redesign them. The words for a missing provider stay "Needs owner".
+
+**Phase A. Plugin chairs (additive).** New `src/server/providers/seats/` registry, only through the status contract. Resident entries, and guest requests that still need a session confirm. Existing crew desks, Okkin, the bridge, and kavi are not edited. No new outbound network. No paid call, and `probe()` does not make one. `cursor-cloud-agent` and `openai`, if a file exists at all, are skeletons: `probe()` is `not_connected`, and tests assert `fetch` is never called. Task agents are not seated and are not spawned yet. `guestChairCap` is enforced. A file edit does not seat a guest. Acceptance includes: each adapter's status mapping onto the contract; a missing provider is never `working`; `working` only while an in-flight promise is pending and clears on error; `lastEventAt` is not refreshed on read; the registry rejects an unknown provider; an unknown connector or entry key, including a nested one, refuses the whole entry; a string that looks like a key refuses the entry; a plugin `displayName` that fails the say-name fold is not shown; a task run does not create a chair; a guest request past the cap stays hidden; the current honesty tests (offline queued notice, no fake WORKING, no synthesized bot lines), Okkin model switch, bridge auth, rate limits, and 413 still pass without modification.
+
+**Phase B. Project index and task feed.** The [Project index at scale](#project-index-at-scale) and the [Task agent feed](#task-agent-feed). Hidden runs roll up under their project and appear in the feed, not as chairs. `repo` and `links` render only as `http:` or `https:` anchors with `rel="noopener noreferrer"`. Local `claude-cli` may spawn on talk into a hidden run, under the paid spawn rules in Per-provider design (named env allowlist, flat-subscription file), and still with no chair unless a session confirm pinned a guest. No cloud paid call is added in this phase. Storage and retention from Scale direction land here. The floor still draws only residents, seated guests, and no project furniture.
+
+**Morning delta.** The digest already sketched on #9 (`cursor/unblock-queue-digest-016d@8d73331e`, `docs/configuration.md:40`). This plan does not rewrite it. It stays a read of real desk, queue, and board-status lines since the last visit. It does not synthesize a status row.
+
+**Work pool.** Already implemented on #12 (`cursor/community-work-pool-fb60@d376d8cb`, `src/shared/pool.ts:50-58`). Seven levels. This plan does not replace them with an open-or-gated pair. Adapters claim through those levels. Level 7 still needs the owner. A pool claim still does not launch a paid run or seat a guest.
 
 **Phase C. Paid cloud adapters.** `cursor-cloud-agent` and `openai` may call their fixed hosts only when `AO_PAID_ENABLED=1`, and only after the owner has approved that key. Missing or any other value means every paid adapter is off, even with a key present. Approving a key does not set the flag. Each launch is code-tier and money-tier and needs its own session confirm. A pool claim or bot text does not launch. `probe()` stays key presence, or one documented free endpoint that counts against the daily cap. Short-lived runs stay hidden. A guest chair still needs a session confirm and a free slot under the cap. Per-provider and per-project spend caps apply. No automatic retry.
 
