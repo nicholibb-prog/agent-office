@@ -221,7 +221,8 @@ export function loadConfig(argv: string[]): Config {
   let homeGiven = !!process.env.AGENT_OFFICE_HOME;
   let projects = process.env.AGENT_OFFICE_PROJECTS ? path.resolve(process.env.AGENT_OFFICE_PROJECTS) : '';
   let port = Number(process.env.PORT) || 4600;
-  // Loopback unless asked: an office lets whoever signs in run commands on this machine.
+  // Loopback unless --host says otherwise. HOST in the environment is ignored on purpose:
+  // some platforms export HOST=0.0.0.0, and that must not become the default bind.
   let host = '127.0.0.1';
   let open = !process.env.AGENT_OFFICE_NO_OPEN || process.env.AGENT_OFFICE_NO_OPEN === '0';
   let password = process.env.AGENT_OFFICE_PASSWORD || '';
@@ -258,7 +259,7 @@ export function loadConfig(argv: string[]): Config {
         break;
       case '-H':
       case '--host':
-        host = takeValue(argv, i++, a);
+        host = takeValue(argv, i++, a).trim() || '127.0.0.1';
         break;
       case '--password':
         password = takeValue(argv, i++, a);

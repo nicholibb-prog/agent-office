@@ -61,12 +61,14 @@ export default defineConfig({
     },
   },
   server: {
+    // Loopback only. Do not default this to 0.0.0.0.
+    host: '127.0.0.1',
     port: 5173,
     proxy: {
       // Not the string shorthand: that sets changeOrigin, so /api would see Host :4600 while /ws sees
       // Vite's port, and the session cookie (named per port, see auth.ts) would never reach the socket.
-      '/api': { target: 'http://localhost:4600', changeOrigin: false },
-      '/ws': { target: 'ws://localhost:4600', ws: true },
+      '/api': { target: 'http://127.0.0.1:4600', changeOrigin: false },
+      '/ws': { target: 'ws://127.0.0.1:4600', ws: true },
     },
   },
 });

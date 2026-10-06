@@ -17,7 +17,8 @@ agent-office [dir] [options]
       --projects <dir>    Where new floors are cloned, as <dir>/<owner>/<repo> (default ~/agent-office;
                           also settable from ⚙️ Settings)
   -p, --port <n>          Port (default 4600, env PORT)
-  -H, --host <addr>       Bind address (default 127.0.0.1; 0.0.0.0 lets your network in)
+  -H, --host <addr>       Bind address (default 127.0.0.1; 0.0.0.0 lets your network in).
+                          HOST in the environment is ignored. See FORGEL-BIND.md.
       --password <pw>     Office password (env AGENT_OFFICE_PASSWORD)
       --no-open           Don't open the office in your browser when it starts
       --agent <cmd>       Default agent command (default "claude")

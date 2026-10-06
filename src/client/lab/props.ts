@@ -12,6 +12,8 @@
 
 import * as THREE from 'three';
 import { DESKS } from '../../shared/layout';
+import { buildJevLeaderboard } from '../features/jev/world';
+import { boardFrom, seedAgents } from '../../shared/jev';
 import { buildCabinet } from '../features/cabinet/world';
 import { supercar } from '../features/cars/world';
 import { buildGong } from '../features/gong/world';
@@ -30,6 +32,11 @@ interface Shown {
 
 /** Every prop, built the way the office builds it. Add yours here. */
 const SHOW: Record<string, () => Shown> = {
+  jev: () => {
+    const board = buildJevLeaderboard();
+    board.show(boardFrom(seedAgents()));
+    return { object: board.group };
+  },
   jukebox: () => {
     const j = buildJukebox();
     j.show(true, 'Lab tune');

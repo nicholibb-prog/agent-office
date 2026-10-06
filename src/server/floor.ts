@@ -19,6 +19,7 @@ import { Dog } from './dog.js';
 import { Court } from './court.js';
 import { Jail } from './jail.js';
 import { Garage } from './garage.js';
+import { JevStore } from './jev.js';
 import { Jukebox } from './jukebox.js';
 import { Whiteboard } from './whiteboard.js';
 import { MeetingRoom } from './meetings.js';
@@ -122,6 +123,8 @@ export class Floor {
   readonly jukebox: Jukebox;
   /** The whiteboard everyone on the floor draws on together. */
   readonly whiteboard: Whiteboard;
+  /** Local Jev rankings and desk cups for this floor. */
+  readonly jev: JevStore;
   /** The meeting room, where workers work through a question together (see meetings.ts). */
   readonly meetings: MeetingRoom;
   /** The bookshelf: the project's Markdown files (see docs.ts). */
@@ -308,6 +311,7 @@ export class Floor {
     this.decor = new Decor(dataDir);
     this.jukebox = new Jukebox(dataDir);
     this.whiteboard = new Whiteboard(dataDir);
+    this.jev = new JevStore(dataDir);
     this.ready = this.workers.start();
 
     void this.github.refresh();

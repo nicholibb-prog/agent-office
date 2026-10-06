@@ -46,6 +46,14 @@ test('the office listens on loopback unless --host says otherwise', (t) => {
   assert.equal(load(t, '--host', '0.0.0.0').host, '0.0.0.0');
 });
 
+test('HOST in the environment does not move the default bind off loopback', (t) => {
+  const previous = process.env.HOST;
+  process.env.HOST = '0.0.0.0';
+  t.after(() => (previous === undefined ? delete process.env.HOST : (process.env.HOST = previous)));
+  assert.equal(load(t).host, '127.0.0.1');
+  assert.equal(load(t, '--host', '  ').host, '127.0.0.1');
+});
+
 test('--no-open leaves the browser alone', (t) => {
   assert.equal(load(t).open, true);
   assert.equal(load(t, '--no-open').open, false);

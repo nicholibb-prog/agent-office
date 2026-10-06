@@ -6,6 +6,7 @@ import type { DogState } from '../dog.js';
 import type { FloorPlan } from '../floorplan.js';
 import type { CarState } from '../garage.js';
 import type { BallState } from '../hoop.js';
+import type { JevBoard } from '../jev.js';
 import type { JukeboxState } from '../jukebox.js';
 import type { WhiteboardView } from '../whiteboard.js';
 import type { AgentProvider } from './agents.js';
@@ -124,6 +125,8 @@ export interface FloorView {
   cars: CarState[];
   /** Workers sent home and locked up in the dungeon, on a map that has one. */
   jail: JailState;
+  /** Local Jev rankings on the center-room board. Names and counts only. */
+  jev: JevBoard;
 }
 
 export type FloorClientMsg =
