@@ -9,6 +9,8 @@ import { githubRoutes } from './github.js';
 import { pageRoutes } from './pages.js';
 import { searchRoutes } from './search.js';
 import { serviceRoutes } from './services.js';
+import { bridgeRoutes } from './bridge.js';
+import { poolRoutes } from './pool.js';
 
 export const routes: readonly Route[] = [
   // Anyone.
@@ -20,6 +22,24 @@ export const routes: readonly Route[] = [
   authRoutes.link,
   authRoutes.logout,
   pageRoutes.health,
+  bridgeRoutes.chatRecent,
+  bridgeRoutes.say,
+  bridgeRoutes.crewStatus,
+  bridgeRoutes.crewStatusGet,
+  bridgeRoutes.status,
+  bridgeRoutes.kaviFeed,
+  bridgeRoutes.kaviFeedGet,
+  bridgeRoutes.kaviOutbox,
+  bridgeRoutes.kaviOutboxGet,
+  poolRoutes.list,
+  poolRoutes.post,
+  poolRoutes.claim,
+  poolRoutes.heartbeat,
+  poolRoutes.release,
+  poolRoutes.complete,
+  poolRoutes.pull,
+  poolRoutes.danPass,
+  poolRoutes.job,
   pageRoutes.assets,
   pageRoutes.login,
   pageRoutes.claim,
@@ -27,6 +47,8 @@ export const routes: readonly Route[] = [
   pageRoutes.favicon,
   // Signed in.
   authRoutes.whoami,
+  poolRoutes.callers,
+  poolRoutes.ownerApproval,
   agentRoutes.models,
   fileRoutes.image,
   fileRoutes.whiteboardFile,
