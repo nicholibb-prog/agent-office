@@ -36,7 +36,7 @@ export function onConnection(ctx: Ctx, ws: WebSocket, url: URL, session: Session
   const name = account?.name ?? (str(url.searchParams.get('name'), 24).trim() || `Guest ${id.slice(0, 3)}`);
   const colorParam = url.searchParams.get('color') ?? '';
   const intParam = (k: string) => (url.searchParams.get(k) ? Number(url.searchParams.get(k)) : undefined);
-  const me = meOf(account?.id);
+  const me = account ? meOf(account.id) : { admin: true };
   const client = newClient(id, ws, { accountId: account?.id, admin: me.admin }, {
     id,
     name,
