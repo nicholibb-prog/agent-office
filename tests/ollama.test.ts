@@ -8,10 +8,12 @@ import {
   DEFAULT_OLLAMA_URL,
   MAX_PREDICT,
   chatOllama,
+  createOllamaClient,
   loopbackOrigin,
   ollamaEndpoint,
   probeOllama,
   resolveOllamaSettings,
+  type OllamaClient,
 } from '../src/server/ollama.js';
 import { SeatBoard } from '../src/server/seat-provider.js';
 import { OFFLINE, NEEDS_NICK } from '../src/shared/seat-provider.js';
@@ -155,6 +157,62 @@ test('an unset model and a missing CLI do not invent a reply', async () => {
     const faces = board.faces('floor');
     assert.ok(faces.some((f) => f.id === 'meeting-room' && f.label === NEEDS_NICK));
     assert.equal(faces.find((f) => f.id === 'meeting-room')?.reply ?? null, null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('neither a local model nor a writable bridge says needs Nick', () => {
+  const missing = path.join(tmpdir(), `no-bridge-${process.pid}`);
+  rmSync(missing, { recursive: true, force: true });
+  const board = new SeatBoard(missing, {
+    env: {},
+    detect: () => ({ claude: false, grok: false, 'cursor-agent': false }),
+  });
+  assert.equal(board.bridgeUp, false);
+  assert.equal(board.providerFor('meeting-room'), 'bridge');
+  const blocked = board.decide('floor', 'meeting-room', 'ping');
+  assert.equal(blocked.action, 'blocked');
+  if (blocked.action === 'blocked') assert.equal(blocked.message, NEEDS_NICK);
+  const face = board.faces('floor').find((f) => f.id === 'meeting-room');
+  assert.equal(face?.label, NEEDS_NICK);
+  assert.equal(face?.reply, null);
+  board.setProvider('meeting-room', 'ollama');
+  const offline = board.decide('floor', 'meeting-room', 'ping');
+  assert.equal(offline.action, 'blocked');
+  if (offline.action === 'blocked') assert.equal(offline.message, OFFLINE);
+});
+
+test('the client is told the model name and state, not the response body', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'seats-view-'));
+  try {
+    const board = new SeatBoard(dir, {
+      env: { OLLAMA_URL: 'http://127.0.0.1:9', OKKIN_MODEL: 'example' },
+      detect: () => ({ claude: false, grok: false, 'cursor-agent': false }),
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        text: async () =>
+          url.endsWith('/api/tags')
+            ? JSON.stringify({ models: [{ name: 'example' }], raw: 'tags-body' })
+            : JSON.stringify({ message: { content: 'pong' }, raw: 'chat-body' }),
+      }),
+    });
+    const client: OllamaClient = board.client;
+    assert.equal(typeof client.probe, 'function');
+    assert.equal(typeof client.chat, 'function');
+    assert.equal(createOllamaClient({ env: { OKKIN_MODEL: 'example' } }).settings.model, 'example');
+    await board.probe(true);
+    const view = board.clientView();
+    assert.deepEqual(view, { model: 'example', state: 'ready' });
+    assert.equal(JSON.stringify(view).includes('tags-body'), false);
+    assert.equal(Object.keys(view).join(','), 'model,state');
+    const ran = await board.runOllama('floor', 'meeting-room', 'ping');
+    assert.equal(ran.ok, true);
+    if (ran.ok) assert.equal(ran.text, 'pong');
+    const face = board.faces('floor').find((f) => f.id === 'meeting-room');
+    assert.equal(face?.reply, 'pong');
+    assert.equal(JSON.stringify(face).includes('chat-body'), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -47,7 +47,7 @@ function floorView(floor: string) {
     cars: [{ x: 0, z: 0, rotY: 0, speed: 0, steer: 0, driver: 'p-b' }],
     jail: { prisoners: [], bones: 0 },
     jev: { rows: [], trophies: [] },
-    huddle: { current: null, past: [], seats: [], cli: { claude: false, grok: false, 'cursor-agent': false }, ollama: 'offline', defaultProvider: 'bridge' },
+    huddle: { current: null, past: [], seats: [], cli: { claude: false, grok: false, 'cursor-agent': false }, ollama: { model: null, state: 'offline' }, defaultProvider: 'bridge' },
   };
 }
 
@@ -251,7 +251,7 @@ test('a new store starts every field where it always has', async () => {
       dog: null, dogStart: 0, jukebox: { on: false, track: JUKEBOX_TUNES[0].id, startedAt: 0, elapsed: 0, since: 0 }, clock: '<undefined>',
       whiteboard: [], drawing: [], cabinet: { player: null, scores: [] }, cabinetFrame: null, ball: {},
       cars: parked(), carsAt: [], jail: { prisoners: [], bones: 0 }, jev: { rows: [], trophies: [] },
-      huddle: { current: null, past: [], seats: [], cli: { claude: false, grok: false, 'cursor-agent': false }, ollama: 'offline', defaultProvider: 'bridge' },
+      huddle: { current: null, past: [], seats: [], cli: { claude: false, grok: false, 'cursor-agent': false }, ollama: { model: null, state: 'offline' }, defaultProvider: 'bridge' },
       team: null, accounts: null, signins: null,
     },
   );

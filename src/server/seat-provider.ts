@@ -2,7 +2,7 @@
 // Ollama when it answers and a model is set; otherwise the bridge outbox. A missing CLI does not spawn.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { DESKS } from '../shared/layout.js';
 import {
@@ -20,8 +20,8 @@ import {
   type OllamaHealth,
   type SeatProviderId,
 } from '../shared/seat-provider.js';
-import type { SeatFace } from '../shared/protocol/huddle.js';
-import { chatOllama, loadOllamaFile, probeOllama, resolveOllamaSettings, type OllamaFetch, type OllamaSettings } from './ollama.js';
+import type { OllamaClientView, SeatFace } from '../shared/protocol/huddle.js';
+import { createOllamaClient, loadOllamaFile, type OllamaClient, type OllamaFetch } from './ollama.js';
 
 export type SeatDecision =
   | { action: 'blocked'; message: string }
@@ -41,10 +41,20 @@ function detectCli(): CliPresence {
   return { claude: has('claude'), grok: has('grok'), 'cursor-agent': has('cursor-agent') };
 }
 
+function bridgeOutboxWritable(dir: string): boolean {
+  try {
+    return existsSync(dir) && statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 export class SeatBoard {
   readonly cli: CliPresence;
+  readonly client: OllamaClient;
   ollama: OllamaHealth = 'offline';
-  readonly settings: OllamaSettings;
+  /** False when the bridge outbox directory cannot be written. */
+  bridgeUp: boolean;
   private choices = new Map<string, SeatProviderId>();
   private replies = new Map<string, string>();
   private probedAt = 0;
@@ -56,11 +66,25 @@ export class SeatBoard {
     private deps: { detect?: () => CliPresence; fetchImpl?: OllamaFetch; now?: () => number; env?: { OLLAMA_URL?: string; OKKIN_MODEL?: string } } = {},
   ) {
     this.cli = (deps.detect ?? detectCli)();
-    this.settings = resolveOllamaSettings({ env: deps.env ?? { OLLAMA_URL: process.env.OLLAMA_URL, OKKIN_MODEL: process.env.OKKIN_MODEL }, file: loadOllamaFile(dataDir) });
+    this.client = createOllamaClient({
+      env: deps.env ?? { OLLAMA_URL: process.env.OLLAMA_URL, OKKIN_MODEL: process.env.OKKIN_MODEL },
+      file: loadOllamaFile(dataDir),
+      fetchImpl: deps.fetchImpl,
+    });
+    this.bridgeUp = bridgeOutboxWritable(dataDir);
     this.outboxFile = path.join(dataDir, 'kavi-outbox.json');
     this.replyFile = path.join(dataDir, 'seat-replies.json');
     this.loadReplies();
-    if (this.settings.refused) this.ollama = 'offline';
+    if (this.client.settings.refused) this.ollama = 'offline';
+  }
+
+  get settings() {
+    return this.client.settings;
+  }
+
+  /** Model name and ready/offline. No URL and no response body. */
+  clientView(): OllamaClientView {
+    return { model: this.settings.model, state: this.ollama };
   }
 
   providerFor(seatId: string): SeatProviderId {
@@ -80,7 +104,7 @@ export class SeatBoard {
       this.ollama = 'offline';
       return;
     }
-    this.ollama = await probeOllama(this.settings, this.deps.fetchImpl);
+    this.ollama = await this.client.probe();
   }
 
   /** What to do with a turn. Does not invent a reply. Bridge queues; ollama is only a plan. */
@@ -93,24 +117,31 @@ export class SeatBoard {
       return { action: 'ollama' };
     }
     if (provider === 'bridge') {
+      if (!this.bridgeUp) return { action: 'blocked', message: NEEDS_NICK };
       if (!clean) return { action: 'blocked', message: 'Write a task. Nothing was sent.' };
-      this.queue(floorId, seatId, clean);
+      if (!this.queue(floorId, seatId, clean)) return { action: 'blocked', message: NEEDS_NICK };
       return { action: 'queued' };
     }
     if (!this.cli[provider]) return { action: 'blocked', message: NEEDS_NICK };
     return { action: 'cli' };
   }
 
-  queue(floorId: string, seatId: string, text: string): void {
-    const items = appendSeatTurn(this.readOutbox(), floorId, seatId, text, new Date().toISOString());
-    this.writeOutbox(items);
+  queue(floorId: string, seatId: string, text: string): boolean {
+    try {
+      const items = appendSeatTurn(this.readOutbox(), floorId, seatId, text, new Date().toISOString());
+      this.writeOutbox(items);
+      return true;
+    } catch {
+      this.bridgeUp = false;
+      return false;
+    }
   }
 
   async runOllama(floorId: string, seatId: string, text: string): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
     await this.probe(true);
     if (this.providerFor(seatId) !== 'ollama') return { ok: false, message: OFFLINE };
     if (this.settings.refused || this.ollama !== 'ready' || !this.settings.model) return { ok: false, message: OFFLINE };
-    const result = await chatOllama(this.settings, text, this.deps.fetchImpl);
+    const result = await this.client.chat(text);
     if (!result.ok) return { ok: false, message: OFFLINE };
     this.replies.set(`${floorId}:${seatId}`, result.text);
     this.persistReplies();
@@ -131,7 +162,10 @@ export class SeatBoard {
   private label(floorId: string, id: string, provider: SeatProviderId, items: OutboxItem[]): string {
     if (provider === 'ollama' && (this.settings.refused || this.ollama !== 'ready' || !this.settings.model)) return OFFLINE;
     if (provider !== 'ollama' && provider !== 'bridge' && !this.cli[provider]) return NEEDS_NICK;
-    if (provider === 'bridge') return items.some((it) => it.title === seatTurnTitle(floorId, id)) ? QUEUED_FOR_CREW : 'bridge';
+    if (provider === 'bridge') {
+      if (!this.bridgeUp) return NEEDS_NICK;
+      return items.some((it) => it.title === seatTurnTitle(floorId, id)) ? QUEUED_FOR_CREW : 'bridge';
+    }
     return provider;
   }
 

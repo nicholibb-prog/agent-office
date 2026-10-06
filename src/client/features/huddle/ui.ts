@@ -30,6 +30,7 @@ export function openHuddleWindow(net: Net): void {
     const close = youIn ? h('button.btn', { type: 'button', onclick: () => net.send({ t: 'huddle.close' }) }, 'Close huddle') : undefined;
     body.replaceChildren(
       h('p.seat-line', {}, room ? `Meeting room · ${room.provider} · ${room.label}` : 'Meeting room'),
+      h('p.seat-line', {}, `Local model · ${state.ollama.model ?? 'unset'} · ${state.ollama.state}`),
       ...(warn ? [warn] : []),
       room?.reply ? h('p', {}, `Reply: ${room.reply}`) : h('p.muted', {}, 'No reply yet.'),
       h('p', {}, current ? (workerQuorum(current) ? 'Two or more workers are in.' : 'Needs another idle worker before the room is full.') : 'Walk into the meeting room to join.'),

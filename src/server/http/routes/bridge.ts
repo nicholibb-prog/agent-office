@@ -7,6 +7,8 @@ import type { ChatLine } from '../../../shared/protocol.js';
 import { send } from '../util.js';
 import type { Route } from '../router.js';
 
+const BRIDGE_FAILED = 'Bridge failed';
+
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -164,8 +166,8 @@ export const bridgeRoutes = {
       try {
         const file = path.join(ctx.cfg.dataDir, 'crew-status.json');
         writeFileSync(file, JSON.stringify(payload, null, 2) + '\n', { mode: 0o600 });
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: BRIDGE_FAILED });
       }
       const results: { floor: string; applied: string[] }[] = [];
       for (const floor of ctx.floors.values()) {
@@ -185,8 +187,8 @@ export const bridgeRoutes = {
         const file = path.join(ctx.cfg.dataDir, 'crew-status.json');
         if (!existsSync(file)) return send(res, 200, { crew: {}, updatedAt: null });
         return send(res, 200, JSON.parse(readFileSync(file, 'utf8')));
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: BRIDGE_FAILED });
       }
     },
   },
@@ -219,8 +221,8 @@ export const bridgeRoutes = {
           JSON.stringify({ updatedAt: new Date().toISOString(), crew: merged, source: 'bridge-status' }, null, 2) + '\n',
           { mode: 0o600 },
         );
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: BRIDGE_FAILED });
       }
       const results: { floor: string; applied: string[] }[] = [];
       for (const floor of ctx.floors.values()) {
@@ -256,8 +258,8 @@ export const bridgeRoutes = {
       };
       try {
         writeFileSync(path.join(ctx.cfg.dataDir, 'kavi-feed.json'), JSON.stringify(payload, null, 2) + '\n', { mode: 0o600 });
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: BRIDGE_FAILED });
       }
       return send(res, 200, { ok: true, count: titles.length });
     },
@@ -272,8 +274,8 @@ export const bridgeRoutes = {
         const file = path.join(ctx.cfg.dataDir, 'kavi-feed.json');
         if (!existsSync(file)) return send(res, 200, { titles: [], updatedAt: null });
         return send(res, 200, JSON.parse(readFileSync(file, 'utf8')));
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: BRIDGE_FAILED });
       }
     },
   },
@@ -313,8 +315,8 @@ export const bridgeRoutes = {
         const file = path.join(ctx.cfg.dataDir, 'kavi-outbox.json');
         if (!existsSync(file)) return send(res, 200, { items: [] });
         return send(res, 200, JSON.parse(readFileSync(file, 'utf8')));
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: BRIDGE_FAILED });
       }
     },
   },

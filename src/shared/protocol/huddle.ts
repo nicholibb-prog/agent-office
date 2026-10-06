@@ -13,12 +13,18 @@ export interface SeatFace {
   reply: string | null;
 }
 
+/** What a browser is told about the local model. Never a response body. */
+export interface OllamaClientView {
+  model: string | null;
+  state: OllamaHealth;
+}
+
 export interface HuddleFloorState {
   current: Huddle | null;
   past: Huddle[];
   seats: SeatFace[];
   cli: CliPresence;
-  ollama: OllamaHealth;
+  ollama: OllamaClientView;
   defaultProvider: 'ollama' | 'bridge';
 }
 
@@ -28,7 +34,7 @@ export function emptyHuddleFloor(): HuddleFloorState {
     past: [],
     seats: [],
     cli: { claude: false, grok: false, 'cursor-agent': false },
-    ollama: 'offline',
+    ollama: { model: null, state: 'offline' },
     defaultProvider: 'bridge',
   };
 }

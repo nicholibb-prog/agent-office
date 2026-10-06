@@ -172,7 +172,7 @@ export class HuddleRoom {
       past: this.view.past,
       seats: this.seats.faces(this.floorId),
       cli: this.seats.cli,
-      ollama: this.seats.ollama,
+      ollama: this.seats.clientView(),
       defaultProvider: this.seats.ollama === 'ready' && this.seats.settings.model ? 'ollama' : 'bridge',
     };
   }

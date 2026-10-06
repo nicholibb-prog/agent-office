@@ -126,6 +126,27 @@ export async function probeOllama(settings: OllamaSettings, fetchImpl?: OllamaFe
   return 'ready';
 }
 
+/**
+ * The local-model client another seat can import. Settings come from env and
+ * `.agent-office/ollama.json` only. `probe` and `chat` return a state or extracted
+ * text, never the HTTP body.
+ */
+export interface OllamaClient {
+  readonly settings: OllamaSettings;
+  probe(): Promise<'ready' | 'offline'>;
+  chat(content: string): Promise<{ ok: true; text: string } | { ok: false; reason: 'offline' | 'model unset' }>;
+}
+
+/** Build the client. A request bag is not a parameter: the address is not taken from one. */
+export function createOllamaClient(input: { env?: OllamaEnv; file?: OllamaFile | null; fetchImpl?: OllamaFetch }): OllamaClient {
+  const settings = resolveOllamaSettings({ env: input.env, file: input.file });
+  return {
+    settings,
+    probe: () => probeOllama(settings, input.fetchImpl),
+    chat: (content) => chatOllama(settings, content, input.fetchImpl),
+  };
+}
+
 export async function chatOllama(
   settings: OllamaSettings,
   content: string,
