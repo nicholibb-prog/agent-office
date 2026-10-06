@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -82,6 +82,14 @@ function capture(): { res: ServerResponse; got: Captured } {
     },
   };
   return { res: res as ServerResponse, got };
+}
+
+function getReq(url: string, headers: Record<string, string> = {}): IncomingMessage {
+  const req = new EventEmitter() as IncomingMessage;
+  req.method = 'GET';
+  req.url = url;
+  req.headers = { host: '127.0.0.1:4600', ...headers };
+  return req;
 }
 
 function jsonReq(url: string, body: unknown, headers: Record<string, string> = {}): IncomingMessage {
@@ -451,6 +459,65 @@ test('claimer and Dan come from the authenticated caller, never the body', async
   assert.equal(pass.got.status, 200);
   assert.equal(pass.got.json().job?.danPass?.by, (riley as { id: string }).id);
   assert.equal(pass.got.json().job?.status, 'needs_approval');
+});
+
+test('a session can read a job body and a token cannot', async (t) => {
+  const dir = dirOf(t);
+  const pool = poolAt(dir);
+  const body = `Read this in full. ${'x'.repeat(120)}`;
+  const job = post(pool, 'Long note', body, { level: 4 });
+  assert.equal(pool.board().columns.open[0].body?.length, 80);
+  const signed = requestHandler(office(dir, pool, { id: CASEY.id, name: 'Casey' }), [poolRoutes.job]);
+  const open = requestHandler(office(dir, pool), [poolRoutes.job]);
+
+  const full = capture();
+  await signed(getReq(`/api/pool/jobs/${job.id}`), full.res);
+  assert.equal(full.got.status, 200);
+  const view = full.got.json() as { body?: string; hash?: string };
+  assert.equal(view.body, body);
+  assert.equal(view.hash, job.contentHash);
+
+  const headed = capture();
+  await signed(getReq(`/api/pool/jobs/${job.id}`, { authorization: `Bearer ${BRIDGE}` }), headed.res);
+  assert.equal(headed.got.status, 403);
+  assert.equal(headed.got.json().error, 'human session only');
+
+  const bearer = capture();
+  await open(getReq(`/api/pool/jobs/${job.id}`, { authorization: `Bearer ${BRIDGE}` }), bearer.res);
+  assert.equal(bearer.got.status, 403);
+
+  const token = capture();
+  await open(getReq(`/api/pool/jobs/${job.id}`, { 'x-bridge-token': BRIDGE }), token.res);
+  assert.equal(token.got.status, 403);
+  assert.equal(token.got.json().error, 'human session only');
+
+  const anon = capture();
+  await open(getReq(`/api/pool/jobs/${job.id}`), anon.res);
+  assert.equal(anon.got.status, 401);
+});
+
+test('owner approval and a Dan pass are refused when no policy file is present', async (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ao-pool-nopolicy-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(path.join(dir, 'bridge-token'), BRIDGE);
+  assert.equal(existsSync(path.join(dir, 'work-pool-policy.json')), false);
+  const pool = poolAt(dir);
+  const job = must(pool.post({ title: 'Shelf', body: 'Tidy the shelf.', level: 4 }, ADA));
+  const seen = saw(job);
+  assert.equal(existsSync(path.join(dir, 'work-pool-policy.json')), false);
+
+  const owner = requestHandler(office(dir, pool, { id: CASEY.id, name: 'Casey' }), [poolRoutes.ownerApproval]);
+  const yes = capture();
+  await owner(jsonReq('/api/pool/owner-yes', { id: job.id, ...seen }), yes.res);
+  assert.equal(yes.got.status, 403);
+  assert.equal(yes.got.json().error, 'not an approver');
+
+  const dan = requestHandler(office(dir, pool, { id: RILEY.id, name: 'Riley' }), [poolRoutes.danPass]);
+  const pass = capture();
+  await dan(jsonReq('/api/bridge/pool/dan-pass', { id: job.id, ...seen }), pass.res);
+  assert.equal(pass.got.status, 403);
+  assert.equal(pass.got.json().error, 'only Dan can record a Dan pass');
+  assert.equal(existsSync(path.join(dir, 'work-pool-policy.json')), false);
 });
 
 test('a pool error is a fixed message', async (t) => {

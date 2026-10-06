@@ -49,6 +49,43 @@ function saw(job: PoolJob) {
   return { state: job.status, updatedAt: job.updatedAt, hash: job.contentHash ?? '' };
 }
 
+test('split, suffixed, and mixed-script wording raises the pool level', () => {
+  const seven = [
+    'sending',
+    'emailing',
+    'paid',
+    'paying',
+    'deleting',
+    'e-mail',
+    'p a y',
+    's-e-n-d',
+    'send_email()',
+    'paypal',
+    'buy the paper',
+    'purchase the paper',
+    'post an update',
+    's\u0435nd',
+    '\u0455end',
+    's\u034Fend',
+  ];
+  for (const text of seven) assert.equal(enforcedLevel(1, text), 7, text);
+  for (const text of ['pushed', 'keys', 'secrets', 'passwords', 'credentials', 'authentication']) {
+    assert.equal(enforcedLevel(1, text), 6, text);
+  }
+  for (const text of ['curl', 'wget', 'https://example.com', 'the url', 'ssh', 'scp', 'rm -rf', 'DM', 'a text', 'an sms', 'a tweet', 'venmo', 'zelle', 'cashapp', 'order from amazon', 'signin', 'fix the bug in login.ts']) {
+    assert.equal(enforcedLevel(1, text), 4, text);
+  }
+  assert.equal(enforcedLevel(1, 'he\u0435llo'), 4);
+  assert.equal(enforcedLevel(1, 'go\u034Fod'), 4);
+  assert.equal(normalizePoolText('p a y'), 'pay');
+  assert.equal(normalizePoolText('e-mail'), 'email');
+  assert.equal(normalizePoolText('s-e-n-d'), 'send');
+  assert.equal(normalizePoolText('s\u0435nd'), 'send');
+  assert.equal(normalizePoolText('s\u034Fend'), 'send');
+  assert.equal(enforcedLevel(1, 'tidy the README wording'), 1);
+  assert.equal(enforcedLevel(2, 'sort the queue by age'), 2);
+});
+
 test('keyword backstops and a missing level are not Okkin-eligible', () => {
   assert.equal(normalizePoolText('se\u200bnd'), 'send');
   for (const text of ['sends', 'payment', 'se\u200bnd']) {
@@ -84,6 +121,33 @@ test('a caller above level 3 must be on the crew allowlist', (t) => {
   assert.equal(guest.ok, false);
   assert.match((guest as { error: string }).error, /crew allowlist/);
   assert.match((pool.claim(job.id, OKKIN_ACTOR) as { error: string }).error, /Okkin/);
+});
+
+test('owner approval refuses the Dan pass recorder and a past claimer', (t) => {
+  const morgan: PoolActor = { id: 'acct-morgan', label: 'Morgan' };
+  const dir = dirOf(t, { approvers: [CASEY.id, RILEY.id, morgan.id], dan: [RILEY.id] });
+  const pool = new WorkPool(dir);
+  const job = must(pool.post({ title: 'Gate', body: 'Review the session check.', level: 6, targetBot: PIPER.id }, ADA));
+  must(pool.claim(job.id, PIPER));
+  const waiting = must(pool.complete(job.id, PIPER));
+  const passed = must(pool.danPass(job.id, RILEY, saw(waiting)));
+  const fresh = saw(passed);
+  const samePerson = pool.ownerApproval(job.id, RILEY, fresh);
+  assert.equal(samePerson.ok, false);
+  assert.equal((samePerson as { status: number }).status, 403);
+  assert.equal((samePerson as { error: string }).error, 'cannot approve a pass you recorded');
+
+  const raw = JSON.parse(readFileSync(path.join(dir, 'work-pool.json'), 'utf8')) as { jobs: PoolJob[] };
+  const stored = raw.jobs.find((j) => j.id === job.id)!;
+  stored.history.push({ by: morgan.id, at: 1, leaseUntil: 2, endedAt: 3, reason: 'released' });
+  writeFileSync(path.join(dir, 'work-pool.json'), JSON.stringify(raw) + '\n', { mode: 0o600 });
+  const again = new WorkPool(dir);
+  const reloaded = again.get(job.id)!;
+  const past = again.ownerApproval(job.id, morgan, saw(reloaded));
+  assert.equal(past.ok, false);
+  assert.equal((past as { status: number }).status, 403);
+  assert.equal((past as { error: string }).error, 'cannot approve your own job');
+  assert.equal(must(again.ownerApproval(job.id, CASEY, saw(reloaded))).status, 'done');
 });
 
 test('Dan and an owner approver cannot approve work they already touched, and the hash must match', (t) => {

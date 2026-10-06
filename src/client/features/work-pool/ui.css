@@ -1,0 +1,22 @@
+/* Work pool approval (ui.ts): the full job text, scrolled, before owner approval is enabled. */
+.modal.pool-approval { width: min(720px, 100%); }
+.modal.pool-approval .pool-jobs { display: flex; flex-wrap: wrap; gap: 8px; }
+.modal.pool-approval .pool-jobs .btn { max-width: 100%; }
+.modal.pool-approval .pool-body {
+  margin: 12px 0 0;
+  max-height: min(360px, 40vh);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 13px/1.5 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  background: #fff;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  padding: 12px;
+}
+.modal.pool-approval .pool-hash {
+  margin: 8px 0 0;
+  font: 12px/1.4 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  word-break: break-all;
+  color: var(--muted);
+}

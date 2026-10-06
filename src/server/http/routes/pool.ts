@@ -4,6 +4,7 @@ import type http from 'node:http';
 import type { Ctx } from '../../office/context.js';
 import type { Session } from '../../auth.js';
 import { displayName, type PoolActor, type SeenJob } from '../../../shared/pool.js';
+import { contentHash } from '../../pool/hash.js';
 import { readBody, send } from '../util.js';
 import type { Route, RouteRequest } from '../router.js';
 import { bridgeCredentialPresent, bridgeGate, officeRequestShape } from './bridge.js';
@@ -238,6 +239,41 @@ export const poolRoutes = {
         const made = floor.pool.registerCaller(body.name, names);
         if ('error' in made) return send(res, 400, { error: made.error });
         return send(res, 200, { ok: true, id: made.id, name: made.name, token: made.token });
+      });
+    },
+  },
+  /**
+   * Full body and content hash for one job.
+   * A signed-in account only. x-bridge-token and Bearer are rejected, even with a session.
+   * Public auth so a token with no cookie is 403 here, rather than the router's 401.
+   */
+  job: {
+    method: 'GET' as const,
+    prefix: '/api/pool/jobs/',
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res, url, path }: RouteRequest) {
+      return guard(res, async () => {
+        if (bridgeCredentialPresent(req)) return send(res, 403, { error: 'human session only' });
+        if (!officeRequestShape(req, res)) return;
+        const session = ctx.auth.fromRequest(req);
+        if (!session) return send(res, 401, { error: 'Not logged in' });
+        if (!session.account?.id) return send(res, 403, { error: 'account required' });
+        const floor = floorOf(ctx, url);
+        if (!floor) return send(res, 404, { error: 'no floor' });
+        const id = path.slice('/api/pool/jobs/'.length);
+        if (!/^[a-f0-9]{12}$/.test(id)) return send(res, 404, { error: 'no such job' });
+        const job = floor.pool.get(id);
+        if (!job) return send(res, 404, { error: 'no such job' });
+        return send(res, 200, {
+          id: job.id,
+          title: job.title,
+          body: job.body,
+          hash: contentHash(job),
+          state: job.status,
+          updatedAt: job.updatedAt,
+          level: job.level,
+          ...(job.approval ? { approval: job.approval } : {}),
+        });
       });
     },
   },

@@ -2,6 +2,7 @@
 import type { Ctx } from '../../core/context';
 import { aside, hintTitle } from '../../core/hint';
 import { store } from '../../state';
+import { openPoolApproval } from './ui';
 
 declare module '../../world/types' {
   interface InteractKinds {
@@ -29,6 +30,6 @@ export function installWorkPool(ctx: Ctx) {
       const waiting = store.pool.columns.needsApproval.length;
       return { k: `${open}|${waiting}`, parts: [hintTitle('Work pool'), aside(open || waiting ? `${open} open · ${waiting} need approval` : 'open, claimed, needs approval, done')] };
     },
-    use: () => undefined,
+    use: () => openPoolApproval(),
   });
 }

@@ -39,6 +39,7 @@ export const routes: readonly Route[] = [
   poolRoutes.complete,
   poolRoutes.pull,
   poolRoutes.danPass,
+  poolRoutes.job,
   pageRoutes.assets,
   pageRoutes.login,
   pageRoutes.claim,

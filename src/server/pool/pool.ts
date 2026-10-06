@@ -237,7 +237,8 @@ export class WorkPool {
 
   /**
    * Owner approval from an account id on pool.approvers.
-   * The approver cannot be the poster or the completer. Level 6 needs a Dan pass first.
+   * The approver cannot have posted, claimed, completed, or recorded the Dan pass.
+   * Level 6 needs a Dan pass first, from someone else.
    */
   ownerApproval(id: string, actor: PoolActor, seen: SeenJob): PoolOk<PoolJob> {
     this.sweep();
@@ -251,7 +252,8 @@ export class WorkPool {
     if (job.status !== 'needs_approval' || (job.level !== 6 && job.level !== 7)) return fail(409, 'job is not waiting on approval');
     if (job.level === 6 && !job.danPass) return fail(403, 'Dan pass is required');
     if (job.approval !== 'owner-yes') return fail(409, 'needs owner');
-    if (job.postedBy === who.id || job.doneBy === who.id) return fail(403, 'cannot approve your own job');
+    if (job.danPass?.by === who.id) return fail(403, 'cannot approve a pass you recorded');
+    if (touchedBy(job, who.id)) return fail(403, 'cannot approve your own job');
     const now = this.now();
     job.status = 'done';
     job.approvedBy = who.id;

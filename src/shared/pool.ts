@@ -85,25 +85,68 @@ export function actorId(raw: unknown): string {
 }
 
 /**
- * NFKC, then drop format characters (zero-width and the like), then case-fold.
- * Keyword checks run on this, so a hidden character cannot split a gated word.
+ * NFKC, drop format characters and combining marks, case-fold, then close the
+ * gaps people use to split a word: single letters with spaces, and runs of
+ * hyphens, underscores, or dots between letters.
  */
 export function normalizePoolText(text: string): string {
-  return text.normalize('NFKC').replace(/\p{Cf}/gu, '').toLowerCase();
+  const base = text.normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/\p{M}/gu, '').toLowerCase();
+  return collapseSeparators(collapseLetterSpacing(foldHomoglyphs(base)));
 }
 
-const word = (stem: string) => new RegExp(`\\b${stem}\\b`, 'i');
+/** Letters that look like ASCII. Folded before the stem check so a mixed-script word can still hit a higher tier. */
+const HOMOGLYPHS: Record<string, string> = {
+  '\u0430': 'a', '\u0435': 'e', '\u043e': 'o', '\u0440': 'p', '\u0441': 'c', '\u0443': 'y', '\u0445': 'x',
+  '\u0455': 's', '\u0456': 'i', '\u0458': 'j', '\u04bb': 'h', '\u0501': 'd',
+};
 
-/** Backstop only. merge/send/money/delete land at 7. */
-const TO_SEVEN = ['merge', 'email', 'message', 'post', 'reply', 'slack', 'send', 'sent', 'sends', 'pay', 'payment', 'invoice', 'transfer', 'wire', 'purchase', 'buy', 'spend', 'delete', 'remove', 'wipe'].map(word);
-/** Backstop only. code, secrets, and network land at 6 or above. */
-const TO_SIX = ['deploy', 'push', 'commit', 'code', 'token', 'password', 'credential', 'auth', 'secret', 'key', 'security', 'network'].map(word);
+const CODE_EXT = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|py|pyw|sh|bash|ps1|json|env|yml|yaml|rb|go|rs|php|sql|toml|ini|xml|html|htm|css|vue|svelte)\b/i;
+
+/** merge/send/money/delete, including suffixes: sending, emailing, paid, deleting. */
+const TO_SEVEN = ['merge', 'email', 'message', 'post', 'reply', 'slack', 'send', 'pay', 'paid', 'invoice', 'transfer', 'wire', 'purchase', 'buy', 'spend', 'delet', 'remove', 'wipe'];
+/** code, secrets, and network, including suffixes: pushed, keys, passwords, authentication. */
+const TO_SIX = ['deploy', 'push', 'commit', 'code', 'token', 'password', 'credential', 'auth', 'secret', 'key', 'security', 'network'];
+/** Tools, channels, payment apps, and sign-in words. Any suffix counts. Underscore is a word break. */
+const TO_FOUR = ['curl', 'wget', 'http', 'url', 'ssh', 'scp', 'rm', 'dm', 'text', 'sms', 'tweet', 'venmo', 'paypal', 'zelle', 'cashapp', 'order', 'login', 'signin'];
+
+function foldHomoglyphs(text: string): string {
+  return [...text].map((ch) => HOMOGLYPHS[ch] ?? ch).join('');
+}
+
+/** 'p a y' becomes 'pay'. Longer words stay put, so 'a tidy' is not rewritten. */
+function collapseLetterSpacing(text: string): string {
+  return text.replace(/(^|[^a-z0-9])((?:[a-z0-9][ \t]+){1,}[a-z0-9])(?![a-z0-9])/g, (full, lead: string, seq: string) => {
+    const parts = seq.split(/[ \t]+/);
+    return parts.every((p) => p.length === 1) ? lead + parts.join('') : full;
+  });
+}
+
+/** 's-e-n-d', 'e-mail', and 'send_email' join. A lone '_' left over is still a break. */
+function collapseSeparators(text: string): string {
+  return text.replace(/[a-z0-9](?:[-_.]+[a-z0-9])+/g, (seq) => seq.replace(/[-_.]+/g, '')).replace(/_+/g, ' ');
+}
+
+function hasStem(text: string, stem: string): boolean {
+  return new RegExp(`(?:^|[^a-z0-9])${stem}[a-z0-9]*`, 'i').test(text);
+}
+
+/** A combining mark on a Latin letter, or a non-ASCII letter inside a Latin word. */
+function obscuredLatin(text: string): boolean {
+  if (/[A-Za-z]\p{M}|\p{M}[A-Za-z]/u.test(text)) return true;
+  for (const word of text.match(/\p{L}+/gu) ?? []) {
+    if (/[A-Za-z]/.test(word) && /[^\u0000-\u007f]/u.test(word)) return true;
+  }
+  return false;
+}
 
 /** Keyword floor. No gated word stays at 1, and the poster default of 4 is applied by enforcedLevel. */
 export function keywordFloor(text: string): number {
+  const nfkc = text.normalize('NFKC');
+  const stripped = nfkc.replace(/\p{Cf}/gu, '').replace(/\p{M}/gu, '');
   const n = normalizePoolText(text);
-  if (TO_SEVEN.some((r) => r.test(n))) return 7;
-  if (TO_SIX.some((r) => r.test(n)) || /major\s+files/.test(n)) return 6;
+  if (TO_SEVEN.some((stem) => hasStem(n, stem))) return 7;
+  if (TO_SIX.some((stem) => hasStem(n, stem)) || /major\s+files/.test(n)) return 6;
+  if (obscuredLatin(nfkc) || CODE_EXT.test(stripped) || TO_FOUR.some((stem) => hasStem(n, stem))) return 4;
   return 1;
 }
 
@@ -210,7 +253,7 @@ export interface PoolCard {
   leaseLeftMs?: number;
   doneBy?: string;
   approval?: ApprovalGate;
-  /** Short body, so an approver can see the text the hash covers. */
+  /** A short slice of the body. The full text is a session read, not this card. */
   body?: string;
   hash?: string;
 }
