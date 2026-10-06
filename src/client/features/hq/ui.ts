@@ -4,6 +4,8 @@ import './ui.css';
 
 export type SeatRow = {
   seat: string;
+  /** From the server. Missing means the public seat id, never a name invented here. */
+  name?: string;
   index: number;
   deskId: string | null;
   chip: string;
@@ -41,6 +43,13 @@ function chipLabel(chip: string) {
   return CHIP[chip] ?? chip;
 }
 
+/** Roster and talk titles. A missing name stays the generic seat id. */
+export function seatLabel(row: { seat: string; name?: string }): string {
+  const name = row.name?.trim();
+  if (name) return name;
+  return row.seat === 'okkin' ? 'Okkin' : row.seat;
+}
+
 export async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(await res.text());
@@ -58,7 +67,7 @@ export function openRoster(rows: SeatRow[], actions: { go: (row: SeatRow) => voi
   const paint = (next: SeatRow[]) => {
     list.replaceChildren(
       ...next.map((row) => {
-        const name = row.seat === 'okkin' ? 'Okkin' : row.seat;
+        const name = seatLabel(row);
         const model = row.seat === 'okkin' ? h('p.hq-model', {}, `model ${row.model ?? 'unknown'} · ${row.state ?? 'unknown'}`) : null;
         const pick = row.seat === 'okkin' && row.options && row.options.length ? modelPick(row, actions.switchModel) : null;
         return h(
@@ -94,14 +103,14 @@ function modelPick(row: SeatRow, onSwitch: (name: string) => void) {
   return h('div.hq-switch', {}, select, button);
 }
 
-export function openTalk(seat: string, lines: TalkLine[], chip: string, send: (text: string) => void, onClose?: () => void) {
+export function openTalk(seat: string, lines: TalkLine[], chip: string, send: (text: string) => void, onClose?: () => void, name?: string) {
   const log = h('div.hq-log');
   const paint = (next: TalkLine[], nextChip: string) => {
     chipEl.textContent = chipLabel(nextChip);
     chipEl.dataset.chip = nextChip;
     log.replaceChildren(
       ...(next.length ? next : [{ id: 'empty', role: 'office', text: 'No messages yet.', at: 0 }]).map((line) =>
-        h('p', { class: `hq-line hq-${line.role}` }, `${line.role === 'player' ? 'You' : line.role === 'bot' ? (seat === 'okkin' ? 'Okkin' : seat) : 'Office'}: ${line.text}`),
+        h('p', { class: `hq-line hq-${line.role}` }, `${line.role === 'player' ? 'You' : line.role === 'guest' ? 'Guest' : line.role === 'bot' ? seatLabel({ seat, name }) : 'Office'}: ${line.text}`),
       ),
     );
     log.scrollTop = log.scrollHeight;
@@ -111,12 +120,12 @@ export function openTalk(seat: string, lines: TalkLine[], chip: string, send: (t
   const form = h(
     'form.modal.hq-talk',
     { role: 'dialog', 'aria-label': `Talk to ${seat === 'okkin' ? 'Okkin' : seat}` },
-    h('header', {}, h('h2', {}, seat === 'okkin' ? 'Talk to Okkin' : `Talk to ${seat}`), chipEl),
+    h('header', {}, h('h2', {}, `Talk to ${seatLabel({ seat, name })}`), chipEl),
     h('div.body', {}, log),
     h('footer', {}, input, h('button.btn.primary', { type: 'submit' }, 'Send')),
   ) as HTMLFormElement;
   paint(lines, chip);
-  const modal = openModal(form, { doing: `💬 talking to ${seat === 'okkin' ? 'Okkin' : seat}`, onClose: () => onClose?.() });
+  const modal = openModal(form, { doing: `💬 talking to ${seatLabel({ seat, name })}`, onClose: () => onClose?.() });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const text = input.value.trim();
@@ -127,13 +136,13 @@ export function openTalk(seat: string, lines: TalkLine[], chip: string, send: (t
   return { close: () => modal.close(), paint, focus: () => input.focus() };
 }
 
-export function openDesk(seat: string, card: DeskCardView) {
+export function openDesk(seat: string, card: DeskCardView, name?: string) {
   const link = card.link ? h('a', { href: card.link, target: '_blank', rel: 'noreferrer' }, card.link) : h('span', {}, 'No link');
   const actions = card.actions.length ? h('ul', {}, ...card.actions.map((a) => h('li', {}, a))) : h('p', {}, 'No actions');
   const form = h(
     'form.modal.hq-desk',
-    { role: 'dialog', 'aria-label': `${seat} desk` },
-    h('header', {}, h('h2', {}, seat === 'okkin' ? 'Okkin’s desk' : `${seat} desk`)),
+    { role: 'dialog', 'aria-label': `${seatLabel({ seat, name })} desk` },
+    h('header', {}, h('h2', {}, `${seatLabel({ seat, name })} desk`)),
     h(
       'div.body',
       {},

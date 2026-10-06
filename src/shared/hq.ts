@@ -30,6 +30,11 @@ export type HqLocal = {
   ollamaUrl?: string;
   okkinModel?: string;
   okkinAllow?: string[];
+  /**
+   * Seat id → local display name. Absent on a public checkout, so the roster says `seat-N`.
+   * Real names stay in gitignored hq-local.json.
+   */
+  names?: Partial<Record<SeatId, string>>;
 };
 
 export const EMPTY_HQ: HqLocal = {
@@ -42,6 +47,32 @@ export const EMPTY_HQ: HqLocal = {
 
 export function isSeatId(value: string): value is SeatId {
   return (CREW_SEATS as readonly string[]).includes(value);
+}
+
+const NAME_BAD = /[\\/:]|\d{1,3}(?:\.\d{1,3}){3}/;
+
+/** Local display names only. A path, an address, or a blank is dropped. */
+export function sanitizeNames(raw: unknown): Partial<Record<SeatId, string>> {
+  const out: Partial<Record<SeatId, string>> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const seat of CREW_SEATS) {
+    const value = (raw as Record<string, unknown>)[seat];
+    if (typeof value !== 'string') continue;
+    const name = value.replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 32);
+    if (!name || NAME_BAD.test(name)) continue;
+    out[seat] = name;
+  }
+  return out;
+}
+
+/** Public label is the seat id (`seat-1` … `seat-9`, or Okkin). A gitignored `names` map can override it on one machine. */
+export function seatDisplayName(seat: SeatId, names?: Partial<Record<SeatId, string>>): string {
+  return names?.[seat] || (seat === OKKIN_SEAT ? 'Okkin' : seat);
+}
+
+/** The only office line a talk adds when the seat is offline and nobody has replied. */
+export function offlineQueuedNotice(displayName: string): string {
+  return `offline \u2014 message queued for ${displayName}`;
 }
 
 const DESK_ID = /^desk-[1-9][0-9]?$/;
@@ -164,7 +195,7 @@ export function liveDesk(card: DeskCard): boolean {
   return !QUIET.has(card.condition.trim().toLowerCase());
 }
 
-export type TalkRole = 'player' | 'bot' | 'office';
+export type TalkRole = 'player' | 'bot' | 'office' | 'guest';
 
 export type TalkMessage = { id: string; role: TalkRole; text: string; at: number };
 
@@ -176,13 +207,16 @@ export type OutboxLine = {
   text: string;
   at: string;
   thread?: SeatId;
+  /** Account id of the person who sent a player or guest line. Omitted for the shared office password. */
+  by?: string;
 };
 
-/** One outbox record, or null when the text is empty. No extra fields. */
-export function outboxLine(input: { kind: OutboxLine['kind']; role: TalkRole; text: string; at: number; seat?: string }): OutboxLine | null {
+/** One outbox record, or null when the text is empty. `by` is present only when an account id was given. */
+export function outboxLine(input: { kind: OutboxLine['kind']; role: TalkRole; text: string; at: number; seat?: string; by?: string }): OutboxLine | null {
   const text = clip(input.text, 500);
   if (!text) return null;
   const seat = input.seat && isSeatId(input.seat) ? input.seat : undefined;
+  const by = typeof input.by === 'string' ? input.by.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 64) : '';
   return {
     v: 1,
     kind: input.kind,
@@ -190,6 +224,7 @@ export function outboxLine(input: { kind: OutboxLine['kind']; role: TalkRole; te
     role: input.role,
     text,
     at: new Date(input.at).toISOString(),
+    ...(by ? { by } : {}),
   };
 }
 

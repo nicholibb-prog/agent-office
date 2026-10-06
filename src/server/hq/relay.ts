@@ -1,6 +1,6 @@
 // Gitignored relay files under the office data dir (.agent-office/). Mode 0600.
 // A separate process syncs the outbox and inbox. This module does not know Drive ids.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { EMPTY_CARD, isSeatId, outboxLine, sanitizeCard, type DeskCard, type OutboxLine, type SeatId, type TalkMessage } from '../../shared/hq.js';
 import { writePrivate } from '../private-file.js';
@@ -40,7 +40,7 @@ function cardsPath(dataDir: string) {
 }
 
 /** Appends one outbox line and keeps the last 200. Returns the line, or null when there is nothing to say. Never writes a crew reply by itself. */
-export function appendOutbox(dataDir: string, input: { kind: OutboxLine['kind']; role: OutboxLine['role']; text: string; at: number; seat?: string }): OutboxLine | null {
+export function appendOutbox(dataDir: string, input: { kind: OutboxLine['kind']; role: OutboxLine['role']; text: string; at: number; seat?: string; by?: string }): OutboxLine | null {
   const line = outboxLine(input);
   if (!line) return null;
   const file = outboxPath(dataDir);
@@ -56,8 +56,8 @@ export function appendOutbox(dataDir: string, input: { kind: OutboxLine['kind'];
 }
 
 /** A player line from T-chat or a talk thread. There is no automatic crew reply. */
-export function notePlayerChat(dataDir: string, input: { text: string; at: number; seat?: string; kind?: OutboxLine['kind'] }): { reply: null; line: OutboxLine | null } {
-  const line = appendOutbox(dataDir, { kind: input.kind ?? (input.seat ? 'talk' : 'tchat'), role: 'player', text: input.text, at: input.at, seat: input.seat });
+export function notePlayerChat(dataDir: string, input: { text: string; at: number; seat?: string; kind?: OutboxLine['kind']; role?: 'player' | 'guest'; by?: string }): { reply: null; line: OutboxLine | null } {
+  const line = appendOutbox(dataDir, { kind: input.kind ?? (input.seat ? 'talk' : 'tchat'), role: input.role === 'guest' ? 'guest' : 'player', text: input.text, at: input.at, seat: input.seat, by: input.by });
   return { reply: null, line };
 }
 
@@ -93,8 +93,29 @@ export function cardFor(dataDir: string, seat: SeatId): DeskCard {
 }
 
 /**
- * Applies inbox lines a sync process dropped. Only well-formed bot lines for a generic seat are kept.
- * Okkin is skipped: Okkin speaks through Ollama, not an inbox file. Nothing is invented.
+ * Copies a bot line onto the inbox. The text is the caller's; this does not compose a reply.
+ * Okkin is refused: that seat speaks through Ollama.
+ */
+export function appendInbox(dataDir: string, input: { seat: string; text: string; at: number }): { seat: SeatId; text: string; at: string } | null {
+  if (!isSeatId(input.seat) || input.seat === 'okkin') return null;
+  const text = input.text.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 500);
+  if (!text) return null;
+  const line = { v: 1 as const, role: 'bot' as const, seat: input.seat, text, at: new Date(input.at).toISOString() };
+  const file = inboxPath(dataDir);
+  let prev = '';
+  try {
+    if (existsSync(file)) prev = readFileSync(file, 'utf8');
+  } catch {
+    prev = '';
+  }
+  if (prev && !prev.endsWith('\n')) prev += '\n';
+  writePrivate(file, prev + JSON.stringify(line) + '\n');
+  return { seat: input.seat, text, at: line.at };
+}
+
+/**
+ * Applies inbox lines the authenticated bridge route wrote. Only well-formed bot lines for a generic seat are kept.
+ * The text is copied through. Okkin is skipped. Nothing is composed here.
  */
 export function ingestInbox(dataDir: string): number {
   const file = inboxPath(dataDir);
@@ -135,7 +156,7 @@ export function ingestInbox(dataDir: string): number {
     applied++;
   }
   try {
-    writeFileSync(cursorFile, String(raw.length), { mode: 0o600 });
+    writePrivate(cursorFile, String(raw.length));
   } catch {
     /* the next read retries */
   }

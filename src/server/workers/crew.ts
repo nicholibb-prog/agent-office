@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { newTracker } from '../usage.js';
 import type { WorkerInfo, WorkerStatus } from '../../shared/protocol.js';
@@ -9,11 +9,13 @@ import {
   activeSeatMap,
   bridgeBeat,
   isSeatId,
+  sanitizeNames,
   sanitizeSeatMap,
   type HqLocal,
   type SeatId,
 } from '../../shared/hq.js';
 import { probeOkkin } from '../hq/okkin.js';
+import { writePrivate } from '../private-file.js';
 import { clockWork } from './clock.js';
 import type { Worker } from './types.js';
 import { newWorker } from './worker.js';
@@ -42,6 +44,7 @@ export function loadHqLocal(statePath: string): HqLocal {
       ollamaUrl: typeof raw.ollamaUrl === 'string' ? raw.ollamaUrl : undefined,
       okkinModel: typeof raw.okkinModel === 'string' ? raw.okkinModel : undefined,
       okkinAllow: Array.isArray(raw.okkinAllow) ? raw.okkinAllow.map(String) : undefined,
+      names: sanitizeNames(raw.names),
     };
   } catch {
     return EMPTY_HQ;
@@ -95,13 +98,14 @@ export function writeCrewPush(dataDir: string, patch: Record<string, string>, so
     seen[key] = now;
   }
   const next: CrewFile = { updatedAt: new Date(now).toISOString(), crew, seen, source };
-  writeFileSync(crewFile(dataDir), JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });
+  writePrivate(crewFile(dataDir), JSON.stringify(next, null, 2) + '\n');
   return next;
 }
 
 /**
  * Bridge presence applies to crew seats only. A shell is never painted WORKING.
- * A WORKING push with no fresh heartbeat stays idle. needs_input is left alone.
+ * A WORKING push with no fresh heartbeat stays idle.
+ * A needs_input whose lastInput.by is crew-status clears on a later push. Any other needs_input stays.
  * Okkin is skipped: that seat follows the Ollama probe.
  */
 export function applyCrewPresence(host: CrewHost, crew: Record<string, string>, opts: CrewApplyOpts = {}): { applied: string[] } {
@@ -116,7 +120,8 @@ export function applyCrewPresence(host: CrewHost, crew: Record<string, string>, 
     const fresh = typeof seenAt === 'number' && now - seenAt < lease;
     for (const w of host.workers.values()) {
       if (!crewMatch(w, key, opts.seats)) continue;
-      if (w.info.status === 'needs_input') continue;
+      const fromCrew = w.info.lastInput?.by === 'crew-status';
+      if (w.info.status === 'needs_input' && !fromCrew) continue;
       if (beat === 'blocked') {
         w.info.lastInput = { by: 'crew-status', at: seenAt ?? now };
         host.setStatus(w, 'needs_input');
@@ -130,7 +135,7 @@ export function applyCrewPresence(host: CrewHost, crew: Record<string, string>, 
         applied.push(w.info.name + '=working');
         continue;
       }
-      if (w.info.status === 'working' || w.info.status === 'starting') host.setStatus(w, 'idle');
+      if (w.info.status === 'working' || w.info.status === 'starting' || (w.info.status === 'needs_input' && fromCrew)) host.setStatus(w, 'idle');
       applied.push(w.info.name + '=idle');
     }
   }
@@ -156,16 +161,16 @@ export function tickCrewStatusFile(host: CrewHost, statePath: string): void {
     const hq = loadHqLocal(statePath);
     const raw = readCrewFile(dataDir);
     if (raw?.crew) applyCrewPresence(host, raw.crew, { seen: raw.seen, seats: activeSeatMap(hq) });
-    void syncOkkin(host, hq);
+    void syncOkkin(host, hq, dataDir);
   } catch {
     /* ignore bad files */
   }
 }
 
-async function syncOkkin(host: CrewHost, hq: HqLocal) {
+async function syncOkkin(host: CrewHost, hq: HqLocal, dataDir: string) {
   const w = [...host.workers.values()].find((item) => item.info.id === `crew-${OKKIN_SEAT}`);
   if (!w || w.info.status === 'needs_input') return;
-  const snap = await probeOkkin(process.env, hq);
+  const snap = await probeOkkin(process.env, hq, undefined, { dataDir });
   if (snap.chip === 'switching') {
     w.info.activity = 'switching…';
     if (w.info.status === 'working') host.setStatus(w, 'idle');

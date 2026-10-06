@@ -66,12 +66,12 @@ agent-office tunnel [office@address | url] [--port <n>] [--office-port <n>] [--n
 
 ## Local crew
 
-See [Local HQ](hq.md). The floor's gitignored `.agent-office/hq-local.json` turns desks into crew seats. The office data directory also holds `bridge-token` (created if it is missing, mode 0600), `crew-status.json`, `chat-outbox.jsonl`, `chat-inbox.jsonl`, `talk-threads.json`, and `desk-cards.json`.
+See [Local HQ](hq.md). The floor's gitignored `.agent-office/hq-local.json` turns desks into crew seats. `seats` maps a seat to a desk. `names` maps a seat to a display name on this machine; without it the roster says `seat-1` … `seat-9`. The office data directory also holds `bridge-token` (created if it is missing, mode 0600), `ollama.json` (optional loopback `url` and `model`), `crew-status.json`, `chat-outbox.jsonl`, `chat-inbox.jsonl`, `talk-threads.json`, and `desk-cards.json`. Bot lines for a generic seat are posted to `POST /api/bridge/inbox`. `POST /api/bridge/talk` and the model switch need an office session; a bridge token is refused. JSON bodies over 16 KB are refused.
 
 | Variable | Meaning |
 | --- | --- |
-| `OLLAMA_URL` | Loopback Ollama origin, `http` only. Unset uses `http://127.0.0.1:11434`. `localhost` is rewritten to `127.0.0.1`. `https` and any other host are refused. |
+| `OLLAMA_URL` | Loopback Ollama origin, `http` only. Unset uses `url` in `.agent-office/ollama.json`, then `http://127.0.0.1:11434`. `localhost` is rewritten to `127.0.0.1`. `https` and any other host are refused. |
 | `OKKIN_MODEL` | The tag Okkin talks with. Not set in source. |
 | `OKKIN_MODEL_ALLOW` | Comma-separated tags the desk may switch to. Intersected with the tags Ollama has installed. |
 
-Env wins over `hq-local.json`. A request cannot set the URL or add a tag.
+`OLLAMA_URL` wins over `ollama.json`. `hq-local.json` does not set the URL. A request cannot set the URL or add a tag.

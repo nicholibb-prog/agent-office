@@ -6,7 +6,7 @@ import type { Ctx } from '../../core/context';
 import { modalOpen } from '../../ui/dom';
 import { store } from '../../state';
 import { placeCrew } from './agency';
-import { getJson, openDesk, openRoster, openTalk, postJson, type DeskCardView, type SeatRow, type TalkLine } from './ui';
+import { getJson, openDesk, openRoster, openTalk, postJson, seatLabel, type DeskCardView, type SeatRow, type TalkLine } from './ui';
 
 export interface HqDeps {
   workerViews: ReadonlyMap<string, { deskId: string; model: { root: THREE.Object3D } }>;
@@ -42,26 +42,30 @@ export function installHq(ctx: Ctx, deps: HqDeps) {
     const desk = row.deskId ? DESK_BY_ID.get(row.deskId) : undefined;
     if (!desk) return;
     closeRoster();
-    deps.walkThen({ x: desk.x, z: desk.z }, row.seat === 'okkin' ? "Okkin's desk" : row.seat, () => {});
+    deps.walkThen({ x: desk.x, z: desk.z }, `${seatLabel(row)}'s desk`, () => {});
   }
 
   async function talk(row: SeatRow) {
     talking.add(row.seat);
     let lines: TalkLine[] = [];
+    let name = seatLabel(row);
+    let chip = row.chip;
     try {
-      const data = await getJson<{ messages: TalkLine[]; okkin?: { chip: string } }>(`/api/bridge/talk?seat=${encodeURIComponent(row.seat)}`);
+      const data = await getJson<{ messages: TalkLine[]; name?: string; chip?: string; okkin?: { chip: string } }>(`/api/bridge/talk?seat=${encodeURIComponent(row.seat)}`);
       lines = data.messages;
+      if (data.name) name = data.name;
+      chip = data.okkin?.chip ?? data.chip ?? chip;
     } catch {
       lines = [];
     }
     closeRoster();
-    const panel = openTalk(row.seat, lines, row.chip, (text) => {
-      void postJson<{ messages?: TalkLine[]; okkin?: { chip: string } }>('/api/bridge/talk', { seat: row.seat, text }).then((res) => {
-        const chip = res.body.okkin?.chip ?? row.chip;
-        panel.paint(res.body.messages ?? lines, chip);
+    const panel = openTalk(row.seat, lines, chip, (text) => {
+      void postJson<{ messages?: TalkLine[]; chip?: string; okkin?: { chip: string } }>('/api/bridge/talk', { seat: row.seat, text }).then((res) => {
+        const nextChip = res.body.okkin?.chip ?? res.body.chip ?? chip;
+        panel.paint(res.body.messages ?? lines, nextChip);
         void loadRoster().catch(() => undefined);
       });
-    }, () => talking.delete(row.seat));
+    }, () => talking.delete(row.seat), name);
     panel.focus();
   }
 
@@ -73,7 +77,7 @@ export function installHq(ctx: Ctx, deps: HqDeps) {
     } catch {
       /* the empty card stays */
     }
-    openDesk(row.seat, card);
+    openDesk(row.seat, card, seatLabel(row));
   }
 
   async function showRoster() {

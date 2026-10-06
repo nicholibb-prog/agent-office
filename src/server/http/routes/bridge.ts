@@ -4,9 +4,11 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import type { Ctx } from '../../office/context.js';
 import type { ChatLine } from '../../../shared/protocol.js';
-import { activeSeatMap } from '../../../shared/hq.js';
+import { activeSeatMap, isSeatId } from '../../../shared/hq.js';
 import { send } from '../util.js';
+import { BodyTooLarge, readJsonBody } from '../read-body.js';
 import type { Route } from '../router.js';
+import { appendInbox, ingestInbox } from '../../hq/relay.js';
 import { loadHqLocal, writeCrewPush } from '../../workers/crew.js';
 
 const OFFICE_ERROR = 'The office could not complete that';
@@ -25,13 +27,39 @@ export function pushCrew(ctx: Ctx, patch: Record<string, string>, source: string
   return file;
 }
 
-function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
-  });
+async function readJson<T extends object>(req: http.IncomingMessage, res: http.ServerResponse): Promise<T | undefined> {
+  try {
+    const value = JSON.parse(await readJsonBody(req)) as T;
+    if (!value || typeof value !== 'object') {
+      send(res, 400, { error: 'bad json' });
+      return undefined;
+    }
+    return value;
+  } catch (err) {
+    if (err instanceof BodyTooLarge) send(res, 413, { error: 'body too large' });
+    else send(res, 400, { error: 'bad json' });
+    return undefined;
+  }
+}
+
+/** Letters that look like o, k, i, or n after casefold. NFKC does not fold these. */
+const LOOKALIKE: Record<string, string> = {
+  '\u043e': 'o',
+  '\u041e': 'o',
+  '\u043a': 'k',
+  '\u041a': 'k',
+  '\u0456': 'i',
+  '\u0406': 'i',
+  '\u043d': 'n',
+  '\u041d': 'n',
+};
+
+/** True when the name folds to something that contains okkin. Digit 0 is left as 0. */
+export function refusesOkkinName(raw: string): boolean {
+  let folded = String(raw).normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/\p{M}/gu, '');
+  let mapped = '';
+  for (const ch of folded) mapped += LOOKALIKE[ch] ?? ch;
+  return mapped.toLowerCase().replace(/[^a-z0-9]/g, '').includes('okkin');
 }
 
 const ALLOWED_HOSTS = new Set([
@@ -100,8 +128,8 @@ function tokenFromReq(req: http.IncomingMessage): string {
   return '';
 }
 
-/** Bridge auth: Host allowlist + Origin check + (token OR office session). Loopback alone is not enough. */
-export function bridgeGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): boolean {
+/** Host, origin, and JSON content-type. Shared by the token gate and the session-only routes. */
+export function bridgeShape(req: http.IncomingMessage, res: http.ServerResponse): boolean {
   if (!hostOk(req)) {
     send(res, 403, { error: 'host not allowed' });
     return false;
@@ -114,11 +142,29 @@ export function bridgeGate(ctx: Ctx, req: http.IncomingMessage, res: http.Server
     send(res, 415, { error: 'Content-Type must be application/json' });
     return false;
   }
+  return true;
+}
+
+/** Bridge auth: Host allowlist + Origin check + (token OR office session). Loopback alone is not enough. */
+export function bridgeGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  if (!bridgeShape(req, res)) return false;
   const expected = bridgeToken(ctx.cfg.dataDir);
   const got = tokenFromReq(req);
   if (got && safeTokenEq(got, expected)) return true;
   if (ctx.auth.fromRequest(req) || ctx.auth.fromAnyCookie(req)) return true;
   send(res, 401, { error: 'bridge token or office session required' });
+  return false;
+}
+
+/** Office session only. A bridge token or Bearer header is refused even when a cookie is also present. */
+export function sessionOnly(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  if (!bridgeShape(req, res)) return false;
+  if (tokenFromReq(req)) {
+    send(res, 403, { error: 'session required' });
+    return false;
+  }
+  if (ctx.auth.fromRequest(req) || ctx.auth.fromAnyCookie(req)) return true;
+  send(res, 401, { error: 'office session required' });
   return false;
 }
 
@@ -140,15 +186,11 @@ export const bridgeRoutes = {
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
       if (!bridgeGate(ctx, req, res)) return;
-      let body: { name?: string; text?: string; color?: string };
-      try {
-        body = JSON.parse(await readBody(req)) as { name?: string; text?: string; color?: string };
-      } catch {
-        return send(res, 400, { error: 'bad json' });
-      }
+      const body = await readJson<{ name?: string; text?: string; color?: string }>(req, res);
+      if (!body) return;
       const name = String(body.name || 'agent').slice(0, 32).trim() || 'agent';
       const text = String(body.text || '').slice(0, 500).trim();
-      if (name.toLowerCase() === 'okkin') return send(res, 400, { error: 'Okkin speaks only through the local model' });
+      if (refusesOkkinName(name)) return send(res, 400, { error: 'Okkin speaks only through the local model' });
       if (!text) return send(res, 400, { error: 'empty text' });
       const line: ChatLine = {
         from: 'bridge',
@@ -166,18 +208,35 @@ export const bridgeRoutes = {
       return send(res, 200, { ok: true, name, text });
     },
   },
+  inbox: {
+    method: 'POST' as const,
+    path: '/api/bridge/inbox',
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!bridgeGate(ctx, req, res)) return;
+      const body = await readJson<{ seat?: string; text?: string }>(req, res);
+      if (!body) return;
+      const seat = String(body.seat || '');
+      const text = String(body.text || '');
+      if (!isSeatId(seat) || seat === 'okkin') return send(res, 400, { error: 'inbox is for a generic seat' });
+      const at = Date.now();
+      let wrote = false;
+      for (const dir of dataDirs(ctx)) {
+        if (appendInbox(dir, { seat, text, at })) wrote = true;
+        ingestInbox(dir);
+      }
+      if (!wrote) return send(res, 400, { error: 'empty text' });
+      return send(res, 200, { ok: true, seat, text: text.trim().slice(0, 500) });
+    },
+  },
   crewStatus: {
     method: 'POST' as const,
     path: '/api/bridge/crew-status',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
       if (!bridgeGate(ctx, req, res)) return;
-      let body: { crew?: Record<string, string> };
-      try {
-        body = JSON.parse(await readBody(req)) as { crew?: Record<string, string> };
-      } catch {
-        return send(res, 400, { error: 'bad json' });
-      }
+      const body = await readJson<{ crew?: Record<string, string> }>(req, res);
+      if (!body) return;
       const crew = body.crew || {};
       let file;
       try {
@@ -215,12 +274,8 @@ export const bridgeRoutes = {
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
       if (!bridgeGate(ctx, req, res)) return;
-      let body: { name?: string; status?: string };
-      try {
-        body = JSON.parse(await readBody(req)) as { name?: string; status?: string };
-      } catch {
-        return send(res, 400, { error: 'bad json' });
-      }
+      const body = await readJson<{ name?: string; status?: string }>(req, res);
+      if (!body) return;
       const name = String(body.name || '').trim();
       const st = String(body.status || '').toLowerCase();
       if (!name) return send(res, 400, { error: 'name required' });
@@ -245,12 +300,8 @@ export const bridgeRoutes = {
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
       if (!bridgeGate(ctx, req, res)) return;
-      let body: { titles?: { name?: string; id?: string; modifiedTime?: string }[] };
-      try {
-        body = JSON.parse(await readBody(req)) as typeof body;
-      } catch {
-        return send(res, 400, { error: 'bad json' });
-      }
+      const body = await readJson<{ titles?: { name?: string; id?: string; modifiedTime?: string }[] }>(req, res);
+      if (!body) return;
       const titles = (body.titles || [])
         .map((t) => ({
           name: String(t.name || '').slice(0, 120).trim(),
@@ -293,12 +344,8 @@ export const bridgeRoutes = {
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
       if (!bridgeGate(ctx, req, res)) return;
-      let body: { title?: string; text?: string };
-      try {
-        body = JSON.parse(await readBody(req)) as typeof body;
-      } catch {
-        return send(res, 400, { error: 'bad json' });
-      }
+      const body = await readJson<{ title?: string; text?: string }>(req, res);
+      if (!body) return;
       const title = String(body.title || 'office-chat').slice(0, 80).trim() || 'office-chat';
       const text = String(body.text || '').slice(0, 4000);
       const file = path.join(ctx.cfg.dataDir, 'kavi-outbox.json');

@@ -4,6 +4,8 @@
 // pull, delete, create, copy, and push are not implemented. There is no raw proxy.
 
 import { readFileSync } from 'node:fs';
+import http from 'node:http';
+import { Readable } from 'node:stream';
 import path from 'node:path';
 
 export const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434';
@@ -102,11 +104,24 @@ export type OllamaFetch = (
   init: { method: string; headers?: Record<string, string>; body?: string; signal: AbortSignal; redirect: 'error' },
 ) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 
-async function readCapped(res: Response): Promise<string> {
+type CappedReader = {
+  read(): Promise<{ done: boolean; value?: Uint8Array }>;
+  cancel(): Promise<void>;
+  releaseLock(): void;
+};
+
+/** Reads a response up to 1 MB. A Content-Length over the cap fails before the body is read. */
+export async function readCappedResponse(res: {
+  headers?: { get(name: string): string | null };
+  body?: { getReader(): CappedReader } | null;
+  text(): Promise<string>;
+}): Promise<string> {
+  const declared = Number(res.headers?.get('content-length') ?? '');
+  if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) throw new Error('response too large');
   const reader = res.body?.getReader();
   if (!reader) {
     const text = await res.text();
-    if (text.length > MAX_RESPONSE_BYTES) throw new Error('response too large');
+    if (Buffer.byteLength(text) > MAX_RESPONSE_BYTES) throw new Error('response too large');
     return text;
   }
   const chunks: Uint8Array[] = [];
@@ -146,11 +161,50 @@ async function readCapped(res: Response): Promise<string> {
   return new TextDecoder().decode(buf);
 }
 
-/** Redirects are an error. The body is capped so a stream cannot grow without a bound. */
+/** Redirects are not followed. The body is capped, and Content-Length is checked before it is read. */
 async function defaultFetch(url: string, init: { method: string; headers?: Record<string, string>; body?: string; signal: AbortSignal; redirect: 'error' }): Promise<{ ok: boolean; status: number; text(): Promise<string> }> {
-  const res = await fetch(url, { method: init.method, headers: init.headers, body: init.body, signal: init.signal, redirect: 'error' });
-  const text = await readCapped(res);
-  return { ok: res.ok, status: res.status, text: async () => text };
+  const target = new URL(url);
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: target.hostname,
+        port: target.port,
+        path: `${target.pathname}${target.search}`,
+        method: init.method,
+        headers: init.headers,
+        signal: init.signal,
+      },
+      (res) => {
+        const headers = {
+          get(name: string) {
+            const value = res.headers[name.toLowerCase()];
+            if (Array.isArray(value)) return value[0] ?? null;
+            return value ?? null;
+          },
+        };
+        readCappedResponse({
+          headers,
+          body: Readable.toWeb(res) as unknown as { getReader(): CappedReader },
+          text: async () => '',
+        }).then(
+          (text) =>
+            resolve({
+              ok: (res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300,
+              status: res.statusCode ?? 0,
+              text: async () => text,
+            }),
+          (err) => {
+            res.destroy();
+            req.destroy();
+            reject(err);
+          },
+        );
+      },
+    );
+    req.on('error', reject);
+    if (init.body) req.end(init.body);
+    else req.end();
+  });
 }
 
 async function call(origin: string, route: string, method: 'GET' | 'POST', body: unknown, timeoutMs: number, fetchImpl?: OllamaFetch): Promise<{ ok: boolean; status: number; text: string }> {
@@ -226,8 +280,8 @@ export type OllamaClient = {
   tags(): Promise<OllamaResult>;
   ps(): Promise<OllamaResult>;
   chat(model: string, messages: { role: string; content: string }[]): Promise<OllamaResult>;
-  /** Unload or warm. Callers only pass model, keep_alive, and an optional warm prompt. */
-  generate(body: { model: string; keep_alive: number | string; prompt?: string }): Promise<OllamaResult>;
+  /** Unload or warm. A warm-up sets num_predict so the prompt cannot run unbounded. */
+  generate(body: { model: string; keep_alive: number | string; prompt?: string; options?: { num_predict: number } }): Promise<OllamaResult>;
 };
 
 /** Env wins over config. Unset means the loopback default. A non-loopback value is refused, not rewritten. */
@@ -271,13 +325,14 @@ export function createOllama(explicit: string | undefined, fetchImpl?: OllamaFet
       url: resolved.url,
       tags: () => callRoute('/api/tags', 'GET'),
       ps: () => callRoute('/api/ps', 'GET'),
-      chat: (model, messages) => callRoute('/api/chat', 'POST', { model, messages, stream: false }),
+      chat: (model, messages) => callRoute('/api/chat', 'POST', { model, messages, stream: false, options: { num_predict: MAX_PREDICT } }),
       generate: (body) =>
         callRoute('/api/generate', 'POST', {
           model: body.model,
           keep_alive: body.keep_alive,
           stream: false,
           ...(body.prompt !== undefined ? { prompt: body.prompt } : {}),
+          ...(body.options ? { options: body.options } : {}),
         }),
     },
   };

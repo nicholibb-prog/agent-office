@@ -1,8 +1,8 @@
 // The one Okkin seat. Status is a probe of local Ollama, not a bridge paint.
 // WORKING only while /api/chat is in flight. Switching unloads the previous model first and is not WORKING.
 import { randomBytes } from 'node:crypto';
-import { modelChoices, modelTagOk, OKKIN_SEAT, type HqLocal, type SeatId, type TalkMessage } from '../../shared/hq.js';
-import { chatText, createOllama, ollamaUrlFrom, psView, tagNames, type OllamaClient, type OllamaFetch, type PsState } from '../ollama.js';
+import { modelChoices, modelTagOk, offlineQueuedNotice, OKKIN_SEAT, seatDisplayName, type HqLocal, type SeatId, type TalkMessage } from '../../shared/hq.js';
+import { chatText, createOllama, loadOllamaFile, psView, resolveOllamaSettings, tagNames, type OllamaClient, type OllamaFetch, type PsState } from '../ollama.js';
 import { appendOutbox, appendThread, readThread } from './relay.js';
 
 export type OkkinChip = 'offline' | 'idle' | 'working' | 'switching';
@@ -62,9 +62,11 @@ function busy() {
   return held || depth > 0 || switching;
 }
 
-export function okkinSettings(env: { OLLAMA_URL?: string; OKKIN_MODEL?: string; OKKIN_MODEL_ALLOW?: string }, hq: HqLocal) {
-  const url = ollamaUrlFrom(env, hq.ollamaUrl);
-  const model = (env.OKKIN_MODEL !== undefined && env.OKKIN_MODEL.trim() !== '' ? env.OKKIN_MODEL : hq.okkinModel ?? '').trim();
+export function okkinSettings(env: { OLLAMA_URL?: string; OKKIN_MODEL?: string; OKKIN_MODEL_ALLOW?: string }, hq: HqLocal, dataDir?: string) {
+  const resolved = resolveOllamaSettings({ env, file: dataDir ? loadOllamaFile(dataDir) : null });
+  const url = resolved.refused || !resolved.url ? { refused: 'Ollama URL must be http on 127.0.0.1 or ::1' } : { url: resolved.url };
+  const fromEnv = env.OKKIN_MODEL !== undefined && env.OKKIN_MODEL.trim() !== '' ? env.OKKIN_MODEL : '';
+  const model = (fromEnv || resolved.model || hq.okkinModel || '').trim();
   const allowRaw = env.OKKIN_MODEL_ALLOW !== undefined && env.OKKIN_MODEL_ALLOW.trim() !== '' ? env.OKKIN_MODEL_ALLOW : (hq.okkinAllow ?? []).join(',');
   const allow = allowRaw
     .split(',')
@@ -78,13 +80,13 @@ export async function probeOkkin(
   env: { OLLAMA_URL?: string; OKKIN_MODEL?: string; OKKIN_MODEL_ALLOW?: string },
   hq: HqLocal,
   fetchImpl?: OllamaFetch,
-  opts?: { force?: boolean },
+  opts?: { force?: boolean; dataDir?: string },
 ): Promise<OkkinSnapshot> {
   if (busy() && !opts?.force) return okkinSnapshot();
-  const settings = okkinSettings(env, hq);
+  const settings = okkinSettings(env, hq, opts?.dataDir);
   configured = settings.model;
   if ('refused' in settings.url) {
-    refused = settings.url.refused;
+    refused = settings.url.refused || 'Ollama URL must be http on 127.0.0.1 or ::1';
     reachable = false;
     options = [];
     model = null;
@@ -121,26 +123,32 @@ export async function talkToOkkin(
   text: string,
   fetchImpl?: OllamaFetch,
   phase?: Phase,
+  who?: { role: 'player' | 'guest'; by?: string },
 ): Promise<{ status: number; snapshot: OkkinSnapshot; messages: TalkMessage[] }> {
   const at = Date.now();
-  const player: TalkMessage = { id: randomBytes(4).toString('hex'), role: 'player', text: text.slice(0, 500).trim(), at };
+  const role = who?.role === 'guest' ? 'guest' : 'player';
+  const player: TalkMessage = { id: randomBytes(4).toString('hex'), role, text: text.slice(0, 500).trim(), at };
   if (!player.text) return { status: 400, snapshot: okkinSnapshot(), messages: readThread(dataDir, OKKIN_SEAT) };
   if (busy()) return { status: 409, snapshot: okkinSnapshot(), messages: readThread(dataDir, OKKIN_SEAT) };
   held = true;
   try {
-    appendOutbox(dataDir, { kind: 'talk', role: 'player', text: player.text, at, seat: OKKIN_SEAT });
+    appendOutbox(dataDir, { kind: 'talk', role, text: player.text, at, seat: OKKIN_SEAT, by: who?.by });
     appendThread(dataDir, OKKIN_SEAT, player);
-    const snap = await probeOkkin(env, hq, fetchImpl, { force: true });
+    const snap = await probeOkkin(env, hq, fetchImpl, { force: true, dataDir });
     phase?.(chip());
     const model = talkModel(snap);
     if (snap.chip === 'offline' || !model) {
-      const why = snap.chip === 'offline' ? 'Okkin is offline' : 'No allowed model is installed';
+      const why = snap.chip === 'offline' ? offlineQueuedNotice(seatDisplayName(OKKIN_SEAT, hq.names)) : 'No allowed model is installed';
       appendThread(dataDir, OKKIN_SEAT, { id: randomBytes(4).toString('hex'), role: 'office', text: why, at: Date.now() });
       phase?.(chip());
       return { status: snap.chip === 'offline' ? 503 : 409, snapshot: okkinSnapshot(), messages: readThread(dataDir, OKKIN_SEAT) };
     }
-    const settings = okkinSettings(env, hq);
-    const made = createOllama('url' in settings.url ? settings.url.url : undefined, fetchOf(fetchImpl));
+    const settings = okkinSettings(env, hq, dataDir);
+    if (!('url' in settings.url)) {
+      phase?.(chip());
+      return { status: 503, snapshot: okkinSnapshot(), messages: readThread(dataDir, OKKIN_SEAT) };
+    }
+    const made = createOllama(settings.url.url, fetchOf(fetchImpl));
     if ('refused' in made) {
       phase?.(chip());
       return { status: 503, snapshot: okkinSnapshot(), messages: readThread(dataDir, OKKIN_SEAT) };
@@ -188,17 +196,19 @@ export async function switchOkkinModel(
   requested: string,
   fetchImpl?: OllamaFetch,
   phase?: Phase,
+  dataDir?: string,
 ): Promise<{ status: number; error?: string; snapshot: OkkinSnapshot }> {
   if (busy()) return { status: 409, error: 'Okkin is in a request', snapshot: okkinSnapshot() };
   const name = requested.trim();
   held = true;
   try {
-    const snap = await probeOkkin(env, hq, fetchImpl, { force: true });
+    const snap = await probeOkkin(env, hq, fetchImpl, { force: true, dataDir });
     if (snap.chip === 'offline') return { status: 503, error: 'Okkin is offline', snapshot: snap };
     if (!snap.options.includes(name)) return { status: 400, error: 'model is not an installed allowed tag', snapshot: okkinSnapshot() };
     if (snap.state === 'loaded' && snap.model === name) return { status: 200, snapshot: okkinSnapshot() };
-    const settings = okkinSettings(env, hq);
-    const made = createOllama('url' in settings.url ? settings.url.url : undefined, fetchOf(fetchImpl));
+    const settings = okkinSettings(env, hq, dataDir);
+    if (!('url' in settings.url)) return { status: 503, error: settings.url.refused, snapshot: okkinSnapshot() };
+    const made = createOllama(settings.url.url, fetchOf(fetchImpl));
     if ('refused' in made) return { status: 503, error: made.refused, snapshot: okkinSnapshot() };
     return await runSwitch(made.client, snap.state === 'loaded' ? snap.model : null, name, phase);
   } finally {
@@ -214,7 +224,7 @@ async function runSwitch(client: OllamaClient, prev: string | null, next: string
       const unloaded = await client.generate({ model: prev, keep_alive: 0 });
       if (!unloaded.ok) return { status: 502, error: 'could not unload the loaded model', snapshot: finishSwitch() };
     }
-    const warmed = await client.generate({ model: next, keep_alive: '10m', prompt: '.' });
+    const warmed = await client.generate({ model: next, keep_alive: '10m', options: { num_predict: 1 } });
     if (!warmed.ok) return { status: 502, error: 'could not load the model', snapshot: finishSwitch() };
     model = next;
     state = 'loaded';

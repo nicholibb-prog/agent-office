@@ -1,24 +1,39 @@
-// Local HQ routes. Every one sits behind bridgeGate (token or office session, loopback Host).
+// Local HQ routes. Roster and desk sit behind bridgeGate. Talk and the model switch are session-only.
 // Okkin answers carry a model name and a state word, never an Ollama response body.
 import type http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { Ctx } from '../../office/context.js';
 import { send } from '../util.js';
+import { BodyTooLarge, readJsonBody } from '../read-body.js';
 import type { Route } from '../router.js';
-import { bridgeGate, pushCrew } from './bridge.js';
-import { activeSeatMap, CREW_SEATS, ageLabel, isSeatId, liveDesk, rosterChip, type BridgeBeat, type SeatId } from '../../../shared/hq.js';
+import { bridgeGate, pushCrew, sessionOnly } from './bridge.js';
+import { activeSeatMap, CREW_SEATS, ageLabel, isSeatId, liveDesk, offlineQueuedNotice, rosterChip, seatDisplayName, type BridgeBeat, type SeatId } from '../../../shared/hq.js';
 import { loadHqLocal, readCrewFile } from '../../workers/crew.js';
 import { cardFor, ingestInbox, notePlayerChat, readThread, appendThread, writeCard } from '../../hq/relay.js';
 import { isOkkinSeat, okkinClient, probeOkkin, switchOkkinModel, talkToOkkin } from '../../hq/okkin.js';
+import { markSwitch, switchCooling, talkLimited } from '../../hq/limits.js';
 
-function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
-  });
+async function readJson<T extends object>(req: http.IncomingMessage, res: http.ServerResponse): Promise<T | undefined> {
+  try {
+    const value = JSON.parse(await readJsonBody(req)) as T;
+    if (!value || typeof value !== 'object') {
+      send(res, 400, { error: 'bad json' });
+      return undefined;
+    }
+    return value;
+  } catch (err) {
+    if (err instanceof BodyTooLarge) send(res, 413, { error: 'body too large' });
+    else send(res, 400, { error: 'bad json' });
+    return undefined;
+  }
+}
+
+function speaker(ctx: Ctx, req: http.IncomingMessage): { role: 'player' | 'guest'; by?: string; key: string } {
+  const session = ctx.auth.fromRequest(req) ?? (ctx.auth.fromAnyCookie(req) ? {} : undefined);
+  const id = session?.account?.id;
+  const role = ctx.meOf(id).admin ? 'player' : 'guest';
+  return { role, by: id, key: id ?? 'shared' };
 }
 
 function envOf(processEnv: NodeJS.ProcessEnv) {
@@ -53,12 +68,14 @@ export const hqRoutes = {
       const now = Date.now();
       const map = activeSeatMap(hq);
       const known = beats(file?.seen ?? {}, file?.crew ?? {}, now);
-      const okkin = okkinClient(await probeOkkin(envOf(process.env), hq));
+      const okkin = okkinClient(await probeOkkin(envOf(process.env), hq, undefined, { dataDir: ctx.cfg.dataDir }));
       const seats = CREW_SEATS.map((seat, index) => {
         const card = cardFor(ctx.cfg.dataDir, seat);
+        const name = seatDisplayName(seat, hq.names);
         if (seat === 'okkin') {
           return {
             seat,
+            name,
             index,
             deskId: map.okkin ?? null,
             chip: okkin.chip,
@@ -75,6 +92,7 @@ export const hqRoutes = {
         const chip = rosterChip(beat, now);
         return {
           seat,
+          name,
           index,
           deskId: map[seat] ?? null,
           chip,
@@ -91,24 +109,32 @@ export const hqRoutes = {
     path: '/api/bridge/talk',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!bridgeGate(ctx, req, res)) return;
-      let body: { seat?: string; text?: string };
-      try {
-        body = JSON.parse(await readBody(req)) as { seat?: string; text?: string };
-      } catch {
-        return send(res, 400, { error: 'bad json' });
-      }
+      if (!sessionOnly(ctx, req, res)) return;
+      const body = await readJson<{ seat?: string; text?: string }>(req, res);
+      if (!body) return;
       const seat = String(body.seat || '');
       if (!isSeatId(seat)) return send(res, 400, { error: 'unknown seat' });
       const text = String(body.text || '').slice(0, 500).trim();
       if (!text) return send(res, 400, { error: 'empty text' });
+      const who = speaker(ctx, req);
+      if (talkLimited(who.key)) return send(res, 429, { error: 'slow down' });
+      const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
+      const name = seatDisplayName(seat, hq.names);
       if (isOkkinSeat(seat)) {
-        const result = await talkToOkkin(ctx.cfg.dataDir, envOf(process.env), loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json')), text);
-        return send(res, result.status, { ok: result.status === 200, okkin: okkinClient(result.snapshot), messages: result.messages });
+        const result = await talkToOkkin(ctx.cfg.dataDir, envOf(process.env), hq, text, undefined, undefined, { role: who.role, by: who.by });
+        return send(res, result.status, { ok: result.status === 200, name, chip: result.snapshot.chip, okkin: okkinClient(result.snapshot), messages: result.messages });
       }
-      const noted = notePlayerChat(ctx.cfg.dataDir, { text, at: Date.now(), seat, kind: 'talk' });
-      const messages = appendThread(ctx.cfg.dataDir, seat, { id: randomBytes(4).toString('hex'), role: 'player', text, at: Date.now() });
-      return send(res, 200, { ok: true, reply: noted.reply, messages });
+      ingestInbox(ctx.cfg.dataDir);
+      const file = readCrewFile(ctx.cfg.dataDir);
+      const now = Date.now();
+      const chip = rosterChip(beats(file?.seen ?? {}, file?.crew ?? {}, now)[seat], now);
+      const noted = notePlayerChat(ctx.cfg.dataDir, { text, at: now, seat, kind: 'talk', role: who.role, by: who.by });
+      let messages = appendThread(ctx.cfg.dataDir, seat, { id: randomBytes(4).toString('hex'), role: who.role, text, at: now });
+      const replied = messages.some((m) => m.role === 'bot');
+      if (chip === 'offline' && !replied) {
+        messages = appendThread(ctx.cfg.dataDir, seat, { id: randomBytes(4).toString('hex'), role: 'office', text: offlineQueuedNotice(name), at: Date.now() });
+      }
+      return send(res, 200, { ok: true, reply: noted.reply, chip, name, messages });
     },
   },
   talkGet: {
@@ -120,12 +146,16 @@ export const hqRoutes = {
       const seat = url.searchParams.get('seat') || '';
       if (!isSeatId(seat)) return send(res, 400, { error: 'unknown seat' });
       ingestInbox(ctx.cfg.dataDir);
+      const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
+      const name = seatDisplayName(seat as SeatId, hq.names);
       const messages = readThread(ctx.cfg.dataDir, seat as SeatId);
       if (seat === 'okkin') {
-        const okkin = okkinClient(await probeOkkin(envOf(process.env), loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'))));
-        return send(res, 200, { seat, messages, okkin });
+        const okkin = okkinClient(await probeOkkin(envOf(process.env), hq, undefined, { dataDir: ctx.cfg.dataDir }));
+        return send(res, 200, { seat, name, messages, okkin, chip: okkin.chip });
       }
-      return send(res, 200, { seat, messages });
+      const file = readCrewFile(ctx.cfg.dataDir);
+      const chip = rosterChip(beats(file?.seen ?? {}, file?.crew ?? {}, Date.now())[seat], Date.now());
+      return send(res, 200, { seat, name, chip, messages });
     },
   },
   desk: {
@@ -134,12 +164,8 @@ export const hqRoutes = {
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
       if (!bridgeGate(ctx, req, res)) return;
-      let body: { seat?: string };
-      try {
-        body = JSON.parse(await readBody(req)) as { seat?: string };
-      } catch {
-        return send(res, 400, { error: 'bad json' });
-      }
+      const body = await readJson<{ seat?: string }>(req, res);
+      if (!body) return;
       const seat = String(body.seat || '');
       if (!isSeatId(seat)) return send(res, 400, { error: 'unknown seat' });
       const card = writeCard(ctx.cfg.dataDir, seat, body);
@@ -162,15 +188,13 @@ export const hqRoutes = {
     path: '/api/bridge/okkin/model',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!bridgeGate(ctx, req, res)) return;
-      let body: { model?: string };
-      try {
-        body = JSON.parse(await readBody(req)) as { model?: string };
-      } catch {
-        return send(res, 400, { error: 'bad json' });
-      }
+      if (!sessionOnly(ctx, req, res)) return;
+      if (switchCooling()) return send(res, 429, { error: 'slow down' });
+      const body = await readJson<{ model?: string }>(req, res);
+      if (!body) return;
       const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
-      const result = await switchOkkinModel(envOf(process.env), hq, String(body.model || ''));
+      const result = await switchOkkinModel(envOf(process.env), hq, String(body.model || ''), undefined, undefined, ctx.cfg.dataDir);
+      if (result.status === 200) markSwitch();
       return send(res, result.status, { ok: result.status === 200, error: result.error, okkin: okkinClient(result.snapshot) });
     },
   },
@@ -180,12 +204,8 @@ export const hqRoutes = {
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
       if (!bridgeGate(ctx, req, res)) return;
-      let body: { name?: string; status?: string; crew?: Record<string, string> };
-      try {
-        body = JSON.parse(await readBody(req)) as typeof body;
-      } catch {
-        return send(res, 400, { error: 'bad json' });
-      }
+      const body = await readJson<{ name?: string; status?: string; crew?: Record<string, string> }>(req, res);
+      if (!body) return;
       const patch = body.crew && typeof body.crew === 'object' ? body.crew : { [String(body.name || '')]: String(body.status || '') };
       const file = pushCrew(ctx, patch, 'bridge-status');
       const results: { floor: string; applied: string[] }[] = [];
