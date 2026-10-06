@@ -127,7 +127,7 @@ export async function talkToOkkin(
 ): Promise<{ status: number; snapshot: OkkinSnapshot; messages: TalkMessage[] }> {
   const at = Date.now();
   const role = who?.role === 'guest' ? 'guest' : 'player';
-  const player: TalkMessage = { id: randomBytes(4).toString('hex'), role, text: text.slice(0, 500).trim(), at };
+  const player: TalkMessage = { id: randomBytes(4).toString('hex'), role, text: text.slice(0, 500).trim(), at, ...(who?.by ? { by: who.by } : {}) };
   if (!player.text) return { status: 400, snapshot: okkinSnapshot(), messages: readThread(dataDir, OKKIN_SEAT) };
   if (busy()) return { status: 409, snapshot: okkinSnapshot(), messages: readThread(dataDir, OKKIN_SEAT) };
   held = true;
