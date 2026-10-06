@@ -498,25 +498,31 @@ Flaws, as they stand:
 Proposed order. This is a proposal, not a decision. It does not replace Phased rollout until the owner's own Yes.
 
 1. Watchdog autostart.
-2. A host health tile on boot: office up, watchdog restarts, `gh` authed yes/no, `claude` present yes/no, Ollama up and VRAM free, last boot SHA. Dependency preflight banners say "gh not signed in" and "claude CLI missing", instead of empty boards or dead seats.
+2. A host health tile on boot. It shows present/absent and yes/no only: office up, watchdog restarted, `gh` authed, `claude` present, Ollama up, VRAM free. Dependency preflight banners say "gh not signed in" and "claude CLI missing", instead of empty boards or dead seats. The tile shows no version, path, account name, token prefix, or hostname.
 3. Mandatory stale, together with the Provider status contract. Only a real adapter, hook, or terminal event counts. No real event for 10 minutes goes grey, whatever the row claims. A self-report alone never shows `working`. Decay never promotes a state. `lastEventAt` still comes only from a real event.
-4. Offline snapshot. An option, not a decision. See below.
+4. Offline snapshot. An option, not a decision. See below. It comes before any tunnel.
 5. Talk, the Needs owner queue, the desk surface, and the roster.
-6. Production mode: the built bundle served by one process under the watchdog, plus a nightly local backup of office data.
+6. Production mode: the built bundle served by one process under the watchdog, plus a nightly local backup of office data. That backup stays local.
 7. Project index (P0-B). Gitignored local data only, paginated, with server-side search, and no project list in the repo.
 8. Resource-gated pool. One 9B model loaded at a time. Check what is loaded before a claim. Pause when GPU use is over about 70%, or when a game is running. The board shows why jobs are queued. Okkin's level 3 cap and text-only output stay, as in the pool code on `#12`.
 
 Then the meeting room, and the rest.
 
-Auth hardening lands before any action button goes live. The office password comes from a local secret, not a default, and auth is per session. Yes, No, nudge, and pool claims wait until that is in, and until a security review of it. This page is not that review, and it is not that Yes.
+Security conditions. These are part of the proposal. This page does not carry a security PASS or the owner's Yes, and a relay does not either.
+
+1. **Offline snapshot.** The option below needs a security PASS plus the owner's Yes before it is built.
+2. **Tunnel or remote access.** Any tunnel or remote-access path needs a security PASS plus the owner's Yes. The read-only snapshot comes before any tunnel.
+3. **Backups.** Backups stay local, mode `0600`, gitignored, with a 30-day prune. A cloud backup of chat or transcripts needs the owner's Yes.
+4. **Auth order.** A required `AGENT_OFFICE_PASSWORD`, with no default, lands before the Needs owner action buttons (PR #9) go live. Then verified sender attribution (PR #11). Then hashed, revocable, per-seat bot tokens. Yes, No, nudge, and pool claims stay off until that password is required.
+5. **Health tile.** Present/absent and yes/no only. No versions, paths, account names, token prefixes, or hostnames.
 
 ### Offline snapshot (option)
 
-An offline snapshot is an option, not a decision. One example: about every 15 minutes, write a small status file of titles and states only. That file may hold the roster, the Needs owner count and titles, and pool depth. It never holds bodies, paths, keys, or personal details. A phone or a second computer could read it while the host sleeps.
+An offline snapshot is an option, not a decision. It needs a security PASS plus the owner's Yes. This page does not carry either.
 
-That example writes outside the existing bridge folder, into a cloud-synced folder. It is a new write surface, so it needs its own security review and the owner's own Yes. The alternative is to reuse the existing bridge folder only, and add no second write surface.
+It writes only through the local cloud-sync folder. It uses no token, no API client, and no SDK. It holds counts and states only. No titles when counts suffice. Never bodies, paths, or keys. The office never reads the file back. The file never goes into any protected owner folder. A phone or a second computer could read it while the host sleeps. That read is not acting.
 
-Reading that file is not acting. Acting from the phone still needs a separately reviewed path. This page does not supply that path or that Yes.
+Reusing the existing bridge folder is not this snapshot, and this option does not add a second write surface inside a protected folder. Acting from the phone, and any tunnel, still need a security PASS plus the owner's Yes, and they come after this read-only snapshot.
 
 ## What this PR does not do
 
