@@ -1,5 +1,6 @@
 import type http from 'node:http';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { appendOutboxItem } from '../../outbox.js';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import type { Ctx } from '../../office/context.js';
@@ -294,15 +295,12 @@ export const bridgeRoutes = {
       const title = String(body.title || 'office-chat').slice(0, 80).trim() || 'office-chat';
       const text = String(body.text || '').slice(0, 4000);
       const file = path.join(ctx.cfg.dataDir, 'kavi-outbox.json');
-      let items: { title: string; text: string; at: string }[] = [];
       try {
-        if (existsSync(file)) items = (JSON.parse(readFileSync(file, 'utf8')) as { items?: typeof items }).items || [];
+        const items = appendOutboxItem(file, { title, text, at: new Date().toISOString() });
+        return send(res, 200, { ok: true, queued: items.length });
       } catch {
-        /* */
+        return send(res, 500, { error: BRIDGE_FAILED });
       }
-      items.push({ title, text, at: new Date().toISOString() });
-      writeFileSync(file, JSON.stringify({ items, note: 'crew picks up via local connector' }, null, 2) + '\n', { mode: 0o600 });
-      return send(res, 200, { ok: true, queued: items.length });
     },
   },
   kaviOutboxGet: {

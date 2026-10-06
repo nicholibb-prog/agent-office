@@ -5,6 +5,7 @@ import { allowedIdleActs, type IdleWorker } from './idle-acts.js';
 import type { WorkerStatus } from './protocol/workers.js';
 
 export const HUDDLE_QUORUM = 2;
+export const DECISION_CAP = 100;
 export const ROSTER_IN_MEETING = 'in meeting';
 
 export const TALK_STUB =
@@ -23,7 +24,7 @@ export interface HuddleDecision {
   text: string;
   /** The name of someone who is in the huddle. */
   owner: string;
-  needsNick: boolean;
+  needsOwner: boolean;
   at: number;
 }
 
@@ -79,7 +80,7 @@ export function inviteWorker(h: Huddle, byPeerId: string, worker: GateWorker): {
   if (!h.occupants.some((o) => o.kind === 'peer' && o.id === byPeerId)) return { ok: false, error: 'Walk into the meeting room before inviting' };
   if (!canHuddle(worker)) {
     if (worker.status === 'working' || worker.status === 'starting') return { ok: false, error: 'Working. They stay at the desk' };
-    if (worker.status === 'needs_input' || (worker.status === 'done' && !worker.acked)) return { ok: false, error: 'Needs Nick. They stay at the desk' };
+    if (worker.status === 'needs_input' || (worker.status === 'done' && !worker.acked)) return { ok: false, error: 'Needs owner. They stay at the desk' };
     return { ok: false, error: 'Not in the office' };
   }
   return { ok: true, huddle: addOccupant(h, { kind: 'worker', id: worker.id, name: worker.name }) };
@@ -94,7 +95,7 @@ export function setShared(h: Huddle, byPeerId: string, agenda: string, context: 
 export function addDecision(
   h: Huddle,
   byPeerId: string,
-  input: { id: string; text: string; owner: string; needsNick: boolean; at: number },
+  input: { id: string; text: string; owner: string; needsOwner: boolean; at: number },
 ): { ok: true; huddle: Huddle } | { ok: false; error: string } {
   if (h.status !== 'open') return { ok: false, error: 'The huddle is closed' };
   if (!h.occupants.some((o) => o.kind === 'peer' && o.id === byPeerId)) return { ok: false, error: 'Only someone in the meeting can log a decision' };
@@ -102,8 +103,8 @@ export function addDecision(
   if (!text) return { ok: false, error: 'Write the decision' };
   const owner = input.owner.trim();
   if (!h.occupants.some((o) => o.name === owner)) return { ok: false, error: 'Owner has to be someone in the meeting' };
-  const decision: HuddleDecision = { id: input.id, text: text.slice(0, 500), owner, needsNick: input.needsNick === true, at: input.at };
-  return { ok: true, huddle: { ...h, decisions: [...h.decisions, decision] } };
+  const decision: HuddleDecision = { id: input.id, text: text.slice(0, 500), owner, needsOwner: input.needsOwner === true, at: input.at };
+  return { ok: true, huddle: { ...h, decisions: [...h.decisions, decision].slice(-DECISION_CAP) } };
 }
 
 export type BotAct = 'leave' | 'join' | 'start' | 'none';

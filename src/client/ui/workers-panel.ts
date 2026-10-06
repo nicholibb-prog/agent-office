@@ -5,7 +5,7 @@ import { needyFirst } from '../nextup';
 import { store } from '../state';
 import { DESK_BY_ID } from '../../shared/layout';
 import { rosterMark } from '../../shared/huddle';
-import { NEEDS_NICK, OFFLINE, QUEUED_FOR_CREW } from '../../shared/seat-provider';
+import { NEEDS_OWNER, OFFLINE, QUEUED_FOR_CREW } from '../../shared/seat-provider';
 import { $, h, STATUS_LABEL, timeAgo } from './dom';
 import { usageLabel, usageTitle } from './usage';
 import { providerLabel, providerUsageState, providerWaitingLabel, resolvedProvider, modelBadge } from './provider';
@@ -24,7 +24,7 @@ export function renderWorkers(onOpen: (id: string) => void) {
     const badge = w.kind === 'agent' ? modelBadge(w.provider, w.model, w.effort, w.usage?.model) : undefined;
     const inMeeting = rosterMark(store.huddle.current, 'worker', w.id);
     const seat = store.huddle.seats.find((s) => s.id === w.deskId);
-    const seatNote = seat && (seat.label === NEEDS_NICK || seat.label === OFFLINE || seat.label === QUEUED_FOR_CREW) ? seat.label : undefined;
+    const seatNote = seat && (seat.label === NEEDS_OWNER || seat.label === OFFLINE || seat.label === QUEUED_FOR_CREW) ? seat.label : undefined;
     const sub = [provider && `⚙️ ${provider}${badge ? ` · ${badge}` : ''}${usageNote}`, w.worktree && `🌿 ${w.worktree.branch}`, w.repos?.length && `🗂️ ${w.repos.length + 1} repos`, w.pr && `🔀 PR #${w.pr.number}`, inMeeting && `🤝 ${inMeeting}`, seatNote, w.activity || w.title || w.prompt].filter(Boolean).join(' · ');
     // What it's stopped on, and since when, on a line of its own under its name.
     const ask = asking ? h('span.ask', {}, `🙋 ${w.activity ?? 'Waiting on an answer'}${w.waitingSince ? ` · ${timeAgo(w.waitingSince)}` : ''}`) : null;

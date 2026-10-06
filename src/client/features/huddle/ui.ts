@@ -1,6 +1,6 @@
 import './ui.css';
 import { canHuddle, rosterMark, workerQuorum, SHARE_STUB, TALK_STUB } from '../../../shared/huddle';
-import { NEEDS_NICK, OFFLINE, QUEUED_FOR_CREW } from '../../../shared/seat-provider';
+import { NEEDS_OWNER, OFFLINE, QUEUED_FOR_CREW } from '../../../shared/seat-provider';
 import type { Net } from '../../net';
 import { store } from '../../state';
 import { h, openModal, toast } from '../../ui/dom';
@@ -25,7 +25,7 @@ export function openHuddleWindow(net: Net): void {
     const owner = h('select') as HTMLSelectElement;
     for (const o of occupants) owner.append(h('option', { value: o.name }, o.name));
     const needs = h('input', { type: 'checkbox' }) as HTMLInputElement;
-    const warn = room?.label === NEEDS_NICK || room?.label === OFFLINE ? h('p.warn', {}, room.label) : undefined;
+    const warn = room?.label === NEEDS_OWNER || room?.label === OFFLINE ? h('p.warn', {}, room.label) : undefined;
     const leave = youIn ? h('button.btn', { type: 'button', onclick: () => net.send({ t: 'huddle.leave' }) }, 'Leave') : undefined;
     const close = youIn ? h('button.btn', { type: 'button', onclick: () => net.send({ t: 'huddle.close' }) }, 'Close huddle') : undefined;
     body.replaceChildren(
@@ -70,14 +70,14 @@ export function openHuddleWindow(net: Net): void {
       ),
       h('h3', {}, 'Decision log'),
       current?.decisions.length
-        ? h('ul', {}, ...current.decisions.map((d) => h('li', {}, `${d.owner}${d.needsNick ? ' · Needs Nick' : ''}: ${d.text}`)))
+        ? h('ul', {}, ...current.decisions.map((d) => h('li', {}, `${d.owner}${d.needsOwner ? ' · Needs owner' : ''}: ${d.text}`)))
         : h('p.muted', {}, 'Nothing logged yet.'),
       h('label', {}, 'Owner ', owner),
       decision,
-      h('label', {}, needs, ' Needs Nick'),
+      h('label', {}, needs, ' Needs owner'),
       h('button.btn', {
         type: 'button',
-        onclick: () => net.send({ t: 'huddle.decide', text: decision.value, owner: owner.value, needsNick: needs.checked }),
+        onclick: () => net.send({ t: 'huddle.decide', text: decision.value, owner: owner.value, needsOwner: needs.checked }),
       }, 'Log decision'),
       h('p.stubs', {}, h('button.btn', { type: 'button', onclick: () => toast(TALK_STUB) }, 'Talk'), ' ', h('button.btn', { type: 'button', onclick: () => toast(SHARE_STUB) }, 'Shared view')),
       ...(leave ? [leave] : []),

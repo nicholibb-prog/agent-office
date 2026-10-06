@@ -1,12 +1,12 @@
 // Seat providers for the meeting room and the three front desks.
 // Ollama when it answers and a model is set; otherwise the bridge outbox. A missing CLI does not spawn.
 
-import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { DESKS } from '../shared/layout.js';
 import {
-  NEEDS_NICK,
+  LOCAL_BUSY,
+  NEEDS_OWNER,
   OFFLINE,
   QUEUED_FOR_CREW,
   defaultSeatProvider,
@@ -14,32 +14,20 @@ import {
   isPluggableSeat,
   latestCrewReply,
   seatTurnTitle,
-  appendSeatTurn,
   type CliPresence,
-  type OutboxItem,
   type OllamaHealth,
   type SeatProviderId,
 } from '../shared/seat-provider.js';
 import type { OllamaClientView, SeatFace } from '../shared/protocol/huddle.js';
+import { officeCliBins } from './cli-presence.js';
 import { createOllamaClient, loadOllamaFile, type OllamaClient, type OllamaFetch } from './ollama.js';
+import { appendOutboxItem, readOutboxFile } from './outbox.js';
 
 export type SeatDecision =
   | { action: 'blocked'; message: string }
   | { action: 'queued' }
   | { action: 'ollama' }
   | { action: 'cli' };
-
-function detectCli(): CliPresence {
-  const has = (bin: string) => {
-    try {
-      execFileSync('which', [bin], { stdio: 'ignore', timeout: 1500 });
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  return { claude: has('claude'), grok: has('grok'), 'cursor-agent': has('cursor-agent') };
-}
 
 function bridgeOutboxWritable(dir: string): boolean {
   try {
@@ -57,6 +45,7 @@ export class SeatBoard {
   bridgeUp: boolean;
   private choices = new Map<string, SeatProviderId>();
   private replies = new Map<string, string>();
+  private busy = new Set<string>();
   private probedAt = 0;
   private readonly outboxFile: string;
   private readonly replyFile: string;
@@ -65,7 +54,7 @@ export class SeatBoard {
     private dataDir: string,
     private deps: { detect?: () => CliPresence; fetchImpl?: OllamaFetch; now?: () => number; env?: { OLLAMA_URL?: string; OKKIN_MODEL?: string } } = {},
   ) {
-    this.cli = (deps.detect ?? detectCli)();
+    this.cli = deps.detect ? deps.detect() : officeCliBins();
     this.client = createOllamaClient({
       env: deps.env ?? { OLLAMA_URL: process.env.OLLAMA_URL, OKKIN_MODEL: process.env.OKKIN_MODEL },
       file: loadOllamaFile(dataDir),
@@ -112,24 +101,26 @@ export class SeatBoard {
     const provider = this.providerFor(seatId);
     const clean = text.trim();
     if (provider === 'ollama') {
+      if (this.busy.has(`${floorId}:${seatId}`)) return { action: 'blocked', message: LOCAL_BUSY };
       if (this.settings.refused || this.ollama !== 'ready' || !this.settings.model) return { action: 'blocked', message: OFFLINE };
       if (!clean) return { action: 'blocked', message: 'Write a task. Nothing was sent.' };
       return { action: 'ollama' };
     }
     if (provider === 'bridge') {
-      if (!this.bridgeUp) return { action: 'blocked', message: NEEDS_NICK };
+      if (!this.bridgeUp) return { action: 'blocked', message: NEEDS_OWNER };
       if (!clean) return { action: 'blocked', message: 'Write a task. Nothing was sent.' };
-      if (!this.queue(floorId, seatId, clean)) return { action: 'blocked', message: NEEDS_NICK };
+      if (!this.queue(floorId, seatId, clean)) return { action: 'blocked', message: NEEDS_OWNER };
       return { action: 'queued' };
     }
-    if (!this.cli[provider]) return { action: 'blocked', message: NEEDS_NICK };
+    if (!this.cli[provider]) return { action: 'blocked', message: NEEDS_OWNER };
     return { action: 'cli' };
   }
 
   queue(floorId: string, seatId: string, text: string): boolean {
+    const clean = text.trim().slice(0, 4000);
+    if (!clean) return false;
     try {
-      const items = appendSeatTurn(this.readOutbox(), floorId, seatId, text, new Date().toISOString());
-      this.writeOutbox(items);
+      appendOutboxItem(this.outboxFile, { title: seatTurnTitle(floorId, seatId), text: clean, at: new Date().toISOString() });
       return true;
     } catch {
       this.bridgeUp = false;
@@ -138,19 +129,26 @@ export class SeatBoard {
   }
 
   async runOllama(floorId: string, seatId: string, text: string): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
-    await this.probe(true);
-    if (this.providerFor(seatId) !== 'ollama') return { ok: false, message: OFFLINE };
-    if (this.settings.refused || this.ollama !== 'ready' || !this.settings.model) return { ok: false, message: OFFLINE };
-    const result = await this.client.chat(text);
-    if (!result.ok) return { ok: false, message: OFFLINE };
-    this.replies.set(`${floorId}:${seatId}`, result.text);
-    this.persistReplies();
-    return { ok: true, text: result.text };
+    const key = `${floorId}:${seatId}`;
+    if (this.busy.has(key)) return { ok: false, message: LOCAL_BUSY };
+    this.busy.add(key);
+    try {
+      await this.probe(true);
+      if (this.providerFor(seatId) !== 'ollama') return { ok: false, message: OFFLINE };
+      if (this.settings.refused || this.ollama !== 'ready' || !this.settings.model) return { ok: false, message: OFFLINE };
+      const result = await this.client.chat(text);
+      if (!result.ok) return { ok: false, message: OFFLINE };
+      this.replies.set(key, result.text);
+      this.persistReplies();
+      return { ok: true, text: result.text };
+    } finally {
+      this.busy.delete(key);
+    }
   }
 
   faces(floorId: string): SeatFace[] {
     const ids = [ 'meeting-room' as const, ...frontDeskIds(DESKS) ];
-    const items = this.readOutbox();
+    const items = readOutboxFile(this.outboxFile);
     return ids.map((id) => {
       const provider = this.providerFor(id);
       const crew = latestCrewReply(items, floorId, id);
@@ -159,28 +157,14 @@ export class SeatBoard {
     });
   }
 
-  private label(floorId: string, id: string, provider: SeatProviderId, items: OutboxItem[]): string {
+  private label(floorId: string, id: string, provider: SeatProviderId, items: { title: string }[]): string {
     if (provider === 'ollama' && (this.settings.refused || this.ollama !== 'ready' || !this.settings.model)) return OFFLINE;
-    if (provider !== 'ollama' && provider !== 'bridge' && !this.cli[provider]) return NEEDS_NICK;
+    if (provider !== 'ollama' && provider !== 'bridge' && !this.cli[provider]) return NEEDS_OWNER;
     if (provider === 'bridge') {
-      if (!this.bridgeUp) return NEEDS_NICK;
+      if (!this.bridgeUp) return NEEDS_OWNER;
       return items.some((it) => it.title === seatTurnTitle(floorId, id)) ? QUEUED_FOR_CREW : 'bridge';
     }
     return provider;
-  }
-
-  private readOutbox(): OutboxItem[] {
-    try {
-      if (!existsSync(this.outboxFile)) return [];
-      const raw = JSON.parse(readFileSync(this.outboxFile, 'utf8')) as { items?: OutboxItem[] };
-      return Array.isArray(raw.items) ? raw.items : [];
-    } catch {
-      return [];
-    }
-  }
-
-  private writeOutbox(items: OutboxItem[]): void {
-    writeFileSync(this.outboxFile, JSON.stringify({ items, note: 'crew picks up via local connector' }, null, 2) + '\n', { mode: 0o600 });
   }
 
   private loadReplies(): void {

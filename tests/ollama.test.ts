@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   DEFAULT_OLLAMA_URL,
   MAX_PREDICT,
+  MAX_RESPONSE_BYTES,
   chatOllama,
   createOllamaClient,
   loopbackOrigin,
@@ -14,18 +15,21 @@ import {
   probeOllama,
   resolveOllamaSettings,
   type OllamaClient,
+  type OllamaFetch,
 } from '../src/server/ollama.js';
+import { officeCliBins, officeCliScanCount, scanCliBins } from '../src/server/cli-presence.js';
+import { OUTBOX_CAP, writeOutboxFile } from '../src/server/outbox.js';
 import { SeatBoard } from '../src/server/seat-provider.js';
-import { OFFLINE, NEEDS_NICK } from '../src/shared/seat-provider.js';
+import { OFFLINE, NEEDS_OWNER, LOCAL_BUSY } from '../src/shared/seat-provider.js';
 
-function listen(handler: http.RequestListener): Promise<{ url: string; close(): Promise<void> }> {
+function listen(handler: http.RequestListener, host = '127.0.0.1'): Promise<{ url: string; close(): Promise<void> }> {
   const server = http.createServer(handler);
   return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(0, host, () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
       resolve({
-        url: `http://127.0.0.1:${port}`,
+        url: `http://${host}:${port}`,
         close: () => new Promise((done) => server.close(() => done())),
       });
     });
@@ -33,12 +37,18 @@ function listen(handler: http.RequestListener): Promise<{ url: string; close(): 
 }
 
 test('non-loopback URLs are refused and never fetched', async () => {
-  for (const raw of ['http://evil.invalid:11434', 'http://0.0.0.0:11434', 'http://127.0.0.1:11434/api/pull', 'http://user:pass@127.0.0.1:11434']) {
+  for (const raw of ['http://evil.invalid:11434', 'http://0.0.0.0:11434', 'http://127.0.0.1:11434/api/pull', 'http://user:pass@127.0.0.1:11434', 'https://127.0.0.1:11434', 'https://localhost:11434']) {
     assert.equal(loopbackOrigin(raw).ok, false, raw);
   }
-  assert.equal(loopbackOrigin('http://127.0.0.1:11434').ok, true);
-  assert.equal(loopbackOrigin('http://localhost:11434').ok, true);
-  assert.equal(loopbackOrigin('http://[::1]:11434').ok, true);
+  const v4 = loopbackOrigin('http://127.0.0.1:11434');
+  assert.equal(v4.ok, true);
+  if (v4.ok) assert.equal(v4.origin, 'http://127.0.0.1:11434');
+  const local = loopbackOrigin('http://localhost:11434');
+  assert.equal(local.ok, true);
+  if (local.ok) assert.equal(local.origin, 'http://127.0.0.1:11434');
+  const v6 = loopbackOrigin('http://[::1]:11434');
+  assert.equal(v6.ok, true);
+  if (v6.ok) assert.equal(v6.origin, 'http://[::1]:11434');
   const refused = resolveOllamaSettings({ env: { OLLAMA_URL: 'http://evil.invalid:11434', OKKIN_MODEL: 'example' } });
   assert.equal(refused.refused, true);
   let called = false;
@@ -153,16 +163,16 @@ test('an unset model and a missing CLI do not invent a reply', async () => {
     board.setProvider('meeting-room', 'claude');
     const missing = board.decide('floor', 'meeting-room', 'ping');
     assert.equal(missing.action, 'blocked');
-    if (missing.action === 'blocked') assert.equal(missing.message, NEEDS_NICK);
+    if (missing.action === 'blocked') assert.equal(missing.message, NEEDS_OWNER);
     const faces = board.faces('floor');
-    assert.ok(faces.some((f) => f.id === 'meeting-room' && f.label === NEEDS_NICK));
+    assert.ok(faces.some((f) => f.id === 'meeting-room' && f.label === NEEDS_OWNER));
     assert.equal(faces.find((f) => f.id === 'meeting-room')?.reply ?? null, null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('neither a local model nor a writable bridge says needs Nick', () => {
+test('neither a local model nor a writable bridge says needs owner', () => {
   const missing = path.join(tmpdir(), `no-bridge-${process.pid}`);
   rmSync(missing, { recursive: true, force: true });
   const board = new SeatBoard(missing, {
@@ -173,9 +183,9 @@ test('neither a local model nor a writable bridge says needs Nick', () => {
   assert.equal(board.providerFor('meeting-room'), 'bridge');
   const blocked = board.decide('floor', 'meeting-room', 'ping');
   assert.equal(blocked.action, 'blocked');
-  if (blocked.action === 'blocked') assert.equal(blocked.message, NEEDS_NICK);
+  if (blocked.action === 'blocked') assert.equal(blocked.message, NEEDS_OWNER);
   const face = board.faces('floor').find((f) => f.id === 'meeting-room');
-  assert.equal(face?.label, NEEDS_NICK);
+  assert.equal(face?.label, NEEDS_OWNER);
   assert.equal(face?.reply, null);
   board.setProvider('meeting-room', 'ollama');
   const offline = board.decide('floor', 'meeting-room', 'ping');
@@ -213,6 +223,154 @@ test('the client is told the model name and state, not the response body', async
     const face = board.faces('floor').find((f) => f.id === 'meeting-room');
     assert.equal(face?.reply, 'pong');
     assert.equal(JSON.stringify(face).includes('chat-body'), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a redirect to another host is not followed', async () => {
+  const hits: string[] = [];
+  const evil = await listen((req, res) => {
+    hits.push(String(req.url));
+    res.writeHead(200);
+    res.end('stolen');
+  }, '127.0.0.2');
+  const local = await listen((_req, res) => {
+    res.writeHead(307, { location: `${evil.url}/stolen` });
+    res.end();
+  });
+  try {
+    const settings = resolveOllamaSettings({ env: { OLLAMA_URL: local.url, OKKIN_MODEL: 'example' } });
+    assert.equal(await probeOllama(settings), 'offline');
+    assert.deepEqual(hits, []);
+  } finally {
+    await evil.close();
+    await local.close();
+  }
+});
+
+test('a local-model body over 1 MB is dropped without reading the rest', async () => {
+  const settings = resolveOllamaSettings({ env: { OLLAMA_URL: 'http://127.0.0.1:9', OKKIN_MODEL: 'example' } });
+  let textCalled = false;
+  let cancelled = false;
+  const declared: OllamaFetch = async (_url, init) => {
+    assert.equal(init.redirect, 'error');
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: (name) => (name.toLowerCase() === 'content-length' ? String(MAX_RESPONSE_BYTES + 1) : null) },
+      body: { cancel: async () => { cancelled = true; }, getReader: () => { throw new Error('read'); } },
+      text: async () => {
+        textCalled = true;
+        return '';
+      },
+    };
+  };
+  assert.equal(await probeOllama(settings, declared), 'offline');
+  assert.equal(textCalled, false);
+  assert.equal(cancelled, true);
+
+  let reads = 0;
+  let streamCancelled = false;
+  const chunk = new Uint8Array(600_000);
+  const streamed: OllamaFetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: () => null },
+    body: {
+      getReader: () => ({
+        async read() {
+          reads += 1;
+          if (reads > 4) return { done: true };
+          return { done: false, value: chunk };
+        },
+        async cancel() {
+          streamCancelled = true;
+        },
+      }),
+    },
+    text: async () => {
+      throw new Error('text');
+    },
+  });
+  assert.equal(await probeOllama(settings, streamed), 'offline');
+  assert.equal(streamCancelled, true);
+  assert.ok(reads < 4);
+});
+
+test('one local-model call per seat at a time', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'seats-busy-'));
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let chats = 0;
+  try {
+    const board = new SeatBoard(dir, {
+      env: { OLLAMA_URL: 'http://127.0.0.1:9', OKKIN_MODEL: 'example' },
+      detect: () => ({ claude: false, grok: false, 'cursor-agent': false }),
+      fetchImpl: async (url) => {
+        if (String(url).endsWith('/api/tags')) {
+          return { ok: true, status: 200, text: async () => JSON.stringify({ models: [{ name: 'example' }] }) };
+        }
+        chats += 1;
+        await gate;
+        return { ok: true, status: 200, text: async () => JSON.stringify({ message: { content: 'pong' } }) };
+      },
+    });
+    board.setProvider('meeting-room', 'ollama');
+    await board.probe(true);
+    const first = board.runOllama('floor', 'meeting-room', 'ping');
+    const second = await board.runOllama('floor', 'meeting-room', 'again');
+    assert.equal(second.ok, false);
+    if (!second.ok) assert.equal(second.message, LOCAL_BUSY);
+    const decided = board.decide('floor', 'meeting-room', 'third');
+    assert.equal(decided.action, 'blocked');
+    if (decided.action === 'blocked') assert.equal(decided.message, LOCAL_BUSY);
+    release();
+    const done = await first;
+    assert.equal(done.ok, true);
+    assert.equal(chats, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the outbox rewrite is capped at 200 and mode 0600', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'outbox-'));
+  try {
+    const file = path.join(dir, 'kavi-outbox.json');
+    writeFileSync(file, '{"items":[]}\n', { mode: 0o644 });
+    const items = Array.from({ length: OUTBOX_CAP + 1 }, (_, i) => ({ title: 't', text: String(i), at: 't' }));
+    writeOutboxFile(file, items);
+    const saved = JSON.parse(readFileSync(file, 'utf8')) as { items: { text: string }[] };
+    assert.equal(saved.items.length, OUTBOX_CAP);
+    assert.equal(saved.items[0].text, '1');
+    assert.equal(saved.items.at(-1)?.text, String(OUTBOX_CAP));
+    assert.equal(statSync(file).mode & 0o777, 0o600);
+    assert.equal(readdirSync(dir).some((name) => name.endsWith('.tmp')), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('CLI presence is the executable bit on PATH, once per office', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'bins-'));
+  try {
+    writeFileSync(path.join(dir, 'claude'), '#!/bin/sh\n');
+    chmodSync(path.join(dir, 'claude'), 0o755);
+    writeFileSync(path.join(dir, 'grok'), 'nope');
+    chmodSync(path.join(dir, 'grok'), 0o644);
+    const found = scanCliBins(dir);
+    assert.equal(found.claude, true);
+    assert.equal(found.grok, false);
+    assert.equal(found['cursor-agent'], false);
+    const before = officeCliScanCount();
+    officeCliBins();
+    const mid = officeCliScanCount();
+    officeCliBins();
+    assert.equal(officeCliScanCount(), mid);
+    assert.ok(mid === before || mid === before + 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -1,5 +1,5 @@
 // Which provider a pluggable seat may use. The meeting room and the three front desks.
-// A missing CLI is "no provider — needs Nick". A local model that isn't answering is "offline".
+// A missing CLI is "no provider — needs owner". A local model that isn't answering is "offline".
 // Neither state is WORKING, and neither invents a reply.
 
 import type { DeskDef } from './layout.js';
@@ -14,8 +14,10 @@ export function isSeatProvider(value: unknown): value is SeatProviderId {
 /** The meeting room as one seat. Not a chair id. */
 export const MEETING_SEAT = 'meeting-room';
 
-export const NEEDS_NICK = 'no provider — needs Nick';
+export const NEEDS_OWNER = 'no provider — needs owner';
 export const OFFLINE = 'offline';
+/** A second local-model call for a seat that already has one in flight. */
+export const LOCAL_BUSY = 'Local model is busy';
 export const QUEUED_FOR_CREW = 'queued for crew';
 
 /** Binaries we only look for. Nothing here installs them. */

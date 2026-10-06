@@ -4,7 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { applyBotStep, addDecision, addOccupant, inviteWorker, openHuddle, removeOccupant, setShared, type Huddle } from '../shared/huddle.js';
+import { DECISION_CAP, applyBotStep, addDecision, addOccupant, inviteWorker, openHuddle, removeOccupant, setShared, type Huddle } from '../shared/huddle.js';
 import { MEETING_SEAT } from '../shared/seat-provider.js';
 import { emptyHuddleFloor, type HuddleFloorState } from '../shared/protocol/huddle.js';
 import type { WorkerInfo } from '../shared/protocol.js';
@@ -12,6 +12,11 @@ import type { SeatBoard } from './seat-provider.js';
 
 const PAST_MAX = 20;
 const BOT_COOLDOWN_MS = 60_000;
+
+function capDecisions(h: Huddle): Huddle {
+  if (h.decisions.length <= DECISION_CAP) return h;
+  return { ...h, decisions: h.decisions.slice(-DECISION_CAP) };
+}
 
 export class HuddleRoom {
   private view: HuddleFloorState = emptyHuddleFloor();
@@ -79,10 +84,10 @@ export class HuddleRoom {
     return undefined;
   }
 
-  decide(peerId: string, text: string, owner: string, needsNick: boolean): string | undefined {
+  decide(peerId: string, text: string, owner: string, needsOwner: boolean): string | undefined {
     const h = this.view.current;
     if (!h) return 'Walk into the meeting room first';
-    const result = addDecision(h, peerId, { id: this.nid(), text, owner, needsNick, at: Date.now() });
+    const result = addDecision(h, peerId, { id: this.nid(), text, owner, needsOwner, at: Date.now() });
     if (!result.ok) return result.error;
     this.view.current = result.huddle;
     this.save();
@@ -185,8 +190,8 @@ export class HuddleRoom {
     try {
       if (!existsSync(this.file)) return;
       const raw = JSON.parse(readFileSync(this.file, 'utf8')) as HuddleFloorState;
-      if (raw && (raw.current === null || raw.current?.id)) this.view.current = raw.current ?? null;
-      if (Array.isArray(raw?.past)) this.view.past = raw.past.slice(0, PAST_MAX);
+      if (raw && (raw.current === null || raw.current?.id)) this.view.current = raw.current ? capDecisions(raw.current) : null;
+      if (Array.isArray(raw?.past)) this.view.past = raw.past.slice(0, PAST_MAX).map((h) => capDecisions(h));
     } catch {
       /* start empty */
     }

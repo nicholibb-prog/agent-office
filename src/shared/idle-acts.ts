@@ -1,4 +1,4 @@
-// What an idle hired worker may do. Productivity wins: WORKING and Needs-Nick never wander off into play.
+// What an idle hired worker may do. Productivity wins: WORKING and needs owner never wander off into play.
 // Roam and ball belong to the presence work. This module only decides that they are allowed;
 // the huddle performs the meeting act.
 
@@ -12,7 +12,7 @@ export interface IdleWorker {
   acked: boolean;
 }
 
-/** WORKING, still starting, or Needs-Nick (a question, or a finished turn nobody has looked at). */
+/** WORKING, still starting, or needs owner (a question, or a finished turn nobody has looked at). */
 export function productivityBlocks(w: IdleWorker): boolean {
   if (w.status === 'working' || w.status === 'starting') return true;
   if (w.status === 'needs_input') return true;

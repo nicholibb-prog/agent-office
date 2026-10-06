@@ -44,7 +44,7 @@ export type HuddleClientMsg =
   | { t: 'huddle.leave' }
   | { t: 'huddle.invite'; workerId: string }
   | { t: 'huddle.agenda'; agenda: string; context: string }
-  | { t: 'huddle.decide'; text: string; owner: string; needsNick: boolean }
+  | { t: 'huddle.decide'; text: string; owner: string; needsOwner: boolean }
   | { t: 'huddle.close' }
   | { t: 'huddle.send' }
   | { t: 'seat.provider'; seatId: string; provider: string };

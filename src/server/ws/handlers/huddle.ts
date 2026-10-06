@@ -59,7 +59,7 @@ export const huddleHandlers = {
   'huddle.decide'(ctx, c, msg) {
     const floor = here(ctx, c);
     if (!floor) return;
-    ctx.warn(c, floor.huddle.decide(c.id, str(msg.text, 500), str(msg.owner, 80), msg.needsNick === true));
+    ctx.warn(c, floor.huddle.decide(c.id, str(msg.text, 500), str(msg.owner, 80), msg.needsOwner === true));
   },
   'huddle.close'(ctx, c) {
     const floor = here(ctx, c);
