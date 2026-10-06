@@ -26,6 +26,7 @@ export const routes: readonly Route[] = [
   pageRoutes.health,
   bridgeRoutes.chatRecent,
   bridgeRoutes.say,
+  bridgeRoutes.inbox,
   bridgeRoutes.crewStatus,
   bridgeRoutes.crewStatusGet,
   bridgeRoutes.status,
