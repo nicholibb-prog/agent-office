@@ -2,12 +2,16 @@
 // worktrees and pull requests.
 import { MAX_REPOS, type RepoSource } from '../../workers.js';
 import { OPEN_CODE_MODEL_MAX } from '../../../shared/providers.js';
+import { DESKS } from '../../../shared/layout.js';
+import { frontDeskIds } from '../../../shared/seat-provider.js';
 import { isAgentEffort, isAgentProvider, type WorkerClientMsg } from '../../../shared/protocol.js';
 import { issueNumber, num, str } from '../../office/input.js';
 import { here, workerOf } from './common.js';
+import { holdSeat } from './huddle.js';
 import type { FeatureHooks, HandlerMap, ViewPieces } from './types.js';
 
 const CLEANUPS = new Set(['keep', 'worktree', 'all']);
+const FRONT_DESKS = new Set(frontDeskIds(DESKS));
 
 export const workersView: ViewPieces['workers'] = (_ctx, floor) => floor?.workers.list() ?? [];
 export const jailView: ViewPieces['jail'] = (_ctx, floor) => floor?.jail.state() ?? { prisoners: [], bones: 0 };
@@ -29,6 +33,8 @@ export const workerHandlers = {
     const effort = isAgentEffort(msg.effort) ? msg.effort : undefined;
     // Other floors' projects to work in too, each in a worktree of its own.
     const repos: RepoSource[] = [];
+    const deskId = str(msg.deskId, 32);
+    if (kind === 'agent' && FRONT_DESKS.has(deskId) && holdSeat(ctx, c, floor, deskId, str(msg.prompt, 20000), who)) return;
     for (const id of Array.isArray(msg.repos) ? [...new Set(msg.repos.slice(0, MAX_REPOS + 1).map((x) => str(x, 64)))] : []) {
       const other = ctx.floors.get(id);
       if (!other || other === floor) return ctx.warn(c, other ? "The worker's own floor's project is already in its workspace" : 'That project is no longer in the building');

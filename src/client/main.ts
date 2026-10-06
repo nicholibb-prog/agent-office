@@ -51,6 +51,7 @@ import { installJev } from './features/jev';
 import { installKaviBoard } from './features/kavi-board';
 import { installJukebox } from './features/jukebox';
 import { installMeeting } from './features/meeting';
+import { installHuddle } from './features/huddle';
 import { installNeedsYou } from './features/needsyou';
 import { installPalette } from './features/palette';
 import { installPeers } from './features/peers';
@@ -149,6 +150,7 @@ parts.waiting = installWaiting(ctx, core, parts);
 parts.needsYou = installNeedsYou(ctx, parts);
 installPalette(ctx, parts);
 parts.meeting = installMeeting(ctx, parts);
+parts.huddle = installHuddle(ctx, parts);
 parts.bookshelf = installBookshelf(ctx);
 installHerald(ctx, parts);
 

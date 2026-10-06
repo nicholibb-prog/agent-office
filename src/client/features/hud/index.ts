@@ -25,7 +25,7 @@ import { openUpgrade } from '../../ui/upgrade';
 import { openWhiteboard } from '../whiteboard/ui';
 import { describeSky } from '../../world/sky';
 
-export type HudParts = Pick<Parts, 'worlds' | 'place' | 'travel' | 'you' | 'actions' | 'waiting' | 'meeting' | 'bookshelf' | 'hanging' | 'talk' | 'notifier'>;
+export type HudParts = Pick<Parts, 'worlds' | 'place' | 'travel' | 'you' | 'actions' | 'waiting' | 'meeting' | 'huddle' | 'bookshelf' | 'hanging' | 'talk' | 'notifier'>;
 
 /** Listens for clicks on the HUD and the project, registers what the HUD follows (see mountHud), and binds Tab, H and F. */
 export function installHud(ctx: Ctx, core: CoreState, parts: HudParts) {
@@ -64,6 +64,16 @@ export function installHud(ctx: Ctx, core: CoreState, parts: HudParts) {
         chip: () => 'In a meeting',
         title: () => 'Call a meeting: workers work through a question or a task together',
         run: () => parts.meeting.showMeeting(),
+      },
+      {
+        id: 'huddle',
+        icon: '🗣️',
+        label: 'Huddle',
+        section: 'Open',
+        status: () => !!store.huddle.current && store.huddle.current.occupants.some((o) => o.kind === 'peer' && o.id === store.you),
+        chip: () => 'In meeting',
+        title: () => 'Meeting room huddle: agenda, decision log, who is in',
+        run: () => parts.huddle.open(),
       },
       { id: 'search', icon: '🔎', label: 'Search', section: 'Open', key: '/', title: () => 'Search the chat and every terminal', run: waiting.showSearch },
       // The office has its bookshelf for them; a map of its own may not.
