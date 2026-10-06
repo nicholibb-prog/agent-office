@@ -72,11 +72,25 @@ test('split, suffixed, and mixed-script wording raises the pool level', () => {
   for (const text of ['pushed', 'keys', 'secrets', 'passwords', 'credentials', 'authentication']) {
     assert.equal(enforcedLevel(1, text), 6, text);
   }
-  for (const text of ['curl', 'wget', 'https://example.com', 'the url', 'ssh', 'scp', 'rm -rf', 'DM', 'a text', 'an sms', 'a tweet', 'venmo', 'zelle', 'cashapp', 'order from amazon', 'signin', 'fix the bug in login.ts']) {
-    assert.equal(enforcedLevel(1, text), 4, text);
-  }
+  assert.equal(enforcedLevel(1, 'curl'), 6);
+  assert.equal(enforcedLevel(1, 'wget'), 6);
+  assert.equal(enforcedLevel(1, 'https://example.com'), 6);
+  assert.equal(enforcedLevel(1, 'the url'), 6);
+  assert.equal(enforcedLevel(1, 'ssh'), 6);
+  assert.equal(enforcedLevel(1, 'scp'), 6);
+  assert.equal(enforcedLevel(1, 'rm -rf'), 4);
+  assert.equal(enforcedLevel(1, 'DM'), 7);
+  assert.equal(enforcedLevel(1, 'a text'), 7);
+  assert.equal(enforcedLevel(1, 'an sms'), 7);
+  assert.equal(enforcedLevel(1, 'a tweet'), 7);
+  assert.equal(enforcedLevel(1, 'venmo'), 7);
+  assert.equal(enforcedLevel(1, 'zelle'), 7);
+  assert.equal(enforcedLevel(1, 'cashapp'), 7);
+  assert.equal(enforcedLevel(1, 'order from amazon'), 7);
+  assert.equal(enforcedLevel(1, 'signin'), 4);
+  assert.equal(enforcedLevel(1, 'fix the bug in login.ts'), 4);
   assert.equal(enforcedLevel(1, 'he\u0435llo'), 4);
-  assert.equal(enforcedLevel(1, 'go\u034Fod'), 4);
+  assert.equal(enforcedLevel(1, 'go\u034Fod'), 1);
   assert.equal(normalizePoolText('p a y'), 'pay');
   assert.equal(normalizePoolText('e-mail'), 'email');
   assert.equal(normalizePoolText('s-e-n-d'), 'send');
@@ -84,6 +98,122 @@ test('split, suffixed, and mixed-script wording raises the pool level', () => {
   assert.equal(normalizePoolText('s\u034Fend'), 'send');
   assert.equal(enforcedLevel(1, 'tidy the README wording'), 1);
   assert.equal(enforcedLevel(2, 'sort the queue by age'), 2);
+});
+
+test('compounds and disguised words keep the higher tier', () => {
+  assert.equal(enforcedLevel(1, 'my-password'), 6);
+  assert.equal(enforcedLevel(1, 'api_key'), 6);
+  assert.equal(enforcedLevel(1, 'api-key'), 6);
+  assert.equal(enforcedLevel(1, 'user.password'), 6);
+  assert.equal(enforcedLevel(1, 'client-secret'), 6);
+  assert.equal(enforcedLevel(1, 'access_token'), 6);
+  assert.equal(enforcedLevel(1, 'github_token'), 6);
+  assert.equal(enforcedLevel(1, 'myPassword'), 6);
+  assert.equal(enforcedLevel(1, 'apiKey'), 6);
+  assert.equal(enforcedLevel(1, 'gitPush'), 6);
+  assert.equal(enforcedLevel(1, 'git-push'), 6);
+  assert.equal(enforcedLevel(1, 'force-push'), 6);
+  assert.equal(enforcedLevel(1, 're-deploy'), 6);
+  assert.equal(enforcedLevel(1, 'gitpush'), 6);
+  assert.equal(enforcedLevel(1, 're-send'), 7);
+  assert.equal(enforcedLevel(1, 'auto-pay'), 7);
+  assert.equal(enforcedLevel(1, 'x.send'), 7);
+  assert.equal(enforcedLevel(1, 'foo.delete()'), 7);
+  assert.equal(enforcedLevel(1, 'resend'), 7);
+  assert.equal(enforcedLevel(1, 'repay'), 7);
+  assert.equal(enforcedLevel(1, 'autopay'), 7);
+  assert.equal(enforcedLevel(1, 'prepaid'), 7);
+  assert.equal(enforcedLevel(1, 's3nd'), 7);
+  assert.equal(enforcedLevel(1, 'p4y'), 7);
+  assert.equal(enforcedLevel(1, 'p@y'), 7);
+  assert.equal(enforcedLevel(1, 'ema1l'), 7);
+  assert.equal(enforcedLevel(1, 'emai1'), 7);
+  assert.equal(enforcedLevel(1, 'p41d'), 7);
+  assert.equal(enforcedLevel(1, 'pa55word'), 6);
+  assert.equal(enforcedLevel(1, '7oken'), 6);
+  assert.equal(enforcedLevel(1, 't0ken'), 6);
+  assert.equal(enforcedLevel(1, 'pa$$word'), 6);
+  assert.equal(enforcedLevel(1, 's/e/n/d'), 7);
+  assert.equal(enforcedLevel(1, 's,e,n,d'), 7);
+  assert.equal(enforcedLevel(1, 's|e|n|d'), 7);
+  assert.equal(enforcedLevel(1, 's*e*n*d'), 7);
+  assert.equal(enforcedLevel(1, 's+e+n+d'), 7);
+  assert.equal(enforcedLevel(1, 's\u00B7e\u00B7n\u00B7d'), 7);
+  assert.equal(enforcedLevel(1, 's\ne\nn\nd'), 7);
+  assert.equal(enforcedLevel(1, 'a tidy shelf'), 1);
+});
+
+test('accented latin stays low while other scripts do not', () => {
+  assert.equal(enforcedLevel(1, 'W\u0130RE'), 7);
+  assert.equal(enforcedLevel(1, 'EMA\u0130L'), 7);
+  assert.equal(enforcedLevel(1, '\u0130NVO\u0130CE'), 7);
+  assert.equal(enforcedLevel(1, '\u03A4\u039F\u039A\u0395\u039D'), 6);
+  assert.equal(enforcedLevel(1, '\u039A\u0395\u03A5'), 6);
+  assert.equal(enforcedLevel(1, '\u041A\u0415\u0423'), 6);
+  assert.equal(enforcedLevel(1, '\uA4E2\uA4F0\uA4E0\uA4D3'), 7);
+  assert.equal(enforcedLevel(1, '\u13A0'), 4);
+  assert.equal(enforcedLevel(1, 'caf\u00E9 menu translation'), 1);
+  assert.equal(enforcedLevel(1, 'se\u00F1or notes'), 1);
+  assert.equal(enforcedLevel(1, 'na\u00EFve draft'), 1);
+  assert.equal(enforcedLevel(1, 'context switch'), 1);
+  assert.equal(enforcedLevel(1, 'admin note'), 1);
+  assert.equal(enforcedLevel(1, 'he\u0435llo'), 4);
+  assert.equal(enforcedLevel(1, 'go\u034Fod'), 1);
+  assert.equal(enforcedLevel(1, 's\u034Fend'), 7);
+});
+
+test('channel payment and network words keep their tier', () => {
+  assert.equal(enforcedLevel(1, 'dm'), 7);
+  assert.equal(enforcedLevel(1, 'sms'), 7);
+  assert.equal(enforcedLevel(1, 'tweet'), 7);
+  assert.equal(enforcedLevel(1, 'text'), 7);
+  assert.equal(enforcedLevel(1, 'venmo'), 7);
+  assert.equal(enforcedLevel(1, 'zelle'), 7);
+  assert.equal(enforcedLevel(1, 'cashapp'), 7);
+  assert.equal(enforcedLevel(1, 'order'), 7);
+  assert.equal(enforcedLevel(1, 'mail'), 7);
+  assert.equal(enforcedLevel(1, 'forward'), 7);
+  assert.equal(enforcedLevel(1, 'money'), 7);
+  assert.equal(enforcedLevel(1, 'charge'), 7);
+  assert.equal(enforcedLevel(1, 'donate'), 7);
+  assert.equal(enforcedLevel(1, 'bitcoin'), 7);
+  assert.equal(enforcedLevel(1, 'seed phrase'), 7);
+  assert.equal(enforcedLevel(1, 'iban'), 7);
+  assert.equal(enforcedLevel(1, 'curl'), 6);
+  assert.equal(enforcedLevel(1, 'wget'), 6);
+  assert.equal(enforcedLevel(1, 'http'), 6);
+  assert.equal(enforcedLevel(1, 'url'), 6);
+  assert.equal(enforcedLevel(1, 'ssh'), 6);
+  assert.equal(enforcedLevel(1, 'scp'), 6);
+  assert.equal(enforcedLevel(1, 'upload'), 6);
+  assert.equal(enforcedLevel(1, 'exec'), 6);
+  assert.equal(enforcedLevel(1, 'bash'), 6);
+  assert.equal(enforcedLevel(1, 'nc'), 6);
+  assert.equal(enforcedLevel(1, 'ftp'), 6);
+  assert.equal(enforcedLevel(1, 'drop table'), 6);
+  assert.equal(enforcedLevel(1, 'notes.py'), 4);
+  assert.equal(enforcedLevel(1, 'tidy the README wording'), 1);
+  assert.equal(enforcedLevel(2, 'sort the queue by age'), 2);
+});
+
+test('keyword checks stay linear on long text', () => {
+  const chunk = 'tidy the shelf and sort the notes. ';
+  const small = chunk.repeat(Math.ceil(100_000 / chunk.length)).slice(0, 100_000);
+  const big = chunk.repeat(Math.ceil(1_000_000 / chunk.length)).slice(0, 1_000_000);
+  const started = Date.now();
+  assert.equal(enforcedLevel(1, small), 1);
+  const mid = Date.now();
+  assert.equal(enforcedLevel(1, big), 1);
+  const done = Date.now();
+  const smallMs = mid - started;
+  const bigMs = done - mid;
+  assert.ok(smallMs < 2_000, `100k took ${smallMs}ms`);
+  assert.ok(bigMs < 8_000, `1M took ${bigMs}ms`);
+  assert.ok(bigMs < smallMs * 30 + 1_000, `1M ${bigMs}ms vs 100k ${smallMs}ms`);
+  const hyphens = 'a-'.repeat(500_000);
+  const hyped = Date.now();
+  assert.equal(enforcedLevel(1, hyphens), 1);
+  assert.ok(Date.now() - hyped < 8_000, 'spaced singles stayed linear');
 });
 
 test('keyword backstops and a missing level are not Okkin-eligible', () => {

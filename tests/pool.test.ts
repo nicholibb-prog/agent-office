@@ -107,14 +107,19 @@ function jsonReq(url: string, body: unknown, headers: Record<string, string> = {
   return req;
 }
 
-function office(dir: string, pool: WorkPool, session?: { id?: string; name?: string; role?: 'admin' | 'member' }) {
+function office(
+  dir: string,
+  pool: WorkPool,
+  session?: { id?: string; name?: string; role?: 'admin' | 'member' },
+  floors?: Map<string, { pool: WorkPool }>,
+) {
   return {
     cfg: { dataDir: dir, port: 4600 },
     auth: {
       fromRequest: () => (session ? { account: session.id ? { id: session.id, name: session.name ?? session.id, role: session.role ?? 'member' } : undefined } : undefined),
       fromAnyCookie: () => !!session,
     },
-    floors: new Map([['floor', { pool }]]),
+    floors: floors ?? new Map([['floor', { pool }]]),
     services: { lookup: () => undefined },
   } as never;
 }
@@ -264,7 +269,7 @@ test('Dan pass is only Dan, and it does not mark the job done', (t) => {
 
 test('level 6 cannot be approved before a Dan pass, and level 7 can', (t) => {
   const pool = poolAt(dirOf(t));
-  const six = post(pool, 'Gate', 'Money check.', { level: 6, targetBot: PIPER.id });
+  const six = post(pool, 'Gate', 'Session check.', { level: 6, targetBot: PIPER.id });
   must(pool.claim(six.id, PIPER));
   const waiting = must(pool.complete(six.id, PIPER));
   const seen = saw(waiting);
@@ -464,18 +469,39 @@ test('claimer and Dan come from the authenticated caller, never the body', async
 test('a session can read a job body and a token cannot', async (t) => {
   const dir = dirOf(t);
   const pool = poolAt(dir);
+  const otherDir = mkdtempSync(path.join(tmpdir(), 'ao-pool-other-'));
+  t.after(() => rmSync(otherDir, { recursive: true, force: true }));
+  writePolicy(otherDir);
+  const other = poolAt(otherDir);
   const body = `Read this in full. ${'x'.repeat(120)}`;
-  const job = post(pool, 'Long note', body, { level: 4 });
+  const job = post(pool, 'Long note', body, { level: 4, targetBot: PIPER.id });
   assert.equal(pool.board().columns.open[0].body?.length, 80);
-  const signed = requestHandler(office(dir, pool, { id: CASEY.id, name: 'Casey' }), [poolRoutes.job]);
+  const floors = new Map<string, { pool: WorkPool }>([['floor', { pool }], ['west', { pool: other }]]);
+  const signed = requestHandler(office(dir, pool, { id: CASEY.id, name: 'Casey' }, floors), [poolRoutes.job]);
   const open = requestHandler(office(dir, pool), [poolRoutes.job]);
 
   const full = capture();
-  await signed(getReq(`/api/pool/jobs/${job.id}`), full.res);
+  await signed(getReq(`/api/pool/jobs/${job.id}?floor=floor`), full.res);
   assert.equal(full.got.status, 200);
-  const view = full.got.json() as { body?: string; hash?: string };
+  const view = full.got.json() as { body?: string; hash?: string; targetBot?: string };
   assert.equal(view.body, body);
   assert.equal(view.hash, job.contentHash);
+  assert.equal(view.targetBot, PIPER.id);
+
+  const omitted = capture();
+  await signed(getReq(`/api/pool/jobs/${job.id}`), omitted.res);
+  assert.equal(omitted.got.status, 404);
+  assert.equal(omitted.got.json().error, 'no such floor');
+
+  const unknown = capture();
+  await signed(getReq(`/api/pool/jobs/${job.id}?floor=nope`), unknown.res);
+  assert.equal(unknown.got.status, 404);
+  assert.equal(unknown.got.json().error, 'no such floor');
+
+  const elsewhere = capture();
+  await signed(getReq(`/api/pool/jobs/${job.id}?floor=west`), elsewhere.res);
+  assert.equal(elsewhere.got.status, 404);
+  assert.equal(elsewhere.got.json().error, 'no such job');
 
   const headed = capture();
   await signed(getReq(`/api/pool/jobs/${job.id}`, { authorization: `Bearer ${BRIDGE}` }), headed.res);

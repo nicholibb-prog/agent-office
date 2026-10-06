@@ -84,71 +84,9 @@ export function actorId(raw: unknown): string {
   return /^[A-Za-z0-9_-]{1,64}$/.test(s) ? s : '';
 }
 
-/**
- * NFKC, drop format characters and combining marks, case-fold, then close the
- * gaps people use to split a word: single letters with spaces, and runs of
- * hyphens, underscores, or dots between letters.
- */
-export function normalizePoolText(text: string): string {
-  const base = text.normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/\p{M}/gu, '').toLowerCase();
-  return collapseSeparators(collapseLetterSpacing(foldHomoglyphs(base)));
-}
+import { keywordFloor, normalizePoolText } from './pool-keywords.js';
 
-/** Letters that look like ASCII. Folded before the stem check so a mixed-script word can still hit a higher tier. */
-const HOMOGLYPHS: Record<string, string> = {
-  '\u0430': 'a', '\u0435': 'e', '\u043e': 'o', '\u0440': 'p', '\u0441': 'c', '\u0443': 'y', '\u0445': 'x',
-  '\u0455': 's', '\u0456': 'i', '\u0458': 'j', '\u04bb': 'h', '\u0501': 'd',
-};
-
-const CODE_EXT = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|py|pyw|sh|bash|ps1|json|env|yml|yaml|rb|go|rs|php|sql|toml|ini|xml|html|htm|css|vue|svelte)\b/i;
-
-/** merge/send/money/delete, including suffixes: sending, emailing, paid, deleting. */
-const TO_SEVEN = ['merge', 'email', 'message', 'post', 'reply', 'slack', 'send', 'pay', 'paid', 'invoice', 'transfer', 'wire', 'purchase', 'buy', 'spend', 'delet', 'remove', 'wipe'];
-/** code, secrets, and network, including suffixes: pushed, keys, passwords, authentication. */
-const TO_SIX = ['deploy', 'push', 'commit', 'code', 'token', 'password', 'credential', 'auth', 'secret', 'key', 'security', 'network'];
-/** Tools, channels, payment apps, and sign-in words. Any suffix counts. Underscore is a word break. */
-const TO_FOUR = ['curl', 'wget', 'http', 'url', 'ssh', 'scp', 'rm', 'dm', 'text', 'sms', 'tweet', 'venmo', 'paypal', 'zelle', 'cashapp', 'order', 'login', 'signin'];
-
-function foldHomoglyphs(text: string): string {
-  return [...text].map((ch) => HOMOGLYPHS[ch] ?? ch).join('');
-}
-
-/** 'p a y' becomes 'pay'. Longer words stay put, so 'a tidy' is not rewritten. */
-function collapseLetterSpacing(text: string): string {
-  return text.replace(/(^|[^a-z0-9])((?:[a-z0-9][ \t]+){1,}[a-z0-9])(?![a-z0-9])/g, (full, lead: string, seq: string) => {
-    const parts = seq.split(/[ \t]+/);
-    return parts.every((p) => p.length === 1) ? lead + parts.join('') : full;
-  });
-}
-
-/** 's-e-n-d', 'e-mail', and 'send_email' join. A lone '_' left over is still a break. */
-function collapseSeparators(text: string): string {
-  return text.replace(/[a-z0-9](?:[-_.]+[a-z0-9])+/g, (seq) => seq.replace(/[-_.]+/g, '')).replace(/_+/g, ' ');
-}
-
-function hasStem(text: string, stem: string): boolean {
-  return new RegExp(`(?:^|[^a-z0-9])${stem}[a-z0-9]*`, 'i').test(text);
-}
-
-/** A combining mark on a Latin letter, or a non-ASCII letter inside a Latin word. */
-function obscuredLatin(text: string): boolean {
-  if (/[A-Za-z]\p{M}|\p{M}[A-Za-z]/u.test(text)) return true;
-  for (const word of text.match(/\p{L}+/gu) ?? []) {
-    if (/[A-Za-z]/.test(word) && /[^\u0000-\u007f]/u.test(word)) return true;
-  }
-  return false;
-}
-
-/** Keyword floor. No gated word stays at 1, and the poster default of 4 is applied by enforcedLevel. */
-export function keywordFloor(text: string): number {
-  const nfkc = text.normalize('NFKC');
-  const stripped = nfkc.replace(/\p{Cf}/gu, '').replace(/\p{M}/gu, '');
-  const n = normalizePoolText(text);
-  if (TO_SEVEN.some((stem) => hasStem(n, stem))) return 7;
-  if (TO_SIX.some((stem) => hasStem(n, stem)) || /major\s+files/.test(n)) return 6;
-  if (obscuredLatin(nfkc) || CODE_EXT.test(stripped) || TO_FOUR.some((stem) => hasStem(n, stem))) return 4;
-  return 1;
-}
+export { keywordFloor, normalizePoolText };
 
 /**
  * No requested level means 4, which Okkin cannot claim.

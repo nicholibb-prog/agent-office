@@ -12,6 +12,7 @@ interface JobText {
   updatedAt: number;
   level: number;
   approval?: string;
+  targetBot?: string;
 }
 
 function onFloor(url: string): string {
@@ -22,6 +23,7 @@ function onFloor(url: string): string {
 export function openPoolApproval() {
   const close = h('button.btn.close', { type: 'button', 'aria-label': 'Close', title: 'Close (Esc)' }, '✕');
   const list = h('div.pool-jobs');
+  const target = h('p.pool-target');
   const body = h('pre.pool-body');
   const hashLine = h('p.pool-hash');
   const note = h('p.setting-note', {}, 'Owner approval stays off until this window has loaded the full text and its hash.');
@@ -30,7 +32,7 @@ export function openPoolApproval() {
     'div.modal.pool-approval',
     { role: 'dialog', 'aria-label': 'Work pool' },
     h('header', {}, h('h2', {}, 'Work pool'), close),
-    h('div.body', {}, list, body, hashLine, note),
+    h('div.body', {}, list, target, body, hashLine, note),
     h('footer', {}, h('span.grow'), approve),
   );
 
@@ -49,6 +51,7 @@ export function openPoolApproval() {
     arm(undefined);
     body.textContent = 'Loading…';
     hashLine.textContent = '';
+    target.textContent = '';
     let job: JobText;
     try {
       const res = await fetch(onFloor(`/api/pool/jobs/${encodeURIComponent(card.id)}`), { credentials: 'same-origin' });
@@ -58,16 +61,19 @@ export function openPoolApproval() {
       if (shown !== card.id) return;
       body.textContent = 'The full text could not be loaded.';
       hashLine.textContent = '';
+      target.textContent = '';
       return;
     }
     if (shown !== card.id) return;
     if (job.id !== card.id || typeof job.body !== 'string' || typeof job.hash !== 'string' || !/^[a-f0-9]{64}$/.test(job.hash)) {
       body.textContent = 'The full text could not be loaded.';
       hashLine.textContent = '';
+      target.textContent = '';
       return;
     }
     body.textContent = job.body;
     hashLine.textContent = job.hash;
+    target.textContent = `Target: ${job.targetBot || '—'}`;
     arm(job);
   }
 
@@ -77,6 +83,7 @@ export function openPoolApproval() {
       list.replaceChildren(h('p', {}, 'Nothing is waiting on approval.'));
       body.textContent = '';
       hashLine.textContent = '';
+      target.textContent = '';
       arm(undefined);
       return;
     }

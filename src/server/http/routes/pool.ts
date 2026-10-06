@@ -243,7 +243,8 @@ export const poolRoutes = {
     },
   },
   /**
-   * Full body and content hash for one job.
+   * Full body, named target, and content hash for one job on a floor this office has open.
+   * A missing floor, or a floor that does not hold the job, is 404. There is no fallback floor.
    * A signed-in account only. x-bridge-token and Bearer are rejected, even with a session.
    * Public auth so a token with no cookie is 403 here, rather than the router's 401.
    */
@@ -258,8 +259,9 @@ export const poolRoutes = {
         const session = ctx.auth.fromRequest(req);
         if (!session) return send(res, 401, { error: 'Not logged in' });
         if (!session.account?.id) return send(res, 403, { error: 'account required' });
-        const floor = floorOf(ctx, url);
-        if (!floor) return send(res, 404, { error: 'no floor' });
+        const floorId = url.searchParams.get('floor') ?? '';
+        const floor = ctx.floors.get(floorId);
+        if (!floor) return send(res, 404, { error: 'no such floor' });
         const id = path.slice('/api/pool/jobs/'.length);
         if (!/^[a-f0-9]{12}$/.test(id)) return send(res, 404, { error: 'no such job' });
         const job = floor.pool.get(id);
@@ -272,6 +274,7 @@ export const poolRoutes = {
           state: job.status,
           updatedAt: job.updatedAt,
           level: job.level,
+          targetBot: job.targetBot ?? '',
           ...(job.approval ? { approval: job.approval } : {}),
         });
       });
