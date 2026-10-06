@@ -110,6 +110,8 @@ export const presenceHandlers = {
     const line: ChatLine = { from: c.id, name: who, color: c.peer.color, text, at: Date.now(), ...(c.accountId ? { account: true } : {}) };
     ctx.chat.add(line);
     ctx.broadcast({ t: 'chat', ...line });
+    // Chat may mark a matching hired desk WORKING (local HQ presence).
+    ctx.floorOf(c)?.workers.chatWorking(who, text);
   },
   doing(ctx, c, msg) {
     const what = str(msg.what, 60).trim() || undefined;
@@ -120,6 +122,7 @@ export const presenceHandlers = {
     if (reading) c.peer.reading = true;
     else delete c.peer.reading;
     ctx.broadcast({ t: 'peer.update', peer: c.peer });
+    if (what) ctx.floorOf(c)?.workers.chatWorking(c.peer.name);
   },
   ping(ctx, c, msg) {
     ctx.sendTo(c, { t: 'pong', at: num(msg.at), now: Date.now() });
