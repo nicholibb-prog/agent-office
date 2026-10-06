@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { AgentChoice, AgentEffort, AgentProvider, TerminalHit, WorkerInfo, WorkerKind, WorkerRepo, WorkerStatus } from '../../shared/protocol.js';
@@ -31,12 +30,15 @@ import type { HookEnv, OpenedPr, RepoSource, RunAs, Worker, WorkerContext, Worke
 import { clamp, safeEq, truncate } from './util.js';
 import { COLORS, NAMES, newWorker } from './worker.js';
 import { WorkerTrees, lostMessage } from './worktree.js';
+import { applyCrewPresence as applyCrewPresenceFn, chatWorking as chatWorkingFn, tickCrewStatusFile, tickWorkingLease } from './crew.js';
 
 const SCREEN_INTERVAL_MS = 250;
 /** How often a steady typist's "last typed" time is refreshed for everyone. */
 const TYPED_REFRESH_MS = 15_000;
 /** Shells have no agent hooks: after this much quiet since last real input, return to idle (roam/asleep). */
 const SHELL_IDLE_MS = 12_000;
+/** WORKING from bridge/hooks expires after this; never overwrite needs_input. */
+const WORKING_LEASE_MS = 15 * 60_000;
 /** The most other repositories one worker can take on (see WorkerInfo.repos). */
 export const MAX_REPOS = 8;
 /** How often every worker's transcript is checked for new spend, on top of the hook-driven checks. */
@@ -503,9 +505,7 @@ export class WorkerManager {
     const last = w.info.lastInput;
     if (last?.by === by && now - last.at < TYPED_REFRESH_MS) return false;
     w.info.lastInput = { by, at: now };
-    // Real terminal input while at rest → WORKING @ desk. Hooks / shell idle timer clear it later.
-    const s = w.info.status;
-    if (s === 'idle' || s === 'done' || s === 'starting') this.setStatus(w, 'working');
+    // Honesty: typing alone does not force WORKING (bridge push / agent hooks do).
     return true;
   }
 
@@ -520,9 +520,7 @@ export class WorkerManager {
       w.info.activity = truncate(clean, 80);
       this.tasks.notePrompt(w, clean);
       if (by) w.info.lastInput = { by, at: Date.now() };
-      const sd = w.info.status;
-      if (sd === 'idle' || sd === 'done' || sd === 'starting') this.setStatus(w, 'working');
-      else this.emitUpdate(w);
+      this.emitUpdate(w);
       return undefined;
     }
     if (!w.pty) return 'Worker is not running';
@@ -534,9 +532,7 @@ export class WorkerManager {
     w.info.activity = truncate(clean, 80);
     this.tasks.notePrompt(w, clean);
     if (by) w.info.lastInput = { by, at: Date.now() };
-    const sp = w.info.status;
-      if (sp === 'idle' || sp === 'done' || sp === 'starting') this.setStatus(w, 'working');
-      else this.emitUpdate(w);
+    this.emitUpdate(w);
     return undefined;
   }
 
@@ -924,103 +920,28 @@ export class WorkerManager {
 
 
   
-  /** Local HQ overrides (gitignored). Neutral defaults when absent. */
-  private loadHqLocal(): {
-    crewKeysLower: string[];
-    humanAliases: string[];
-    humanMapsTo: string;
-  } {
-    const empty = { crewKeysLower: [] as string[], humanAliases: [] as string[], humanMapsTo: '' };
-    try {
-      const file = path.join(path.dirname(this.statePath), 'hq-local.json');
-      if (!existsSync(file)) return empty;
-      const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<typeof empty>;
-      return {
-        crewKeysLower: Array.isArray(raw.crewKeysLower) ? raw.crewKeysLower.map(String) : [],
-        humanAliases: Array.isArray(raw.humanAliases) ? raw.humanAliases.map(String) : [],
-        humanMapsTo: typeof raw.humanMapsTo === 'string' ? raw.humanMapsTo : '',
-      };
-    } catch {
-      return empty;
-    }
+  private crewHost() {
+    return {
+      workers: this.workers,
+      setStatus: (w: Worker, status: WorkerStatus) => this.setStatus(w, status),
+      emitUpdate: (w: Worker) => this.emitUpdate(w),
+    };
   }
 
-  /** Apply a name?status map from the local bridge onto shell desks. */
   applyCrewPresence(crew: Record<string, string>): { applied: string[] } {
-    const clean = (s: string) => s.replace(/\s*[^\w\s.-]+\s*$/u, '').trim().toLowerCase();
-    const want = new Map<string, 'working' | 'idle'>();
-    for (const [k, v] of Object.entries(crew || {})) {
-      const n = clean(k);
-      const st = String(v).toLowerCase();
-      if (!n) continue;
-      if (st === 'working' || st === 'busy' || st === 'active') want.set(n, 'working');
-      else if (st === 'idle' || st === 'asleep' || st === 'roam' || st === 'offline' || st === 'done') want.set(n, 'idle');
-    }
-    const applied: string[] = [];
-    for (const w of this.workers.values()) {
-      if (w.info.kind !== 'shell') continue;
-      const n = clean(w.info.name);
-      const next = want.get(n);
-      if (!next) continue;
-      if (next === 'working') {
-        w.info.lastInput = { by: 'crew-status', at: Date.now() };
-        if (w.info.status !== 'working') this.setStatus(w, 'working');
-        else this.emitUpdate(w);
-        applied.push(w.info.name + '=working');
-      } else {
-        if (w.info.status === 'working' || w.info.status === 'starting') this.setStatus(w, 'idle');
-        applied.push(w.info.name + '=idle');
-      }
-    }
-    return { applied };
+    return applyCrewPresenceFn(this.crewHost(), crew);
   }
 
   chatWorking(name: string, text?: string): void {
-    const clean = (s: string) => s.replace(/\s*[^\w\s.-]+\s*$/u, '').trim().toLowerCase();
-    const hq = this.loadHqLocal();
-    const want = new Set<string>();
-    const who = clean(name);
-    if (who) want.add(who);
-    const crewSet = new Set(hq.crewKeysLower.map((s) => s.toLowerCase()));
-    const mapsTo = hq.humanMapsTo ? clean(hq.humanMapsTo) : '';
-    if (who && mapsTo && !crewSet.has(who)) want.add(mapsTo);
-    for (const a of hq.humanAliases) {
-      if (who === clean(a) && mapsTo) want.add(mapsTo);
-    }
-    // @Name or "Name:" / "Name," at start of a line.
-    const raw = (text || '').trim();
-    for (const m of raw.matchAll(/@([\w][\w.-]*(?:\s+[\w][\w.-]*)?)/g)) want.add(clean(m[1]));
-    const lead = raw.match(/^([A-Za-z][\w.-]*(?:\s+[A-Za-z][\w.-]*)?)\s*[,:]\s+/);
-    if (lead) want.add(clean(lead[1]));
-    if (!want.size) return;
-    for (const w of this.workers.values()) {
-      const n = clean(w.info.name);
-      if (!want.has(n)) continue;
-      const st = w.info.status;
-      w.info.lastInput = { by: name, at: Date.now() };
-      if (st === 'idle' || st === 'done' || st === 'starting' || !st) this.setStatus(w, 'working');
-      else this.emitUpdate(w);
-    }
+    chatWorkingFn(this.crewHost(), name, text);
   }
 
-
   private tickCrewStatusFile(): void {
-    try {
-      const file = path.join(path.dirname(this.statePath), 'crew-status.json');
-      if (!existsSync(file)) return;
-      const raw = JSON.parse(readFileSync(file, 'utf8')) as { crew?: Record<string, string> };
-      if (raw?.crew) this.applyCrewPresence(raw.crew);
-    } catch { /* ignore bad/missing file */ }
+    tickCrewStatusFile(this.crewHost(), this.statePath);
   }
 
   private tickShellIdle(): void {
-    for (const w of this.workers.values()) {
-      if (w.info.kind !== 'shell') continue;
-      if (w.info.status !== 'working' && w.info.status !== 'starting') continue;
-      const at = w.info.lastInput?.at ?? 0;
-      if (at && Date.now() - at < SHELL_IDLE_MS) continue;
-      this.setStatus(w, 'idle');
-    }
+    tickWorkingLease(this.crewHost(), { shellIdleMs: SHELL_IDLE_MS, leaseMs: WORKING_LEASE_MS });
   }
 
   private setStatus(w: Worker, status: WorkerStatus) {
