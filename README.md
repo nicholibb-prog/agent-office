@@ -387,7 +387,7 @@ The full list is in [docs/controls.md](docs/controls.md).
 
 ```bash
 npm install
-npm run dev          # Vite with hot reload on :5173, the server on :4600 (password: dev)
+npm run dev          # Vite on 127.0.0.1:5173, the office on 127.0.0.1:4600 (password: dev)
 npm run typecheck
 npm test
 ```
