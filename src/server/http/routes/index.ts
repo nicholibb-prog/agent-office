@@ -10,6 +10,7 @@ import { pageRoutes } from './pages.js';
 import { searchRoutes } from './search.js';
 import { serviceRoutes } from './services.js';
 import { bridgeRoutes } from './bridge.js';
+import { hqBriefRoutes } from './hq-brief.js';
 
 export const routes: readonly Route[] = [
   // Anyone.
@@ -30,6 +31,11 @@ export const routes: readonly Route[] = [
   bridgeRoutes.kaviFeedGet,
   bridgeRoutes.kaviOutbox,
   bridgeRoutes.kaviOutboxGet,
+  hqBriefRoutes.brief,
+  hqBriefRoutes.seen,
+  hqBriefRoutes.needs,
+  hqBriefRoutes.board,
+  hqBriefRoutes.answer,
   pageRoutes.assets,
   pageRoutes.login,
   pageRoutes.claim,

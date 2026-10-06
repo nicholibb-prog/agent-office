@@ -8,6 +8,50 @@ The office keeps its data in `~/agent-office` (`--home` or `AGENT_OFFICE_HOME` t
 
 Already have a checkout? Pick its repository anyway: a checkout of it that's already where the workspace folder would clone it is used as it is. You can still start the office in a project, `agent-office ~/code/my-project`: that project becomes a floor, and the office keeps its data in `~/code/my-project/.agent-office` as it did before there were floors. An office that already ran in a project carries on in it when you start `agent-office` there again. An admin can take that project off the building in the elevator like any other floor.
 
+## HQ status files
+
+The unblock strip and **Since last visit** read four files in the office data directory (the floor’s `.agent-office/` when the office was started in a project, otherwise `~/agent-office/.agent-office/`). All four are gitignored. They hold titles, seats, and states. A record with a `body`, `essay`, `text`, `note`, or `markdown` field is ignored.
+
+`hq-local.json` maps desks to generic seat keys. Leave a name out of the repo; put it only in this file, on the machine.
+
+```json
+{
+  "crewKeysLower": ["seat-a", "seat-b"],
+  "humanAliases": [],
+  "humanMapsTo": "operator",
+  "seats": { "desk-1": "seat-a", "desk-2": "seat-b" }
+}
+```
+
+`humanMapsTo`, when it is a single token such as `operator`, is the strip’s heading (`Needs operator`). Blank stays **Needs a decision**. Seat values that are not a short token (`seat-a`, `desk-1`) are dropped.
+
+`unblock.json` is the queue. `actionable` must be true, `kind` is `yesno` or `talk`, and `title` is one line of at most 80 characters. **Yes** / **No** on a `yesno` row types `1` or `2` into `workerId` when that desk exists, and moves the block onto `answered`.
+
+```json
+{
+  "updatedAt": "2026-10-06T12:00:00.000Z",
+  "blocks": [
+    { "id": "b1", "seat": "seat-a", "title": "Approve npm test", "kind": "yesno", "actionable": true, "at": 1710000000000, "workerId": "w1" }
+  ],
+  "answered": [{ "id": "b1", "answer": "yes", "at": 1710000001000 }]
+}
+```
+
+`board-status.json` is the morning delta’s file source. `state` is `done`, `progress`, or `blocked`. Lines at or before the last visit are left out. Each group shows at most six lines, newest first, then grouped by seat. Desks and queue tasks are added the same way: a done desk, a desk that is actually working, a desk that needs input, a finished queue task, a running queue task. The task prompt is not read.
+
+```json
+{
+  "updatedAt": "2026-10-06T12:00:00.000Z",
+  "items": [
+    { "id": "t1", "seat": "seat-a", "title": "Ship the queue", "state": "done", "at": 1710000000000 }
+  ]
+}
+```
+
+`last-visit.json` is `{ "at": 1710000000000 }`. The panel writes it when you close it. The first open, with no stamp, uses the last twelve hours.
+
+The bridge accepts these on `POST /api/bridge/unblock` (`{ "blocks": [] }`) and `POST /api/bridge/board-status` (`{ "items": [] }`), with the same token or office session as the other bridge routes, and only from `127.0.0.1` or `localhost`. `GET /api/bridge/hq-brief?since=` returns the strip and the digest. `POST /api/bridge/unblock/answer` is `{ "id", "answer": "yes"|"no", "workerId"? }`.
+
 ## Command line
 
 ```

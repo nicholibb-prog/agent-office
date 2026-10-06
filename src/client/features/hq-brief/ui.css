@@ -1,0 +1,47 @@
+/* Loud color is this strip only. The morning digest uses the ordinary panel. */
+.unblock-strip {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(720px, calc(100vw - 24px));
+  max-height: min(40vh, 280px);
+  overflow: auto;
+  padding: 8px;
+  border: 3px solid #1a1a1a;
+  border-radius: 12px;
+  background: #ff3b00;
+  color: #fff;
+  box-shadow: 0 4px 0 #1a1a1a;
+}
+.unblock-strip.hidden { display: none; }
+.unblock-head { font-weight: 900; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+.unblock-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; background: rgba(0, 0, 0, 0.18); }
+.unblock-title { flex: 1; min-width: 0; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.unblock-seat, .unblock-age { flex: none; font-size: 12px; font-weight: 900; }
+.unblock-strip button {
+  flex: none;
+  border: 2px solid #1a1a1a;
+  border-radius: 8px;
+  background: #fff;
+  color: #1a1a1a;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+#hud:has(.unblock-strip:not(.hidden)) .needs-you { top: calc(72px + var(--unblock-h, 88px)); }
+
+.hq-digest { width: min(520px, 100%); }
+.hq-digest-body { overflow: auto; padding-bottom: 8px; }
+.hq-bucket { padding: 8px 16px; }
+.hq-bucket h3 { margin: 0 0 4px; font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; }
+.hq-seat { margin-top: 6px; }
+.hq-seat-name { font-weight: 900; }
+.hq-seat ul { margin: 2px 0 0; padding-left: 1.1em; }
+.hq-cap { margin: 6px 0 0; font-size: 12px; font-weight: 700; opacity: 0.7; }
