@@ -1,15 +1,29 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { displayName, botName } from '../../shared/pool.js';
+import { botName, displayName, reservedPoolName } from '../../shared/pool.js';
 import { poolPath, readPrivate, writePrivate } from './persist.js';
 
 interface CallerRow {
+  id: string;
   name: string;
   tokenHash: string;
 }
 
+const books = new Set<CallerBook>();
+
+/**
+ * True when any loaded caller book already uses this name.
+ * Account creation checks it so the two namespaces cannot share a name.
+ */
+export function callerNameUsed(name: string): boolean {
+  const key = botName(name);
+  if (!key) return false;
+  for (const book of books) if (book.hasName(key)) return true;
+  return false;
+}
+
 /**
  * Per-bot tokens for the pool. The shared bridge token is not a bot identity.
- * Only the hash is stored. The caller name is whatever was registered, never a body field at claim time.
+ * Only the hash is stored. The id is what policy allowlists name.
  */
 export class CallerBook {
   private rows: CallerRow[] = [];
@@ -19,32 +33,44 @@ export class CallerBook {
     this.file = poolPath(dataDir, 'work-pool-callers.json');
     const raw = readPrivate(this.file);
     if (raw && typeof raw === 'object' && Array.isArray((raw as { callers?: unknown }).callers)) {
-      this.rows = (raw as { callers: CallerRow[] }).callers.filter((r) => r && typeof r.name === 'string' && typeof r.tokenHash === 'string');
+      this.rows = (raw as { callers: CallerRow[] }).callers.filter((r) => r && typeof r.id === 'string' && typeof r.name === 'string' && typeof r.tokenHash === 'string');
     }
+    books.add(this);
   }
 
-  register(name: unknown): { name: string; token: string } | { error: string } {
+  hasName(key: string): boolean {
+    return this.rows.some((r) => botName(r.name) === key);
+  }
+
+  /**
+   * `accountNames` are the office accounts. A caller cannot take one of those names,
+   * or the reserved names dan, okkin, and nick.
+   */
+  register(name: unknown, accountNames: readonly string[] = []): { id: string; name: string; token: string } | { error: string } {
     const shown = displayName(name);
     const key = botName(shown);
     if (!key || !/^[a-z0-9][a-z0-9 .-]{0,31}$/.test(key)) return { error: 'name must be letters, numbers, spaces, dots or hyphens' };
-    if (this.rows.some((r) => botName(r.name) === key)) return { error: 'that caller is already registered' };
+    if (reservedPoolName(shown)) return { error: 'that name is reserved' };
+    if (accountNames.some((n) => botName(n) === key)) return { error: 'that name is an account' };
+    if (this.hasName(key)) return { error: 'that caller is already registered' };
     if (this.rows.length >= 64) return { error: 'too many callers' };
     const token = randomBytes(32).toString('hex');
-    this.rows.push({ name: shown, tokenHash: hashToken(token) });
+    const id = randomBytes(8).toString('hex');
+    this.rows.push({ id, name: shown, tokenHash: hashToken(token) });
     this.save();
-    return { name: shown, token };
+    return { id, name: shown, token };
   }
 
-  /** The registered display name for this token, or undefined. */
-  nameFor(token: string): string | undefined {
+  /** The registered id and label for this token, or undefined. */
+  who(token: string): { id: string; label: string } | undefined {
     if (!token || token.length > 128) return undefined;
     const hash = hashToken(token);
     const row = this.rows.find((r) => safeEqual(r.tokenHash, hash));
-    return row?.name;
+    return row ? { id: row.id, label: row.name } : undefined;
   }
 
   private save() {
-    writePrivate(this.file, { callers: this.rows.map((r) => ({ name: r.name, tokenHash: r.tokenHash })) });
+    writePrivate(this.file, { callers: this.rows.map((r) => ({ id: r.id, name: r.name, tokenHash: r.tokenHash })) });
   }
 }
 

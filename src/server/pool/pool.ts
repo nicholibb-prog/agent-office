@@ -1,22 +1,26 @@
 import { randomBytes } from 'node:crypto';
 import {
   LEASE_MS,
+  actorId,
   boardFrom,
   botName,
   claimRefusal,
   displayName,
   emptyBoard,
   enforcedLevel,
-  isDan,
   showsWorking,
   unsafeText,
+  type PoolActor,
   type PoolBoard,
   type PoolJob,
+  type PoolPolicy,
   type SeenJob,
 } from '../../shared/pool.js';
 import { CallerBook } from './callers.js';
+import { contentHash } from './hash.js';
+import { readPolicy } from './policy.js';
 import { poolPath, readPrivate, writePrivate } from './persist.js';
-import { createOkkinPuller, type WorkPuller } from './puller.js';
+import type { WorkPuller } from './puller.js';
 
 export interface PoolEvents {
   update?(board: PoolBoard): void;
@@ -27,31 +31,39 @@ export interface PoolEvents {
 export type PoolFail = { ok: false; status: number; error: string };
 export type PoolOk<T> = { ok: true; value: T } | PoolFail;
 
-const MAX_JOBS = 200;
+const MAX_ACTIVE = 200;
+const MAX_DONE = 200;
+const MAX_HISTORY = 20;
 const TITLE_MAX = 120;
 const BODY_MAX = 4000;
+const POST_LIMIT = 8;
+const POST_WINDOW_MS = 60_000;
 
 export class WorkPool {
   private jobs: PoolJob[] = [];
   private file: string;
+  private dataDir: string;
   private callers: CallerBook;
   private now: () => number;
   private timer?: ReturnType<typeof setInterval>;
   private puller?: WorkPuller;
   /** Bots we last told the office were working, so a stalled claim can return them to idle. */
   private working = new Set<string>();
+  private posts = new Map<string, number[]>();
 
   constructor(
     dataDir: string,
     private events: PoolEvents = {},
     opts: { now?: () => number; autoPull?: boolean; puller?: WorkPuller } = {},
   ) {
+    this.dataDir = dataDir;
     this.file = poolPath(dataDir, 'work-pool.json');
     this.callers = new CallerBook(dataDir);
     this.now = opts.now ?? Date.now;
     this.restore();
-    if (opts.autoPull) {
-      this.puller = opts.puller ?? createOkkinPuller();
+    // Auto-pull stays off until a caller injects an armed runner. The quiet default must not claim.
+    if (opts.autoPull && opts.puller?.armed) {
+      this.puller = opts.puller;
       this.timer = setInterval(() => this.tick(), 5_000);
       this.timer.unref?.();
     }
@@ -62,12 +74,13 @@ export class WorkPool {
     this.timer = undefined;
   }
 
-  registerCaller(name: unknown) {
-    return this.callers.register(name);
+  registerCaller(name: unknown, accountNames: readonly string[] = []) {
+    return this.callers.register(name, accountNames);
   }
 
-  callerName(token: string): string | undefined {
-    return this.callers.nameFor(token);
+  callerByToken(token: string): PoolActor | undefined {
+    const who = this.callers.who(token);
+    return who ? { id: who.id, label: who.label } : undefined;
   }
 
   board(): PoolBoard {
@@ -80,69 +93,78 @@ export class WorkPool {
     return this.jobs.find((j) => j.id === id);
   }
 
-  post(input: { title: unknown; body: unknown; level?: unknown; targetBot?: unknown; tags?: unknown; notBefore?: unknown }, postedBy: string): PoolOk<PoolJob> {
+  post(input: { title: unknown; body: unknown; level?: unknown; targetBot?: unknown; tags?: unknown; notBefore?: unknown }, actor: PoolActor, gate: { admin?: boolean } = {}): PoolOk<PoolJob> {
+    const who = asActor(actor);
+    if (!who) return fail(400, 'caller identity required');
+    const now = this.now();
+    if (this.rateLimited(who.id, now)) return fail(429, 'too many posts');
     const title = displayName(input.title).slice(0, TITLE_MAX);
     const body = typeof input.body === 'string' ? input.body.replace(/\r\n?/g, '\n').trim().slice(0, BODY_MAX) : '';
-    const by = displayName(postedBy);
     if (!title) return fail(400, 'title required');
     if (!body) return fail(400, 'body required');
-    if (!by) return fail(400, 'caller identity required');
     const tags = cleanTags(input.tags);
     const text = `${title}\n${body}\n${tags.join(' ')}`;
-    if (unsafeText(text) || unsafeText(by)) return fail(400, 'that text cannot be stored');
-    if (this.jobs.filter((j) => j.status !== 'done').length >= MAX_JOBS) return fail(400, 'the pool is full');
-    const target = displayName(input.targetBot);
+    if (unsafeText(text) || unsafeText(who.label)) return fail(400, 'that text cannot be stored');
+    if (this.jobs.filter((j) => j.status !== 'done').length >= MAX_ACTIVE) return fail(400, 'the pool is full');
+    const target = actorId(input.targetBot);
+    if (input.targetBot !== undefined && input.targetBot !== null && input.targetBot !== '' && !target) return fail(400, 'target must be an id');
     if (target && unsafeText(target)) return fail(400, 'that text cannot be stored');
     const notBefore = when(input.notBefore);
     if (input.notBefore !== undefined && input.notBefore !== null && notBefore === undefined) return fail(400, 'notBefore must be a time');
-    const now = this.now();
+    const level = enforcedLevel(input.level, text);
+    const policy = this.policy();
+    if (level <= 3 && !gate.admin && !policy.lowLevelPosters.includes(who.id)) return fail(403, 'levels 1–3 are only for an allowlisted poster');
+    if (level >= 6 && !policy.highLevelPosters.includes(who.id)) return fail(403, 'levels 6 and 7 are only for an allowlisted poster');
     const job: PoolJob = {
       id: randomBytes(6).toString('hex'),
       title,
       body,
-      level: enforcedLevel(input.level, text),
+      level,
       ...(target ? { targetBot: target } : {}),
-      postedBy: by,
+      postedBy: who.id,
+      posterLabel: who.label,
       createdAt: now,
       updatedAt: now,
       ...(notBefore !== undefined ? { notBefore } : {}),
       tags,
       status: 'open',
       history: [],
+      contentHash: '',
     };
+    job.contentHash = contentHash(job);
     this.jobs.push(job);
     this.changed();
     return { ok: true, value: job };
   }
 
-  claim(id: string, byRaw: string, leaseMs?: number): PoolOk<PoolJob> {
+  claim(id: string, actor: PoolActor, leaseMs?: number): PoolOk<PoolJob> {
     this.sweep();
-    const by = displayName(byRaw);
-    if (!by) return fail(400, 'caller identity required');
+    const who = asActor(actor);
+    if (!who) return fail(400, 'caller identity required');
     const job = this.jobs.find((j) => j.id === id);
     if (!job) return fail(404, 'no such job');
     if (job.status !== 'open') return fail(409, 'job is not open');
     const now = this.now();
     if (job.notBefore !== undefined && now < job.notBefore) return fail(409, 'not open yet');
-    const why = claimRefusal(job.level, by, job.targetBot);
+    const why = claimRefusal(job.level, who.id, job.targetBot, this.policy());
     if (why) return fail(403, why);
-    if (this.liveClaim(by, now)) return fail(409, 'finish or release the job you already hold');
+    if (this.liveClaim(who.id, now)) return fail(409, 'finish or release the job you already hold');
     const lease = clampLease(leaseMs);
     job.status = 'claimed';
-    job.claim = { by, at: now, leaseUntil: now + lease, leaseMs: lease };
-    job.history.push({ by, at: now, leaseUntil: now + lease });
+    job.claim = { by: who.id, label: who.label, at: now, leaseUntil: now + lease, leaseMs: lease };
+    this.remember(job, { by: who.id, at: now, leaseUntil: now + lease });
     this.touch(job, now);
     this.syncPresence();
     this.changed();
     return { ok: true, value: job };
   }
 
-  heartbeat(id: string, byRaw: string): PoolOk<PoolJob> {
+  heartbeat(id: string, actor: PoolActor): PoolOk<PoolJob> {
     this.sweep();
-    const by = displayName(byRaw);
+    const who = asActor(actor);
     const job = this.jobs.find((j) => j.id === id);
-    if (!job?.claim || job.status !== 'claimed') return fail(409, 'no live claim');
-    if (botName(job.claim.by) !== botName(by)) return fail(403, 'only the claimer can heartbeat');
+    if (!job?.claim || job.status !== 'claimed' || !who) return fail(409, 'no live claim');
+    if (job.claim.by !== who.id) return fail(403, 'only the claimer can heartbeat');
     const now = this.now();
     job.claim.heartbeatAt = now;
     job.claim.leaseUntil = now + job.claim.leaseMs;
@@ -154,32 +176,36 @@ export class WorkPool {
     return { ok: true, value: job };
   }
 
-  release(id: string, byRaw: string): PoolOk<PoolJob> {
+  release(id: string, actor: PoolActor): PoolOk<PoolJob> {
     this.sweep();
+    const who = asActor(actor);
     const job = this.jobs.find((j) => j.id === id);
-    if (!job?.claim || job.status !== 'claimed') return fail(409, 'no live claim');
-    if (botName(job.claim.by) !== botName(byRaw)) return fail(403, 'only the claimer can release');
+    if (!job?.claim || job.status !== 'claimed' || !who) return fail(409, 'no live claim');
+    if (job.claim.by !== who.id) return fail(403, 'only the claimer can release');
     this.endClaim(job, 'released');
     this.changed();
     return { ok: true, value: job };
   }
 
   /** Levels 1–5 become done. Levels 6–7 become needs approval. The pool never runs the action. */
-  complete(id: string, byRaw: string): PoolOk<PoolJob> {
+  complete(id: string, actor: PoolActor): PoolOk<PoolJob> {
     this.sweep();
+    const who = asActor(actor);
     const job = this.jobs.find((j) => j.id === id);
-    if (!job?.claim || job.status !== 'claimed') return fail(409, 'no live claim');
-    if (botName(job.claim.by) !== botName(byRaw)) return fail(403, 'only the claimer can complete');
+    if (!job?.claim || job.status !== 'claimed' || !who) return fail(409, 'no live claim');
+    if (job.claim.by !== who.id) return fail(403, 'only the claimer can complete');
     const now = this.now();
-    const by = job.claim.by;
+    const label = job.claim.label;
     this.endClaim(job, 'completed');
-    job.doneBy = by;
+    job.doneBy = who.id;
+    job.doneLabel = label;
     job.completedAt = now;
     if (job.level >= 6) {
       job.status = 'needs_approval';
       job.approval = job.level >= 7 ? 'nick-yes' : 'dan-pass';
     } else {
       job.status = 'done';
+      this.trimDone();
     }
     this.touch(job, now);
     this.changed();
@@ -187,18 +213,21 @@ export class WorkPool {
   }
 
   /**
-   * Level 6 only. The actor must already be Dan. This records the pass and leaves the job
-   * in needs approval for a human Nick yes. It does not mark the job done.
+   * Level 6 only. The actor id must be on the Dan allowlist, and must not have posted,
+   * claimed, or completed the job. This does not mark the job done.
    */
-  danPass(id: string, actorRaw: string, seen: SeenJob): PoolOk<PoolJob> {
+  danPass(id: string, actor: PoolActor, seen: SeenJob): PoolOk<PoolJob> {
     this.sweep();
+    const who = asActor(actor);
     const job = this.jobs.find((j) => j.id === id);
     if (!job) return fail(404, 'no such job');
     if (!fresh(job, seen)) return fail(409, 'stale');
-    if (!isDan(actorRaw)) return fail(403, 'only Dan can record a Dan pass');
+    if (seen.hash !== contentHash(job)) return fail(409, 'content changed');
+    if (!who || !this.policy().dan.includes(who.id)) return fail(403, 'only Dan can record a Dan pass');
+    if (touchedBy(job, who.id)) return fail(403, 'cannot pass your own job');
     if (job.status !== 'needs_approval' || job.level !== 6 || job.approval !== 'dan-pass') return fail(409, 'job is not waiting on a Dan pass');
     const now = this.now();
-    job.danPass = { by: displayName(actorRaw), at: now };
+    job.danPass = { by: who.id, at: now };
     job.approval = 'nick-yes';
     this.touch(job, now);
     this.changed();
@@ -206,54 +235,74 @@ export class WorkPool {
   }
 
   /**
-   * Human Nick yes. The approver name is the office session, passed in by the route.
-   * Level 6 must already have a Dan pass. Level 7 is Nick yes from the start.
+   * Human Nick yes from an account id on pool.approvers.
+   * The approver cannot be the poster or the completer. Level 6 needs a Dan pass first.
    */
-  nickYes(id: string, approverRaw: string, seen: SeenJob): PoolOk<PoolJob> {
+  nickYes(id: string, actor: PoolActor, seen: SeenJob): PoolOk<PoolJob> {
     this.sweep();
-    const approver = displayName(approverRaw);
-    if (!approver) return fail(401, 'human session required');
+    const who = asActor(actor);
+    if (!who) return fail(403, 'account required');
+    if (!this.policy().approvers.includes(who.id)) return fail(403, 'not an approver');
     const job = this.jobs.find((j) => j.id === id);
     if (!job) return fail(404, 'no such job');
     if (!fresh(job, seen)) return fail(409, 'stale');
+    if (seen.hash !== contentHash(job)) return fail(409, 'content changed');
     if (job.status !== 'needs_approval' || (job.level !== 6 && job.level !== 7)) return fail(409, 'job is not waiting on approval');
     if (job.level === 6 && !job.danPass) return fail(403, 'Dan pass is required');
     if (job.approval !== 'nick-yes') return fail(409, 'job is not waiting on a Nick yes');
+    if (job.postedBy === who.id || job.doneBy === who.id) return fail(403, 'cannot approve your own job');
     const now = this.now();
     job.status = 'done';
-    job.approvedBy = approver;
+    job.approvedBy = who.id;
     job.approval = 'nick-yes';
+    this.trimDone();
     this.touch(job, now);
     this.changed();
     return { ok: true, value: job };
   }
 
   /** Next job this bot may claim. Refuses while they are WORKING or already hold a claim. */
-  pull(byRaw: string): PoolOk<PoolJob> {
+  pull(actor: PoolActor): PoolOk<PoolJob> {
     this.sweep();
-    const by = displayName(byRaw);
-    if (!by) return fail(400, 'caller identity required');
+    const who = asActor(actor);
+    if (!who) return fail(400, 'caller identity required');
     const now = this.now();
-    const held = this.liveClaim(by, now);
+    const held = this.liveClaim(who.id, now);
     if (held && showsWorking(held, now)) return fail(409, 'already working');
     if (held) return fail(409, 'already claimed');
+    const policy = this.policy();
     const next = this.jobs
-      .filter((j) => j.status === 'open' && (j.notBefore === undefined || now >= j.notBefore) && !claimRefusal(j.level, by, j.targetBot))
+      .filter((j) => j.status === 'open' && (j.notBefore === undefined || now >= j.notBefore) && !claimRefusal(j.level, who.id, j.targetBot, policy))
       .sort((a, b) => a.createdAt - b.createdAt)[0];
     if (!next) return fail(404, 'nothing to pull');
-    return this.claim(next.id, by);
+    return this.claim(next.id, who);
   }
 
   private tick() {
     this.sweep();
     const puller = this.puller;
-    if (!puller || !puller.idle()) return;
+    if (!puller?.armed || !puller.idle()) return;
     const now = this.now();
     const held = this.liveClaim(puller.id, now);
     if (held && showsWorking(held, now)) return;
     if (held) return;
-    const result = this.pull(puller.id);
+    const result = this.pull({ id: puller.id, label: puller.label });
     if (result.ok) puller.take({ id: result.value.id, title: result.value.title, level: result.value.level });
+  }
+
+  private policy(): PoolPolicy {
+    return readPolicy(this.dataDir);
+  }
+
+  private rateLimited(id: string, now: number): boolean {
+    const prev = (this.posts.get(id) ?? []).filter((t) => now - t < POST_WINDOW_MS);
+    if (prev.length >= POST_LIMIT) {
+      this.posts.set(id, prev);
+      return true;
+    }
+    prev.push(now);
+    this.posts.set(id, prev);
+    return false;
   }
 
   private sweep() {
@@ -281,8 +330,20 @@ export class WorkPool {
     this.syncPresence();
   }
 
-  private liveClaim(by: string, now: number): PoolJob | undefined {
-    return this.jobs.find((j) => j.status === 'claimed' && j.claim && botName(j.claim.by) === botName(by) && now < j.claim.leaseUntil);
+  private remember(job: PoolJob, stamp: PoolJob['history'][number]) {
+    job.history.push(stamp);
+    if (job.history.length > MAX_HISTORY) job.history.splice(0, job.history.length - MAX_HISTORY);
+  }
+
+  private trimDone() {
+    const done = this.jobs.filter((j) => j.status === 'done');
+    if (done.length <= MAX_DONE) return;
+    const drop = new Set(done.slice(0, done.length - MAX_DONE));
+    this.jobs = this.jobs.filter((j) => !drop.has(j));
+  }
+
+  private liveClaim(id: string, now: number): PoolJob | undefined {
+    return this.jobs.find((j) => j.status === 'claimed' && j.claim && j.claim.by === id && now < j.claim.leaseUntil);
   }
 
   private touch(job: PoolJob, now: number) {
@@ -294,8 +355,8 @@ export class WorkPool {
     const want = new Map<string, 'working' | 'idle'>();
     for (const job of this.jobs) {
       if (job.status !== 'claimed' || !job.claim) continue;
-      const name = job.claim.by;
-      want.set(botName(name), showsWorking(job, now) ? 'working' : 'idle');
+      const name = botName(job.claim.label || job.claim.by);
+      want.set(name, showsWorking(job, now) ? 'working' : 'idle');
     }
     for (const name of this.working) if (!want.has(name)) want.set(name, 'idle');
     this.working = new Set([...want.entries()].filter(([, s]) => s === 'working').map(([n]) => n));
@@ -316,7 +377,14 @@ export class WorkPool {
     const raw = readPrivate(this.file);
     const jobs = raw && typeof raw === 'object' ? (raw as { jobs?: unknown }).jobs : undefined;
     if (!Array.isArray(jobs)) return;
-    this.jobs = jobs.filter(isJob).slice(0, MAX_JOBS);
+    const parsed = jobs.filter(isJob).map((j) => {
+      j.history = Array.isArray(j.history) ? j.history.slice(-MAX_HISTORY) : [];
+      j.contentHash = contentHash(j);
+      return j;
+    });
+    const active = parsed.filter((j) => j.status === 'open' || j.status === 'claimed' || j.status === 'needs_approval').slice(0, MAX_ACTIVE);
+    const done = parsed.filter((j) => j.status === 'done').slice(-MAX_DONE);
+    this.jobs = [...active, ...done];
   }
 }
 
@@ -324,8 +392,21 @@ function fail(status: number, error: string): PoolFail {
   return { ok: false, status, error };
 }
 
+function asActor(actor: PoolActor): PoolActor | undefined {
+  const id = actorId(actor?.id);
+  const label = displayName(actor?.label) || id;
+  if (!id) return undefined;
+  return { id, label };
+}
+
 function fresh(job: PoolJob, seen: SeenJob): boolean {
   return job.status === seen.state && job.updatedAt === seen.updatedAt;
+}
+
+/** Poster, completer, current claimer, or anyone who held the claim. */
+function touchedBy(job: PoolJob, id: string): boolean {
+  if (job.postedBy === id || job.doneBy === id || job.claim?.by === id) return true;
+  return job.history.some((h) => h.by === id);
 }
 
 function clampLease(leaseMs: number | undefined): number {

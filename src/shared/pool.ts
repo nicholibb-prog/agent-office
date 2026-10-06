@@ -2,9 +2,34 @@
 // Names and numbers only: no paths, tokens, or private projects.
 
 export const LEASE_MS = 15 * 60 * 1000;
-export const OKKIN = 'okkin';
-/** Crew id that may record a Dan pass. Compared after normalizing the authenticated caller. */
-export const DAN = 'dan';
+/** Names nobody may register as a caller or an account. Authority is an id in the pool policy, not a name. */
+export const RESERVED_POOL_NAMES = ['dan', 'okkin', 'nick'] as const;
+
+/** Who is acting. `id` is the account id or the caller-token id. `label` is only for the board. */
+export interface PoolActor {
+  id: string;
+  label: string;
+}
+
+/** Allowlists kept in the floor's gitignored `.agent-office/work-pool-policy.json`. Empty means nobody. */
+export interface PoolPolicy {
+  /** Account ids that may record a Nick yes. */
+  approvers: string[];
+  /** Account ids or caller ids that may post a job whose level stays 1–3. */
+  lowLevelPosters: string[];
+  /** Account ids or caller ids that may post a job that lands at 6 or 7. */
+  highLevelPosters: string[];
+  /** Account ids or caller ids that may claim above level 3. */
+  crew: string[];
+  /** Caller-token ids or account ids that are Dan. */
+  dan: string[];
+  /** Caller-token ids or account ids that are Okkin. */
+  okkin: string[];
+}
+
+export function emptyPolicy(): PoolPolicy {
+  return { approvers: [], lowLevelPosters: [], highLevelPosters: [], crew: [], dan: [], okkin: [] };
+}
 
 export type PoolStatus = 'open' | 'claimed' | 'needs_approval' | 'done';
 export type ApprovalGate = 'dan-pass' | 'nick-yes';
@@ -46,37 +71,58 @@ export function botName(raw: unknown): string {
   return displayName(raw).toLowerCase();
 }
 
-export function isOkkin(name: unknown): boolean {
-  return botName(name) === OKKIN;
+export function reservedPoolName(name: unknown): boolean {
+  return (RESERVED_POOL_NAMES as readonly string[]).includes(botName(name));
 }
 
-export function isDan(name: unknown): boolean {
-  return botName(name) === DAN;
+/** An account id or caller id: no spaces, no path characters. */
+export function actorId(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const s = raw.trim();
+  return /^[A-Za-z0-9_-]{1,64}$/.test(s) ? s : '';
 }
 
-const TO_SEVEN: readonly RegExp[] = [/\bmerge\b/i, /\bsend\b/i, /\bspend\b/i, /\bdelete\b/i];
-const TO_SIX: readonly RegExp[] = [/\bpay\b/i, /\bsecret\b/i, /\bsecurity\b/i, /\bnetwork\b/i, /major\s+files/i];
+/**
+ * NFKC, then drop format characters (zero-width and the like), then case-fold.
+ * Keyword checks run on this, so a hidden character cannot split a gated word.
+ */
+export function normalizePoolText(text: string): string {
+  return text.normalize('NFKC').replace(/\p{Cf}/gu, '').toLowerCase();
+}
 
-/** Keyword floor: merge/send/spend/delete → 7; the other gated words → 6; else 1. */
+const word = (stem: string) => new RegExp(`\\b${stem}\\b`, 'i');
+
+/** Backstop only. merge/send/money/delete land at 7. */
+const TO_SEVEN = ['merge', 'email', 'message', 'post', 'reply', 'slack', 'send', 'sent', 'sends', 'pay', 'payment', 'invoice', 'transfer', 'wire', 'purchase', 'buy', 'spend', 'delete', 'remove', 'wipe'].map(word);
+/** Backstop only. code, secrets, and network land at 6 or above. */
+const TO_SIX = ['deploy', 'push', 'commit', 'code', 'token', 'password', 'credential', 'auth', 'secret', 'key', 'security', 'network'].map(word);
+
+/** Keyword floor. No gated word stays at 1, and the poster default of 4 is applied by enforcedLevel. */
 export function keywordFloor(text: string): number {
-  if (TO_SEVEN.some((r) => r.test(text))) return 7;
-  if (TO_SIX.some((r) => r.test(text))) return 6;
+  const n = normalizePoolText(text);
+  if (TO_SEVEN.some((r) => r.test(n))) return 7;
+  if (TO_SIX.some((r) => r.test(n)) || /major\s+files/.test(n)) return 6;
   return 1;
 }
 
-/** Poster may ask for a level. Keywords only raise it. */
+/**
+ * No requested level means 4, which Okkin cannot claim.
+ * A number can ask lower. Keywords only raise the result.
+ */
 export function enforcedLevel(requested: unknown, text: string): number {
-  const ask = typeof requested === 'number' && Number.isInteger(requested) ? Math.min(7, Math.max(1, requested)) : 1;
+  const ask = typeof requested === 'number' && Number.isInteger(requested) ? Math.min(7, Math.max(1, requested)) : 4;
   return Math.max(ask, keywordFloor(text));
 }
 
 /**
- * Who may claim. Okkin stops at 3. Other crew stop at 5.
- * Levels 6 and 7 are only for the named target, and Okkin is still refused there.
+ * Default cap is level 3. Crew allowlist ids may go higher.
+ * Levels 6 and 7 also have to be the named target id.
+ * An Okkin id stops at 3 even when it is named or on the crew list.
  */
-export function claimRefusal(level: number, by: unknown, target?: string): string | undefined {
-  if (isOkkin(by) && level > 3) return 'Okkin can claim levels 1–3 only';
-  if (level >= 6 && botName(by) !== botName(target ?? '')) return 'Levels 6 and 7 are only for the named bot';
+export function claimRefusal(level: number, actorId: string, targetId: string | undefined, policy: Pick<PoolPolicy, 'okkin' | 'crew'>): string | undefined {
+  if (policy.okkin.includes(actorId) && level > 3) return 'Okkin can claim levels 1–3 only';
+  if (level > 3 && !policy.crew.includes(actorId)) return 'that level is only for the crew allowlist';
+  if (level >= 6 && actorId !== (targetId ?? '')) return 'Levels 6 and 7 are only for the named bot';
   return undefined;
 }
 
@@ -89,7 +135,9 @@ export interface ClaimStamp {
 }
 
 export interface PoolClaim {
+  /** Caller-token id or account id. */
   by: string;
+  label: string;
   at: number;
   leaseUntil: number;
   leaseMs: number;
@@ -103,6 +151,9 @@ export interface PoolJob {
   level: number;
   targetBot?: string;
   postedBy: string;
+  posterLabel?: string;
+  /** sha256 of title, body, level, and target. Approvals must send this back. */
+  contentHash?: string;
   createdAt: number;
   updatedAt: number;
   notBefore?: number;
@@ -111,6 +162,7 @@ export interface PoolJob {
   claim?: PoolClaim;
   history: ClaimStamp[];
   doneBy?: string;
+  doneLabel?: string;
   approval?: ApprovalGate;
   danPass?: { by: string; at: number };
   approvedBy?: string;
@@ -121,6 +173,8 @@ export interface PoolJob {
 export interface SeenJob {
   state: string;
   updatedAt: number;
+  /** Content hash the client saw. A mismatch is a 409. */
+  hash: string;
 }
 
 export function showsWorking(job: PoolJob, now: number): boolean {
@@ -154,6 +208,9 @@ export interface PoolCard {
   leaseLeftMs?: number;
   doneBy?: string;
   approval?: ApprovalGate;
+  /** Short body, so an approver can see the text the hash covers. */
+  body?: string;
+  hash?: string;
 }
 
 export interface PoolBoard {
@@ -179,10 +236,12 @@ export function toCard(job: PoolJob, now: number): PoolCard {
     state: job.status,
     status: face,
     updatedAt: job.updatedAt,
-    ...(job.claim ? { claimer: job.claim.by } : {}),
+    ...(job.claim ? { claimer: job.claim.label || job.claim.by } : {}),
     ...(leaseLeftMs !== undefined ? { leaseLeftMs } : {}),
-    ...(job.doneBy ? { doneBy: job.doneBy } : {}),
+    ...(job.doneLabel || job.doneBy ? { doneBy: job.doneLabel || job.doneBy } : {}),
     ...(job.approval ? { approval: job.approval } : {}),
+    ...(job.body ? { body: job.body.slice(0, 80) } : {}),
+    ...(job.contentHash ? { hash: job.contentHash } : {}),
   };
 }
 
@@ -196,7 +255,10 @@ export function boardFrom(jobs: readonly PoolJob[], now: number): PoolBoard {
     else columns.done.push(card);
   }
   const tally = new Map<string, number>();
-  for (const job of jobs) if (job.status === 'done' && job.doneBy) tally.set(job.doneBy, (tally.get(job.doneBy) ?? 0) + 1);
+  for (const job of jobs) if (job.status === 'done' && (job.doneLabel || job.doneBy)) {
+    const bot = job.doneLabel || job.doneBy!;
+    tally.set(bot, (tally.get(bot) ?? 0) + 1);
+  }
   const credits = [...tally.entries()].map(([bot, done]) => ({ bot, done })).sort((a, b) => b.done - a.done || a.bot.localeCompare(b.bot));
   return { columns, credits };
 }

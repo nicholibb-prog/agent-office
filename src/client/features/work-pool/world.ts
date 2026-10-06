@@ -99,8 +99,9 @@ function paintCard(g: CanvasRenderingContext2D, card: PoolCard, x: number, y: nu
   g.fillStyle = '#415a77';
   const lease = card.leaseLeftMs !== undefined ? ` · ${Math.ceil(card.leaseLeftMs / 1000)}s` : '';
   const who = card.claimer ? card.claimer : card.doneBy ? `by ${card.doneBy}` : '';
-  const line = `L${card.level} ${card.status}${who ? ' · ' + who : ''}${lease}`;
-  g.fillText(line.length > 28 ? line.slice(0, 27) + '…' : line, x + h * 0.75, y + h * 0.62);
+  const hash = card.hash ? ` · ${card.hash.slice(0, 8)}` : '';
+  const line = `L${card.level} ${card.status}${who ? ' · ' + who : ''}${lease}${hash}`;
+  g.fillText(line.length > 32 ? line.slice(0, 31) + '…' : line, x + h * 0.75, y + h * 0.62);
 }
 
 export interface PoolPosterMesh {

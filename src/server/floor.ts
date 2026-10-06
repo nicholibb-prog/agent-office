@@ -323,7 +323,7 @@ export class Floor {
         if (hit && nextPresence(hit.status, desired) === 'needs_input') return;
         this.workers.applyCrewPresence({ [name]: desired });
       },
-    }, { autoPull: true });
+    });
     this.ready = this.workers.start();
 
     void this.github.refresh();

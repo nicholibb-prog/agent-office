@@ -3,7 +3,7 @@
 import type http from 'node:http';
 import type { Ctx } from '../../office/context.js';
 import type { Session } from '../../auth.js';
-import { displayName, type SeenJob } from '../../../shared/pool.js';
+import { displayName, type PoolActor, type SeenJob } from '../../../shared/pool.js';
 import { readBody, send } from '../util.js';
 import type { Route, RouteRequest } from '../router.js';
 import { bridgeCredentialPresent, bridgeGate, officeRequestShape } from './bridge.js';
@@ -44,21 +44,25 @@ function seenOf(body: Record<string, unknown>, res: http.ServerResponse): SeenJo
     send(res, 400, { error: 'updatedAt required' });
     return undefined;
   }
-  return { state: body.state, updatedAt: body.updatedAt };
+  if (typeof body.hash !== 'string' || !/^[a-f0-9]{64}$/.test(body.hash)) {
+    send(res, 400, { error: 'hash required' });
+    return undefined;
+  }
+  return { state: body.state, updatedAt: body.updatedAt, hash: body.hash };
 }
 
-/** Bot token if one was sent, otherwise the signed-in account. Never a body field. */
-function actor(ctx: Ctx, req: http.IncomingMessage, pool: WorkPool): { name: string } | { error: string } {
+/** Bot token if one was sent, otherwise the signed-in account id. Never a body field. */
+function actor(ctx: Ctx, req: http.IncomingMessage, pool: WorkPool): { who: PoolActor; admin: boolean } | { error: string } {
   const header = req.headers['x-pool-caller'];
   if (typeof header === 'string' && header.trim()) {
-    const name = pool.callerName(header.trim());
-    if (!name) return { error: 'unknown caller' };
-    return { name };
+    const who = pool.callerByToken(header.trim());
+    if (!who) return { error: 'unknown caller' };
+    return { who, admin: false };
   }
   const session = ctx.auth.fromRequest(req);
-  const name = displayName(session?.account?.name);
-  if (!name) return { error: 'caller identity required' };
-  return { name };
+  const id = session?.account?.id;
+  if (!id) return { error: 'caller identity required' };
+  return { who: { id, label: displayName(session?.account?.name) || id }, admin: session?.account?.role === 'admin' };
 }
 
 function reply(res: http.ServerResponse, result: { ok: true; value: unknown } | { ok: false; status: number; error: string }, pool: WorkPool) {
@@ -114,7 +118,7 @@ export const poolRoutes = {
           targetBot: body.targetBot,
           tags: body.tags,
           notBefore: body.notBefore,
-        }, who.name), pool);
+        }, who.who, { admin: who.admin }), pool);
       });
     },
   },
@@ -132,7 +136,7 @@ export const poolRoutes = {
         if ('error' in who) return send(res, 401, { error: who.error });
         const id = typeof body.id === 'string' ? body.id : '';
         const lease = typeof body.leaseMs === 'number' ? body.leaseMs : undefined;
-        reply(res, pool.claim(id, who.name, lease), pool);
+        reply(res, pool.claim(id, who.who, lease), pool);
       });
     },
   },
@@ -148,7 +152,7 @@ export const poolRoutes = {
         if (!body) return;
         const who = actor(ctx, req, pool);
         if ('error' in who) return send(res, 401, { error: who.error });
-        reply(res, pool.heartbeat(typeof body.id === 'string' ? body.id : '', who.name), pool);
+        reply(res, pool.heartbeat(typeof body.id === 'string' ? body.id : '', who.who), pool);
       });
     },
   },
@@ -164,7 +168,7 @@ export const poolRoutes = {
         if (!body) return;
         const who = actor(ctx, req, pool);
         if ('error' in who) return send(res, 401, { error: who.error });
-        reply(res, pool.release(typeof body.id === 'string' ? body.id : '', who.name), pool);
+        reply(res, pool.release(typeof body.id === 'string' ? body.id : '', who.who), pool);
       });
     },
   },
@@ -180,7 +184,7 @@ export const poolRoutes = {
         if (!body) return;
         const who = actor(ctx, req, pool);
         if ('error' in who) return send(res, 401, { error: who.error });
-        reply(res, pool.complete(typeof body.id === 'string' ? body.id : '', who.name), pool);
+        reply(res, pool.complete(typeof body.id === 'string' ? body.id : '', who.who), pool);
       });
     },
   },
@@ -194,7 +198,7 @@ export const poolRoutes = {
         if (!pool) return;
         const who = actor(ctx, req, pool);
         if ('error' in who) return send(res, 401, { error: who.error });
-        reply(res, pool.pull(who.name), pool);
+        reply(res, pool.pull(who.who), pool);
       });
     },
   },
@@ -212,7 +216,7 @@ export const poolRoutes = {
         if (!seen) return;
         const who = actor(ctx, req, pool);
         if ('error' in who) return send(res, 401, { error: who.error });
-        reply(res, pool.danPass(typeof body.id === 'string' ? body.id : '', who.name, seen), pool);
+        reply(res, pool.danPass(typeof body.id === 'string' ? body.id : '', who.who, seen), pool);
       });
     },
   },
@@ -230,9 +234,10 @@ export const poolRoutes = {
         if (!floor) return send(res, 404, { error: 'no floor' });
         const body = await readJson(req, res);
         if (!body) return;
-        const made = floor.pool.registerCaller(body.name);
+        const names = ctx.accounts.state(new Set()).accounts.map((a) => a.name);
+        const made = floor.pool.registerCaller(body.name, names);
         if ('error' in made) return send(res, 400, { error: made.error });
-        return send(res, 200, { ok: true, name: made.name, token: made.token });
+        return send(res, 200, { ok: true, id: made.id, name: made.name, token: made.token });
       });
     },
   },
@@ -255,7 +260,8 @@ export const poolRoutes = {
         if (!body) return;
         const seen = seenOf(body, res);
         if (!seen) return;
-        const approver = displayName(session.account?.name) || 'office';
+        if (!session.account?.id) return send(res, 403, { error: 'account required' });
+        const approver = { id: session.account.id, label: displayName(session.account.name) || session.account.id };
         reply(res, floor.pool.nickYes(typeof body.id === 'string' ? body.id : '', approver, seen), floor.pool);
       });
     },
