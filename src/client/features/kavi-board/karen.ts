@@ -145,7 +145,6 @@ declare module '../../world/types' {
 /** NPC fixture — no desk; collide+wander; face reads Bridge feed titles. */
 export const kaviKaren: Fixture<'kaviKaren'> = (site) => {
   const built = buildKaviKaren(site.colliders);
-  let feedAge = 0;
   return {
     group: built.group,
     colliders: built.colliders,
@@ -153,16 +152,6 @@ export const kaviKaren: Fixture<'kaviKaren'> = (site) => {
     handle: { kaviKaren: built },
     update(_t, dt) {
       built.tick(dt);
-      feedAge += dt;
-      if (feedAge < 5) return;
-      feedAge = 0;
-      void fetch('/api/bridge/kavi-feed', { credentials: 'same-origin' })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((j: { titles?: { name?: string }[] } | null) => {
-          const names = (j?.titles || []).map((t) => String(t.name || '').trim()).filter(Boolean);
-          if (names.length) built.setFeedTitles(names);
-        })
-        .catch(() => {});
     },
   };
 };

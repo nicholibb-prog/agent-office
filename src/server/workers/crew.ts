@@ -1,7 +1,16 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { WorkerStatus } from '../../shared/protocol.js';
+import { clockWork } from './clock.js';
 import type { Worker } from './types.js';
+
+/** Shells have no agent hooks: after this much quiet since last real input, return to idle (roam/asleep). */
+const SHELL_IDLE_MS = 12_000;
+/** WORKING from bridge/hooks expires after this; never overwrite needs_input. */
+const WORKING_LEASE_MS = 15 * 60_000;
+/** How often quiet shells are forced idle, and how often the crew-status file is read. */
+const SHELL_TICK_MS = 3_000;
+const CREW_FILE_MS = 4_000;
 
 export type HqLocal = {
   crewKeysLower: string[];
@@ -98,4 +107,52 @@ export function tickWorkingLease(
     if (at && now - at < ttl) continue;
     host.setStatus(w, 'idle');
   }
+}
+
+/**
+ * Shells never get agent hooks: after quiet since last real input, go idle so they roam/asleep.
+ * Called on the way out to browsers, before the snapshot is sent.
+ */
+export function settleQuietShell(w: Worker, now = Date.now()): void {
+  if (w.info.kind !== 'shell' || w.info.status !== 'working') return;
+  const at = w.info.lastInput?.at ?? 0;
+  if (at && now - at < SHELL_IDLE_MS) return;
+  clockWork(w.info, 'idle', now);
+  w.info.status = 'idle';
+  w.info.action = undefined;
+}
+
+/** The crew-status file watch and the WORKING lease, owned outside the worker manager. */
+export type CrewWatch = {
+  start(): void;
+  stop(): void;
+  apply(crew: Record<string, string>): { applied: string[] };
+  chat(name: string, text?: string): void;
+};
+
+export function createCrewWatch(
+  workers: Map<string, Worker>,
+  statePath: string,
+  setStatus: (w: Worker, status: WorkerStatus) => void,
+  emitUpdate: (w: Worker) => void,
+): CrewWatch {
+  const host: CrewHost = { workers, setStatus, emitUpdate };
+  let shellIdleTick: ReturnType<typeof setInterval> | undefined;
+  let crewStatusTick: ReturnType<typeof setInterval> | undefined;
+  return {
+    start() {
+      // Shells: force idle when quiet so a desk is only for WORKING. The file is the bridge's push.
+      shellIdleTick = setInterval(() => tickWorkingLease(host, { shellIdleMs: SHELL_IDLE_MS, leaseMs: WORKING_LEASE_MS }), SHELL_TICK_MS);
+      crewStatusTick = setInterval(() => tickCrewStatusFile(host, statePath), CREW_FILE_MS);
+      tickCrewStatusFile(host, statePath);
+    },
+    stop() {
+      if (shellIdleTick) clearInterval(shellIdleTick);
+      if (crewStatusTick) clearInterval(crewStatusTick);
+      shellIdleTick = undefined;
+      crewStatusTick = undefined;
+    },
+    apply: (crew) => applyCrewPresence(host, crew),
+    chat: (name, text) => chatWorking(host, name, text),
+  };
 }
