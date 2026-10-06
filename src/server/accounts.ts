@@ -3,8 +3,7 @@ import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'n
 import path from 'node:path';
 import { officeHome } from './config.js';
 import type { AccountInvite, AccountRole, AccountsState } from '../shared/protocol.js';
-import { reservedPoolName } from '../shared/pool.js';
-import { callerNameUsed } from './pool/callers.js';
+import { callerNameUsed, poolNameBlocked } from './pool/callers.js';
 
 export const NAME_MAX = 24;
 export const PASSWORD_MIN = 8;
@@ -219,7 +218,7 @@ export class Accounts {
   }
 
   private nameTaken(n: string, exceptInvite?: string): string | undefined {
-    if (reservedPoolName(n)) return 'That name is reserved';
+    if (poolNameBlocked(n)) return 'That name is reserved';
     if (callerNameUsed(n)) return 'That name is a pool caller';
     if (this.data.accounts.some((a) => sameName(a.name, n))) return `There's already an account called ${n}`;
     if (this.data.invites.some((v) => v.id !== exceptInvite && v.name && sameName(v.name, n))) return `${n} already has an open invite`;

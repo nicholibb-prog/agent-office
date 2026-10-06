@@ -27,6 +27,7 @@ function writePolicy(dir: string, extra: Partial<PoolPolicy> = {}) {
     crew: [PIPER.id, ADA.id, RILEY.id],
     dan: [RILEY.id],
     okkin: [OKKIN_ACTOR.id],
+    reservedNames: [],
     ...extra,
   };
   writeFileSync(path.join(dir, 'work-pool-policy.json'), JSON.stringify(policy) + '\n', { mode: 0o600 });
@@ -170,7 +171,7 @@ test('posting stores the raised level', (t) => {
   assert.equal(post(pool, 'Notes', 'a summary', { level: 4 }).level, 4);
 });
 
-test('completing 1–5 is done, 6 waits on a Dan pass, and 7 waits on a Nick yes', (t) => {
+test('completing 1–5 is done, 6 waits on a Dan pass, and 7 needs owner', (t) => {
   const pool = poolAt(dirOf(t));
   const low = post(pool, 'Summarise', 'A short note.', { level: 3 });
   must(pool.claim(low.id, OKKIN_ACTOR));
@@ -189,10 +190,10 @@ test('completing 1–5 is done, 6 waits on a Dan pass, and 7 waits on a Nick yes
 
   const seven = post(pool, 'Hold', 'Wait for a person.', { level: 7, targetBot: ADA.id });
   must(pool.claim(seven.id, ADA));
-  const nick = must(pool.complete(seven.id, ADA));
-  assert.equal(nick.status, 'needs_approval');
-  assert.equal(nick.approval, 'nick-yes');
-  assert.notEqual(nick.status, 'done');
+  const held = must(pool.complete(seven.id, ADA));
+  assert.equal(held.status, 'needs_approval');
+  assert.equal(held.approval, 'owner-yes');
+  assert.notEqual(held.status, 'done');
 });
 
 test('WORKING is only a live claim with a heartbeat, and needs_input stays put', (t) => {
@@ -241,13 +242,13 @@ test('Dan pass is only Dan, and it does not mark the job done', (t) => {
   assert.equal((pool.danPass(job.id, PIPER, seen) as { status: number }).status, 403);
   const passed = must(pool.danPass(job.id, RILEY, seen));
   assert.equal(passed.status, 'needs_approval');
-  assert.equal(passed.approval, 'nick-yes');
+  assert.equal(passed.approval, 'owner-yes');
   assert.equal(passed.danPass?.by, RILEY.id);
   assert.equal(pool.board().columns.done.length, 0);
-  assert.equal((pool.nickYes(job.id, CASEY, seen) as { status: number }).status, 409);
+  assert.equal((pool.ownerApproval(job.id, CASEY, seen) as { status: number }).status, 409);
   const fresh = saw(passed);
-  assert.equal((pool.nickYes(job.id, CASEY, { state: 'open', updatedAt: passed.updatedAt, hash: passed.contentHash ?? '' }) as { error: string }).error, 'stale');
-  const approved = must(pool.nickYes(job.id, CASEY, fresh));
+  assert.equal((pool.ownerApproval(job.id, CASEY, { state: 'open', updatedAt: passed.updatedAt, hash: passed.contentHash ?? '' }) as { error: string }).error, 'stale');
+  const approved = must(pool.ownerApproval(job.id, CASEY, fresh));
   assert.equal(approved.status, 'done');
   assert.equal(approved.approvedBy, CASEY.id);
   assert.equal(approved.doneBy, PIPER.id);
@@ -259,13 +260,13 @@ test('level 6 cannot be approved before a Dan pass, and level 7 can', (t) => {
   must(pool.claim(six.id, PIPER));
   const waiting = must(pool.complete(six.id, PIPER));
   const seen = saw(waiting);
-  assert.equal((pool.nickYes(six.id, CASEY, seen) as { error: string }).error, 'Dan pass is required');
+  assert.equal((pool.ownerApproval(six.id, CASEY, seen) as { error: string }).error, 'Dan pass is required');
   assert.equal(pool.get(six.id)!.status, 'needs_approval');
 
   const seven = post(pool, 'Hold', 'Wait.', { level: 7, targetBot: ADA.id });
   must(pool.claim(seven.id, ADA));
-  const nick = must(pool.complete(seven.id, ADA));
-  const yes = must(pool.nickYes(seven.id, CASEY, saw(nick)));
+  const held = must(pool.complete(seven.id, ADA));
+  const yes = must(pool.ownerApproval(seven.id, CASEY, saw(held)));
   assert.equal(yes.status, 'done');
   assert.equal(yes.approvedBy, CASEY.id);
   assert.equal(pool.danPass(seven.id, RILEY, saw(yes)).ok, false);
@@ -327,68 +328,68 @@ test('the Okkin puller hands a claim to the injected runner and does not start a
   assert.deepEqual(handed, ['abc', held.id]);
 });
 
-test('a bridge token cannot record a Nick yes, and a body approver is ignored', async (t) => {
+test('a bridge token cannot record owner approval, and a body approver is ignored', async (t) => {
   const dir = dirOf(t);
   const pool = poolAt(dir);
   const job = post(pool, 'Hold', 'Wait for a person.', { level: 7, targetBot: ADA.id });
   must(pool.claim(job.id, ADA));
   const waiting = must(pool.complete(job.id, ADA));
-  const body = { id: job.id, state: waiting.status, updatedAt: waiting.updatedAt, hash: waiting.contentHash, approver: 'nick', by: 'nick' };
-  const handler = requestHandler(office(dir, pool), [poolRoutes.nickYes]);
+  const body = { id: job.id, state: waiting.status, updatedAt: waiting.updatedAt, hash: waiting.contentHash, approver: 'pat', by: 'pat' };
+  const handler = requestHandler(office(dir, pool), [poolRoutes.ownerApproval]);
 
   const locked = capture();
-  await handler(jsonReq('/api/pool/nick-yes', body, { 'x-bridge-token': BRIDGE }), locked.res);
+  await handler(jsonReq('/api/pool/owner-yes', body, { 'x-bridge-token': BRIDGE }), locked.res);
   assert.equal(locked.got.status, 401);
   assert.equal(locked.got.json().error, 'Not logged in');
 
   const bearer = capture();
-  await handler(jsonReq('/api/pool/nick-yes', body, { authorization: `Bearer ${BRIDGE}` }), bearer.res);
+  await handler(jsonReq('/api/pool/owner-yes', body, { authorization: `Bearer ${BRIDGE}` }), bearer.res);
   assert.equal(bearer.got.status, 401);
 
-  const stranger = requestHandler(office(dir, pool, { id: 'acct-stranger', name: 'Pat' }), [poolRoutes.nickYes]);
+  const stranger = requestHandler(office(dir, pool, { id: 'acct-stranger', name: 'Pat' }), [poolRoutes.ownerApproval]);
   const denied = capture();
-  await stranger(jsonReq('/api/pool/nick-yes', body), denied.res);
+  await stranger(jsonReq('/api/pool/owner-yes', body), denied.res);
   assert.equal(denied.got.status, 403);
   assert.equal(denied.got.json().error, 'not an approver');
 
-  const signed = requestHandler(office(dir, pool, { id: CASEY.id, name: 'Casey' }), [poolRoutes.nickYes]);
+  const signed = requestHandler(office(dir, pool, { id: CASEY.id, name: 'Casey' }), [poolRoutes.ownerApproval]);
   const mixed = capture();
-  await signed(jsonReq('/api/pool/nick-yes', body, { 'x-bridge-token': BRIDGE }), mixed.res);
+  await signed(jsonReq('/api/pool/owner-yes', body, { 'x-bridge-token': BRIDGE }), mixed.res);
   assert.equal(mixed.got.status, 403);
   assert.equal(mixed.got.json().error, 'human session only');
 
   const headed = capture();
-  await signed(jsonReq('/api/pool/nick-yes', body, { authorization: 'Bearer office-session-not-a-person' }), headed.res);
+  await signed(jsonReq('/api/pool/owner-yes', body, { authorization: 'Bearer office-session-not-a-person' }), headed.res);
   assert.equal(headed.got.status, 403);
 
   const evil = capture();
-  await signed(jsonReq('/api/pool/nick-yes', body, { origin: 'http://evil.example' }), evil.res);
+  await signed(jsonReq('/api/pool/owner-yes', body, { origin: 'http://evil.example' }), evil.res);
   assert.equal(evil.got.status, 403);
 
   const stale = capture();
-  await signed(jsonReq('/api/pool/nick-yes', { ...body, updatedAt: waiting.updatedAt - 1 }), stale.res);
+  await signed(jsonReq('/api/pool/owner-yes', { ...body, updatedAt: waiting.updatedAt - 1 }), stale.res);
   assert.equal(stale.got.status, 409);
   assert.equal(stale.got.json().error, 'stale');
   assert.equal(pool.get(job.id)!.status, 'needs_approval');
 
   const wrongState = capture();
-  await signed(jsonReq('/api/pool/nick-yes', { ...body, state: 'done' }), wrongState.res);
+  await signed(jsonReq('/api/pool/owner-yes', { ...body, state: 'done' }), wrongState.res);
   assert.equal(wrongState.got.status, 409);
 
   const yes = capture();
-  await signed(jsonReq('/api/pool/nick-yes', body), yes.res);
+  await signed(jsonReq('/api/pool/owner-yes', body), yes.res);
   assert.equal(yes.got.status, 200);
   assert.equal(yes.got.json().job?.approvedBy, CASEY.id);
-  assert.notEqual(yes.got.json().job?.approvedBy, 'nick');
+  assert.notEqual(yes.got.json().job?.approvedBy, 'pat');
   assert.notEqual(yes.got.json().job?.approvedBy, 'office');
   assert.equal(pool.get(job.id)!.status, 'done');
 
-  const shared = requestHandler(office(dir, pool, {}), [poolRoutes.nickYes]);
+  const shared = requestHandler(office(dir, pool, {}), [poolRoutes.ownerApproval]);
   const other = post(pool, 'Hold two', 'Still waiting.', { level: 7, targetBot: ADA.id });
   must(pool.claim(other.id, ADA));
   const second = must(pool.complete(other.id, ADA));
   const officeYes = capture();
-  await shared(jsonReq('/api/pool/nick-yes', { id: other.id, state: second.status, updatedAt: second.updatedAt, hash: second.contentHash, approver: 'nick' }), officeYes.res);
+  await shared(jsonReq('/api/pool/owner-yes', { id: other.id, state: second.status, updatedAt: second.updatedAt, hash: second.contentHash, approver: 'pat' }), officeYes.res);
   assert.equal(officeYes.got.status, 403);
   assert.equal(officeYes.got.json().error, 'account required');
 });
@@ -415,7 +416,7 @@ test('claimer and Dan come from the authenticated caller, never the body', async
   const headers = { 'x-bridge-token': BRIDGE, 'x-pool-caller': (piper as { token: string }).token };
 
   const claimed = capture();
-  await handler(jsonReq('/api/bridge/pool/claim', { id: job.id, by: 'nick', claimer: 'ada' }, headers), claimed.res);
+  await handler(jsonReq('/api/bridge/pool/claim', { id: job.id, by: 'pat', claimer: 'ada' }, headers), claimed.res);
   assert.equal(claimed.got.status, 200);
   assert.equal(claimed.got.json().job?.claim?.by, (piper as { id: string }).id);
 
@@ -433,7 +434,7 @@ test('claimer and Dan come from the authenticated caller, never the body', async
   assert.equal(foreign.got.status, 403);
 
   const done = capture();
-  await handler(jsonReq('/api/bridge/pool/complete', { id: job.id, by: 'nick' }, headers), done.res);
+  await handler(jsonReq('/api/bridge/pool/complete', { id: job.id, by: 'pat' }, headers), done.res);
   assert.equal(done.got.status, 200);
   assert.equal(done.got.json().job?.status, 'needs_approval');
   const seen = done.got.json().job!;
@@ -456,10 +457,10 @@ test('a pool error is a fixed message', async (t) => {
   const dir = dirOf(t);
   const pool = poolAt(dir);
   const marker = 'SECRET_LEAK_MARKER';
-  pool.nickYes = () => { throw new Error(marker); };
-  const handler = requestHandler(office(dir, pool, { id: CASEY.id, name: 'Casey' }), [poolRoutes.nickYes]);
+  pool.ownerApproval = () => { throw new Error(marker); };
+  const handler = requestHandler(office(dir, pool, { id: CASEY.id, name: 'Casey' }), [poolRoutes.ownerApproval]);
   const got = capture();
-  await handler(jsonReq('/api/pool/nick-yes', { id: 'missing', state: 'needs_approval', updatedAt: 1, hash: 'ab'.repeat(32) }), got.res);
+  await handler(jsonReq('/api/pool/owner-yes', { id: 'missing', state: 'needs_approval', updatedAt: 1, hash: 'ab'.repeat(32) }), got.res);
   assert.equal(got.got.status, 500);
   assert.equal(got.got.json().error, 'Internal error');
   assert.equal(got.got.raw.includes(marker), false);

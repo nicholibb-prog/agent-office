@@ -23,6 +23,7 @@ function policy(extra: Partial<PoolPolicy> = {}): PoolPolicy {
     crew: [PIPER.id, ADA.id, RILEY.id],
     dan: [RILEY.id],
     okkin: [OKKIN_ACTOR.id],
+    reservedNames: [],
     ...extra,
   };
 }
@@ -85,7 +86,7 @@ test('a caller above level 3 must be on the crew allowlist', (t) => {
   assert.match((pool.claim(job.id, OKKIN_ACTOR) as { error: string }).error, /Okkin/);
 });
 
-test('Dan and Nick cannot approve work they already touched, and the hash must match', (t) => {
+test('Dan and an owner approver cannot approve work they already touched, and the hash must match', (t) => {
   const pool = new WorkPool(dirOf(t, { dan: [RILEY.id, ADA.id], approvers: [CASEY.id, ADA.id, PIPER.id] }));
   const job = must(pool.post({ title: 'Gate', body: 'Review the session check.', level: 6, targetBot: PIPER.id }, ADA));
   assert.equal(job.contentHash?.length, 64);
@@ -98,19 +99,19 @@ test('Dan and Nick cannot approve work they already touched, and the hash must m
   assert.equal((pool.danPass(job.id, ADA, seen) as { error: string }).error, 'cannot pass your own job');
   const passed = must(pool.danPass(job.id, RILEY, seen));
   const fresh = saw(passed);
-  assert.equal((pool.nickYes(job.id, ADA, fresh) as { error: string }).error, 'cannot approve your own job');
-  assert.equal((pool.nickYes(job.id, PIPER, fresh) as { error: string }).error, 'cannot approve your own job');
+  assert.equal((pool.ownerApproval(job.id, ADA, fresh) as { error: string }).error, 'cannot approve your own job');
+  assert.equal((pool.ownerApproval(job.id, PIPER, fresh) as { error: string }).error, 'cannot approve your own job');
   const mismatch = { ...fresh, hash: 'ab'.repeat(32) };
-  assert.equal((pool.nickYes(job.id, CASEY, mismatch) as { status: number }).status, 409);
-  assert.equal((pool.nickYes(job.id, CASEY, mismatch) as { error: string }).error, 'content changed');
-  const done = must(pool.nickYes(job.id, CASEY, fresh));
+  assert.equal((pool.ownerApproval(job.id, CASEY, mismatch) as { status: number }).status, 409);
+  assert.equal((pool.ownerApproval(job.id, CASEY, mismatch) as { error: string }).error, 'content changed');
+  const done = must(pool.ownerApproval(job.id, CASEY, fresh));
   assert.equal(done.approvedBy, CASEY.id);
 });
 
-test('caller names dan, okkin, and nick are reserved, and account names cannot be reused', (t) => {
-  const dir = dirOf(t);
+test('caller names dan and okkin are reserved, and a policy name cannot be reused', (t) => {
+  const dir = dirOf(t, { reservedNames: ['quinn'] });
   const pool = new WorkPool(dir);
-  for (const name of ['dan', 'okkin', 'nick']) {
+  for (const name of ['dan', 'okkin', 'quinn']) {
     const made = pool.registerCaller(name);
     assert.equal('error' in made, true);
     assert.equal((made as { error: string }).error, 'that name is reserved');
@@ -123,7 +124,7 @@ test('caller names dan, okkin, and nick are reserved, and account names cannot b
   const home = mkdtempSync(path.join(tmpdir(), 'ao-accounts-'));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   const accounts = new Accounts(home);
-  assert.equal(accounts.invite('the test', 'member', 'nick'), 'That name is reserved');
+  assert.equal(accounts.invite('the test', 'member', 'quinn'), 'That name is reserved');
   assert.equal(accounts.invite('the test', 'member', 'quill'), 'That name is a pool caller');
 });
 

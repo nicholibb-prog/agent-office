@@ -2,8 +2,8 @@
 // Names and numbers only: no paths, tokens, or private projects.
 
 export const LEASE_MS = 15 * 60 * 1000;
-/** Names nobody may register as a caller or an account. Authority is an id in the pool policy, not a name. */
-export const RESERVED_POOL_NAMES = ['dan', 'okkin', 'nick'] as const;
+/** Role names nobody may register as a caller or an account. Authority is an id in the pool policy, not a name. */
+export const RESERVED_POOL_NAMES = ['dan', 'okkin'] as const;
 
 /** Who is acting. `id` is the account id or the caller-token id. `label` is only for the board. */
 export interface PoolActor {
@@ -13,7 +13,7 @@ export interface PoolActor {
 
 /** Allowlists kept in the floor's gitignored `.agent-office/work-pool-policy.json`. Empty means nobody. */
 export interface PoolPolicy {
-  /** Account ids that may record a Nick yes. */
+  /** Account ids that may record owner approval. */
   approvers: string[];
   /** Account ids or caller ids that may post a job whose level stays 1–3. */
   lowLevelPosters: string[];
@@ -25,14 +25,16 @@ export interface PoolPolicy {
   dan: string[];
   /** Caller-token ids or account ids that are Okkin. */
   okkin: string[];
+  /** Extra display names to refuse. The list itself stays in the gitignored policy file. */
+  reservedNames: string[];
 }
 
 export function emptyPolicy(): PoolPolicy {
-  return { approvers: [], lowLevelPosters: [], highLevelPosters: [], crew: [], dan: [], okkin: [] };
+  return { approvers: [], lowLevelPosters: [], highLevelPosters: [], crew: [], dan: [], okkin: [], reservedNames: [] };
 }
 
 export type PoolStatus = 'open' | 'claimed' | 'needs_approval' | 'done';
-export type ApprovalGate = 'dan-pass' | 'nick-yes';
+export type ApprovalGate = 'dan-pass' | 'owner-yes';
 export type BadgeShape = 'chevron' | 'stripes-star' | 'bar' | 'skull';
 
 export interface LevelInfo {
@@ -52,7 +54,7 @@ export const LEVELS: readonly LevelInfo[] = [
   { level: 4, name: 'Sergeant', badge: 'stripes-star', marks: 3, metal: 'gold', line: 'Small code fixes and docs, draft only' },
   { level: 5, name: 'Lieutenant', badge: 'bar', marks: 1, metal: 'gold', line: 'Features and multi-file builds, review required' },
   { level: 6, name: 'Captain', badge: 'bar', marks: 2, metal: 'gold', line: 'Security, money, network. Needs a Dan pass' },
-  { level: 7, name: 'Prestige', badge: 'skull', marks: 1, metal: 'bone', line: 'Merges, sends, spend, deletes. Needs a Nick yes' },
+  { level: 7, name: 'Prestige', badge: 'skull', marks: 1, metal: 'bone', line: 'Merges, sends, spend, deletes. Needs owner' },
 ];
 
 export function levelInfo(level: number): LevelInfo {

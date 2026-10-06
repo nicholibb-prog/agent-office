@@ -9,6 +9,21 @@ interface CallerRow {
 }
 
 const books = new Set<CallerBook>();
+const extraReserved = new Set<string>();
+
+/** Names from the gitignored policy. They are not written into source. */
+export function rememberReservedNames(names: readonly string[]) {
+  for (const name of names) {
+    const key = botName(name);
+    if (key) extraReserved.add(key);
+  }
+}
+
+/** True for a built-in role name or a name listed in the pool policy. */
+export function poolNameBlocked(name: unknown): boolean {
+  const key = botName(name);
+  return reservedPoolName(name) || (!!key && extraReserved.has(key));
+}
 
 /**
  * True when any loaded caller book already uses this name.
@@ -44,13 +59,13 @@ export class CallerBook {
 
   /**
    * `accountNames` are the office accounts. A caller cannot take one of those names,
-   * or the reserved names dan, okkin, and nick.
+   * a role name, or a name listed in the pool policy.
    */
   register(name: unknown, accountNames: readonly string[] = []): { id: string; name: string; token: string } | { error: string } {
     const shown = displayName(name);
     const key = botName(shown);
     if (!key || !/^[a-z0-9][a-z0-9 .-]{0,31}$/.test(key)) return { error: 'name must be letters, numbers, spaces, dots or hyphens' };
-    if (reservedPoolName(shown)) return { error: 'that name is reserved' };
+    if (poolNameBlocked(shown)) return { error: 'that name is reserved' };
     if (accountNames.some((n) => botName(n) === key)) return { error: 'that name is an account' };
     if (this.hasName(key)) return { error: 'that caller is already registered' };
     if (this.rows.length >= 64) return { error: 'too many callers' };

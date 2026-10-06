@@ -1,5 +1,5 @@
 // Community work pool HTTP. Claimer and approver come from the authenticated caller.
-// Nick yes is a human office session only: a bridge token cannot record it.
+// Owner approval is a human office session only: a bridge token cannot record it.
 import type http from 'node:http';
 import type { Ctx } from '../../office/context.js';
 import type { Session } from '../../auth.js';
@@ -246,9 +246,9 @@ export const poolRoutes = {
    * Human office session only. x-bridge-token and Bearer are rejected.
    * The approver is the session account, never a body field.
    */
-  nickYes: {
+  ownerApproval: {
     method: 'POST' as const,
-    path: '/api/pool/nick-yes',
+    path: '/api/pool/owner-yes',
     auth: 'session' as const,
     handle(ctx: Ctx, { req, res, url, session }: RouteRequest & { session: Session }) {
       return guard(res, async () => {
@@ -262,7 +262,7 @@ export const poolRoutes = {
         if (!seen) return;
         if (!session.account?.id) return send(res, 403, { error: 'account required' });
         const approver = { id: session.account.id, label: displayName(session.account.name) || session.account.id };
-        reply(res, floor.pool.nickYes(typeof body.id === 'string' ? body.id : '', approver, seen), floor.pool);
+        reply(res, floor.pool.ownerApproval(typeof body.id === 'string' ? body.id : '', approver, seen), floor.pool);
       });
     },
   },

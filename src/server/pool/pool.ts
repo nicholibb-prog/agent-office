@@ -16,7 +16,7 @@ import {
   type PoolPolicy,
   type SeenJob,
 } from '../../shared/pool.js';
-import { CallerBook } from './callers.js';
+import { CallerBook, rememberReservedNames } from './callers.js';
 import { contentHash } from './hash.js';
 import { readPolicy } from './policy.js';
 import { poolPath, readPrivate, writePrivate } from './persist.js';
@@ -60,6 +60,7 @@ export class WorkPool {
     this.file = poolPath(dataDir, 'work-pool.json');
     this.callers = new CallerBook(dataDir);
     this.now = opts.now ?? Date.now;
+    this.policy();
     this.restore();
     // Auto-pull stays off until a caller injects an armed runner. The quiet default must not claim.
     if (opts.autoPull && opts.puller?.armed) {
@@ -202,7 +203,7 @@ export class WorkPool {
     job.completedAt = now;
     if (job.level >= 6) {
       job.status = 'needs_approval';
-      job.approval = job.level >= 7 ? 'nick-yes' : 'dan-pass';
+      job.approval = job.level >= 7 ? 'owner-yes' : 'dan-pass';
     } else {
       job.status = 'done';
       this.trimDone();
@@ -228,17 +229,17 @@ export class WorkPool {
     if (job.status !== 'needs_approval' || job.level !== 6 || job.approval !== 'dan-pass') return fail(409, 'job is not waiting on a Dan pass');
     const now = this.now();
     job.danPass = { by: who.id, at: now };
-    job.approval = 'nick-yes';
+    job.approval = 'owner-yes';
     this.touch(job, now);
     this.changed();
     return { ok: true, value: job };
   }
 
   /**
-   * Human Nick yes from an account id on pool.approvers.
+   * Owner approval from an account id on pool.approvers.
    * The approver cannot be the poster or the completer. Level 6 needs a Dan pass first.
    */
-  nickYes(id: string, actor: PoolActor, seen: SeenJob): PoolOk<PoolJob> {
+  ownerApproval(id: string, actor: PoolActor, seen: SeenJob): PoolOk<PoolJob> {
     this.sweep();
     const who = asActor(actor);
     if (!who) return fail(403, 'account required');
@@ -249,12 +250,12 @@ export class WorkPool {
     if (seen.hash !== contentHash(job)) return fail(409, 'content changed');
     if (job.status !== 'needs_approval' || (job.level !== 6 && job.level !== 7)) return fail(409, 'job is not waiting on approval');
     if (job.level === 6 && !job.danPass) return fail(403, 'Dan pass is required');
-    if (job.approval !== 'nick-yes') return fail(409, 'job is not waiting on a Nick yes');
+    if (job.approval !== 'owner-yes') return fail(409, 'needs owner');
     if (job.postedBy === who.id || job.doneBy === who.id) return fail(403, 'cannot approve your own job');
     const now = this.now();
     job.status = 'done';
     job.approvedBy = who.id;
-    job.approval = 'nick-yes';
+    job.approval = 'owner-yes';
     this.trimDone();
     this.touch(job, now);
     this.changed();
@@ -291,7 +292,9 @@ export class WorkPool {
   }
 
   private policy(): PoolPolicy {
-    return readPolicy(this.dataDir);
+    const found = readPolicy(this.dataDir);
+    rememberReservedNames(found.reservedNames);
+    return found;
   }
 
   private rateLimited(id: string, now: number): boolean {

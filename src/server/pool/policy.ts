@@ -1,4 +1,4 @@
-import { actorId, emptyPolicy, type PoolPolicy } from '../../shared/pool.js';
+import { actorId, displayName, emptyPolicy, type PoolPolicy } from '../../shared/pool.js';
 import { poolPath, readPrivate } from './persist.js';
 
 const KEYS = ['approvers', 'lowLevelPosters', 'highLevelPosters', 'crew', 'dan', 'okkin'] as const;
@@ -19,6 +19,16 @@ export function readPolicy(dataDir: string): PoolPolicy {
       if (ids.length >= 64) break;
     }
     policy[key] = ids;
+  }
+  const names = src.reservedNames;
+  if (Array.isArray(names)) {
+    const reserved: string[] = [];
+    for (const item of names) {
+      const shown = displayName(item);
+      if (shown && !reserved.includes(shown)) reserved.push(shown);
+      if (reserved.length >= 64) break;
+    }
+    policy.reservedNames = reserved;
   }
   return policy;
 }

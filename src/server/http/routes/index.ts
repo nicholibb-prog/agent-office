@@ -47,7 +47,7 @@ export const routes: readonly Route[] = [
   // Signed in.
   authRoutes.whoami,
   poolRoutes.callers,
-  poolRoutes.nickYes,
+  poolRoutes.ownerApproval,
   agentRoutes.models,
   fileRoutes.image,
   fileRoutes.whiteboardFile,
