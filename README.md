@@ -368,6 +368,7 @@ deploy/coolify.sh ssh 'node /opt/agent-office/bin/agent-office.js accounts invit
 | Space | Jump |
 | Mouse drag / wheel | Orbit / zoom the camera |
 | E | Interact: hire a worker, open its terminal, read a board, sit down, ride the elevator |
+| ☰ Huddle | Walk into the meeting room: shared agenda, decision log, roster says in meeting |
 | P | Give a task to a new worker, or to the one at this desk |
 | C | See a worker's changes: diff, commit, open a PR |
 | N | Go to the next worker that's waiting on you |

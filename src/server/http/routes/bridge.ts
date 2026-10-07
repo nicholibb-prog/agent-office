@@ -1,11 +1,14 @@
 import type http from 'node:http';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { appendOutboxItem } from '../../outbox.js';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import type { Ctx } from '../../office/context.js';
 import type { ChatLine } from '../../../shared/protocol.js';
 import { send } from '../util.js';
 import type { Route } from '../router.js';
+
+const BRIDGE_FAILED = 'Bridge failed';
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -173,8 +176,8 @@ export const bridgeRoutes = {
       try {
         const file = path.join(ctx.cfg.dataDir, 'crew-status.json');
         writeFileSync(file, JSON.stringify(payload, null, 2) + '\n', { mode: 0o600 });
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: BRIDGE_FAILED });
       }
       const results: { floor: string; applied: string[] }[] = [];
       for (const floor of ctx.floors.values()) {
@@ -194,8 +197,8 @@ export const bridgeRoutes = {
         const file = path.join(ctx.cfg.dataDir, 'crew-status.json');
         if (!existsSync(file)) return send(res, 200, { crew: {}, updatedAt: null });
         return send(res, 200, JSON.parse(readFileSync(file, 'utf8')));
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: BRIDGE_FAILED });
       }
     },
   },
@@ -228,8 +231,8 @@ export const bridgeRoutes = {
           JSON.stringify({ updatedAt: new Date().toISOString(), crew: merged, source: 'bridge-status' }, null, 2) + '\n',
           { mode: 0o600 },
         );
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: BRIDGE_FAILED });
       }
       const results: { floor: string; applied: string[] }[] = [];
       for (const floor of ctx.floors.values()) {
@@ -265,8 +268,8 @@ export const bridgeRoutes = {
       };
       try {
         writeFileSync(path.join(ctx.cfg.dataDir, 'kavi-feed.json'), JSON.stringify(payload, null, 2) + '\n', { mode: 0o600 });
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: BRIDGE_FAILED });
       }
       return send(res, 200, { ok: true, count: titles.length });
     },
@@ -281,8 +284,8 @@ export const bridgeRoutes = {
         const file = path.join(ctx.cfg.dataDir, 'kavi-feed.json');
         if (!existsSync(file)) return send(res, 200, { titles: [], updatedAt: null });
         return send(res, 200, JSON.parse(readFileSync(file, 'utf8')));
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: BRIDGE_FAILED });
       }
     },
   },
@@ -301,15 +304,12 @@ export const bridgeRoutes = {
       const title = String(body.title || 'office-chat').slice(0, 80).trim() || 'office-chat';
       const text = String(body.text || '').slice(0, 4000);
       const file = path.join(ctx.cfg.dataDir, 'kavi-outbox.json');
-      let items: { title: string; text: string; at: string }[] = [];
       try {
-        if (existsSync(file)) items = (JSON.parse(readFileSync(file, 'utf8')) as { items?: typeof items }).items || [];
+        const items = appendOutboxItem(file, { title, text, at: new Date().toISOString() });
+        return send(res, 200, { ok: true, queued: items.length });
       } catch {
-        /* */
+        return send(res, 500, { error: BRIDGE_FAILED });
       }
-      items.push({ title, text, at: new Date().toISOString() });
-      writeFileSync(file, JSON.stringify({ items, note: 'crew picks up via local connector' }, null, 2) + '\n', { mode: 0o600 });
-      return send(res, 200, { ok: true, queued: items.length });
     },
   },
   kaviOutboxGet: {
@@ -322,8 +322,8 @@ export const bridgeRoutes = {
         const file = path.join(ctx.cfg.dataDir, 'kavi-outbox.json');
         if (!existsSync(file)) return send(res, 200, { items: [] });
         return send(res, 200, JSON.parse(readFileSync(file, 'utf8')));
-      } catch (e) {
-        return send(res, 500, { error: String(e) });
+      } catch {
+        return send(res, 500, { error: BRIDGE_FAILED });
       }
     },
   },

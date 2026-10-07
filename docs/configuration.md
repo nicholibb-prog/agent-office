@@ -107,3 +107,7 @@ agent-office tunnel [office@address | url] [--port <n>] [--office-port <n>] [--n
   the worker stops it. Given an SSH address it opens the tunnel to the office too.
   See docs/tunnel.md.
 ```
+
+## Local model for the huddle
+
+The meeting room and the three front desks can ask a model on this machine. `OLLAMA_URL` defaults to `http://127.0.0.1:11434`. `OKKIN_MODEL` is unset until you set it (a doc example is `qwen3.5:9b`). The host has to be `http://127.0.0.1`, `http://localhost`, or `http://[::1]`. `https` is refused. `localhost` is rewritten to `127.0.0.1` before any request, so the office does not ask the system resolver for it. Any other host is refused and the seat stays **offline**. The same two fields can live in `.agent-office/ollama.json`; the environment wins. The office only calls `GET /api/tags`, `POST /api/chat`, and `POST /api/generate` on that origin. It does not install a CLI, take a key, or open a route that proxies the model. The browser is told the configured model name and `ready` or `offline`, never the raw response. When the probe succeeds and a model is set, those seats use it. Otherwise they queue on the bridge outbox for a real crew bot. If that outbox directory cannot be written either, the seat says **no provider — needs owner**. A bridge route that fails answers `Bridge failed`, not the exception text.

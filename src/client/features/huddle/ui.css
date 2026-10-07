@@ -1,0 +1,5 @@
+.huddle-window { width: min(640px, 94vw); max-height: 80vh; overflow: auto; }
+.huddle-window textarea, .huddle-window input[type='text'] { width: 100%; box-sizing: border-box; }
+.huddle-window .warn { font-weight: 700; }
+.huddle-window .muted { opacity: 0.75; }
+.huddle-window .seat-line { margin-top: 0; }

@@ -23,6 +23,8 @@ import { JevStore } from './jev.js';
 import { Jukebox } from './jukebox.js';
 import { Whiteboard } from './whiteboard.js';
 import { MeetingRoom } from './meetings.js';
+import { HuddleRoom } from './huddle.js';
+import { SeatBoard } from './seat-provider.js';
 import { Worktrees, type WorktreeCleanup } from './worktrees.js';
 import { landedWork, landedWorkers, type Landed } from './leave-on-merge.js';
 import type { Ledger } from './usage.js';
@@ -71,6 +73,8 @@ export interface FloorContext {
   lent(floor: Floor): boolean;
   /** Whether the building's map locks up workers sent home (see MapPlan.sendHome), instead of letting them go. */
   locksUp(): boolean;
+  /** The office's data directory, where the bridge outbox and the local-model file live. */
+  officeDataDir: string;
 }
 
 /** The open pull request on a floor's board whose head is `branch`. */
@@ -127,6 +131,10 @@ export class Floor {
   readonly jev: JevStore;
   /** The meeting room, where workers work through a question together (see meetings.ts). */
   readonly meetings: MeetingRoom;
+  /** Providers for the meeting room and the three front desks (see seat-provider.ts). */
+  readonly seats: SeatBoard;
+  /** Who is in the meeting-room huddle (see huddle.ts). */
+  readonly huddle: HuddleRoom;
   /** The bookshelf: the project's Markdown files (see docs.ts). */
   readonly docs: Docs;
   /** Settles once the workers whose terminals outlived the last office are picked back up, and the rest woken. */
@@ -181,6 +189,7 @@ export class Floor {
           // Still being built: the first updates come from waking the workers already at their desks.
           this.queue?.onWorker(worker);
           this.meetings?.onWorker(worker);
+          this.huddle?.onWorker(worker);
           this.dog.onWorker(worker);
           ctx.workerChanged(this, worker);
           // Its turn ended, or whoever had its terminal open closed it: it may be free to go now.
@@ -195,6 +204,7 @@ export class Floor {
           ctx.emit(this, { t: 'worker.remove', workerId, ...(jail ? { jail } : {}) });
           this.queue?.onWorkerGone(workerId);
           this.meetings?.onWorkerGone(workerId);
+          this.huddle?.onWorkerGone(workerId);
           this.dog.onWorkerGone(workerId);
           ctx.workerChanged(this, workerId);
         },
@@ -277,6 +287,12 @@ export class Floor {
         prompt: (id) => ctx.prompts.text(id),
       },
     );
+
+    this.seats = new SeatBoard(ctx.officeDataDir);
+    this.huddle = new HuddleRoom(this.id, dataDir, this.seats, {
+      workers: () => this.workers.list(),
+      emit: (state) => ctx.emit(this, { t: 'huddle', state }),
+    });
 
     // What each worker changed, for the Changes window at its desk (see changes.ts).
     this.changes = new Changes(
@@ -420,6 +436,7 @@ export class Floor {
     this.github.stop();
     this.queue.shutdown();
     this.meetings.shutdown();
+    this.huddle.shutdown();
     this.changes.stop();
     this.whiteboard.flush();
     this.workers.shutdown(keep);

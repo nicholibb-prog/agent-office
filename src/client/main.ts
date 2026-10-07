@@ -51,6 +51,7 @@ import { installJev } from './features/jev';
 import { installKaviBoard } from './features/kavi-board';
 import { installJukebox } from './features/jukebox';
 import { installMeeting } from './features/meeting';
+import { installHuddle } from './features/huddle';
 import { installNeedsYou } from './features/needsyou';
 import { installHqBrief } from './features/hq-brief';
 import { installPalette } from './features/palette';
@@ -151,6 +152,7 @@ parts.needsYou = installNeedsYou(ctx, parts);
 installHqBrief(ctx, { openTalk: (id) => parts.waiting.openWorkerTerminal(id) });
 installPalette(ctx, parts);
 parts.meeting = installMeeting(ctx, parts);
+parts.huddle = installHuddle(ctx, parts);
 parts.bookshelf = installBookshelf(ctx);
 installHerald(ctx, parts);
 
