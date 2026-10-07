@@ -38,3 +38,13 @@
 .meeting-past summary { font-weight: 800; cursor: pointer; }
 .meeting-past ul { padding-left: 18px; margin: 6px 0 0; }
 .meeting-past li { margin: 6px 0; }
+
+/* Finished meeting: plain-text decision log (not a live-call panel). */
+.meeting-decision { margin-top: 12px; border: 2px solid var(--ink); border-radius: 12px; background: var(--paper-2); overflow: hidden; }
+.meeting-decision-head { padding: 6px 10px; border-bottom: 2px solid var(--ink); font-size: 13px; }
+.meeting-decision-body, .meeting-decision-past {
+  margin: 0; padding: 10px; max-height: 220px; overflow: auto; white-space: pre-wrap;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; font-weight: 500;
+  background: #fff; color: var(--ink);
+}
+.meeting-decision-past { margin-top: 6px; max-height: 140px; border: 1px solid var(--ink); border-radius: 8px; }

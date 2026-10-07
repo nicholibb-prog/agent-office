@@ -93,6 +93,20 @@ export interface Meeting {
   preview?: string;
   /** Its workers have gone home and its worktree was tidied away. */
   cleared?: boolean;
+  /** Durable decision log once the meeting has finished. */
+  decisionLog?: MeetingDecisionLog;
+}
+
+/** Durable decision log left when a meeting finishes (local-only; redacted ids). */
+export interface MeetingDecisionLog {
+  /** Who decided: `owner` or a seat id like `seat-1` (never a personal name). */
+  decidedBy: string;
+  /** When, as ISO-8601. */
+  decidedAt: string;
+  /** The decision text (from the output), or why it stopped. */
+  decision: string;
+  /** Who was in the room: seat id, role, and a generic bot id (`bot-a`…). */
+  seats: { id: string; role: string; bot: string }[];
 }
 
 /** A meeting that's over, in a line. */
@@ -107,6 +121,7 @@ export interface MeetingRecord {
   finishedAt: number;
   branch?: string;
   output: string;
+  decisionLog?: MeetingDecisionLog;
 }
 
 export interface MeetingState {
