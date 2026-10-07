@@ -53,6 +53,8 @@ export async function startServer(cfg: Config, opts: StartOptions = {}) {
 
   /** With `keep` (a restart), workers' terminals keep running for the next office to pick up. */
   const shutdown = (keep = false) => {
+    // Ctrl+C / owner close: mark the office closed. SIGTERM restart keeps it open for the next process.
+    if (!keep) ctx.officeState.close('owner');
     stopTimers();
     ctx.cancelFloorsChanged();
     ctx.arcade.flush();

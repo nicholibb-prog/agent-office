@@ -17,6 +17,8 @@ import { Themes } from '../theme.js';
 import { Maps } from '../maps.js';
 import { OfficePrompts } from '../prompts.js';
 import { LeaveOnMerge } from '../leave-on-merge.js';
+import { OfficeState } from '../office-state.js';
+import { lastLocalEventMs } from '../since-close.js';
 import type { ServiceInfo, ServicesState } from '../../shared/protocol.js';
 import type { BuildingServices, Ctx, LateServices } from './context.js';
 import type { Client } from './client.js';
@@ -38,6 +40,9 @@ export function createServices(ctx: Ctx): BuildingServices {
   const prompts = new OfficePrompts(cfg.dataDir, { list: agentProviders(configured), configured }, (state) => ctx.broadcast({ t: 'prompts', state }));
   // Whether a worker whose pull request merged goes home by itself, on every floor (⚙️ Settings).
   const leaveOnMerge = new LeaveOnMerge(cfg.dataDir, (state) => ctx.broadcast({ t: 'leaveOnMerge', state }));
+  // Office open/closed (apart from seats). Owner close / unclean stop only — never a schedule.
+  const officeState = new OfficeState(cfg.dataDir);
+  officeState.openOnBoot(Date.now(), lastLocalEventMs(cfg.dataDir, ctx.building));
 
   // What the workers spend, all time and today, with the optional daily budget.
   const ledger = new Ledger(
@@ -125,7 +130,7 @@ export function createServices(ctx: Ctx): BuildingServices {
     });
   };
 
-  return { sky, themes, maps, prompts, leaveOnMerge, ledger, signins, limits, accountLimits, webhook, machine, limitsOf, pumpQueues };
+  return { sky, themes, maps, prompts, leaveOnMerge, officeState, ledger, signins, limits, accountLimits, webhook, machine, limitsOf, pumpQueues };
 }
 
 /** What's made once the floors are open: the SSH team, the tailnet, workers' web servers, pictures and upgrades. */
