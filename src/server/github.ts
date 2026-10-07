@@ -4,6 +4,7 @@ import path from 'node:path';
 import { GH_FAILED, GH_NOT_FOUND, type GhCheck, type GhCloseReason, type GhComment, type GhIssue, type GhIssueDetail, type GhLabel, type GhMergeMethod, type GhPull, type GhPullDetail, type GhRepoInfo, type GhReviewComment, type GhState } from '../shared/protocol.js';
 import { ghSessionBlock, loadIssueBoard, loadPullBoard, type GhBoardRunner } from './github-boards.js';
 import type { GhAs } from './signins.js';
+import { redactUserinfo } from './git/remote-url.js';
 
 /** GitHub CLI's default install path on Windows, used when it is not on PATH. */
 export const GH_WINDOWS_FALLBACK = 'C:\\Program Files\\GitHub CLI\\gh.exe';
@@ -82,10 +83,10 @@ export function gh(args: string[], cwd: string, timeout = 30_000, env?: Record<s
           reject(new Error(ghSpawnFailure(err as NodeJS.ErrnoException)));
           return;
         }
-        const msg = String(stderr || '').trim().split('\n').slice(-2).join(' ');
+        const msg = redactUserinfo(String(stderr || '').trim().split('\n').slice(-2).join(' '));
         const signedOut = env && /auth login|not logged in|authentication/i.test(msg);
         reject(new Error(signedOut ? 'Your GitHub sign-in stopped working — sign in again (☰ → 🔐 Your sign-ins)' : friendly(msg) || GH_FAILED));
-      } else resolve(stdout);
+      } else resolve(redactUserinfo(stdout));
     });
   });
 }

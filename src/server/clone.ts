@@ -2,6 +2,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { closeSync, fstatSync, openSync, readSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { GH_FAILED, type CloneProgress } from '../shared/protocol.js';
+import { redactUserinfo } from './git/remote-url.js';
 import { resolveGhBinary } from './github.js';
 
 // One `gh repo clone`, run so the office can see how it's getting on. git's progress goes to a log
@@ -56,7 +57,7 @@ export function whyCloneFailed(output: string): string {
   if (/passphrase/i.test(all)) return "the office's ssh key needs its passphrase. Add it to the ssh agent (`ssh-add`), or clone over https with `gh config set git_protocol https`";
   if (/Permission denied \(publickey/i.test(all)) return "GitHub didn't take the office's ssh key. Add it with `gh ssh-key add`, or clone over https with `gh config set git_protocol https`";
   if (/terminal prompts disabled|could not read (Username|Password)|Authentication failed/i.test(all)) return "git wanted a GitHub password. Run `gh auth setup-git` on the office's machine so git uses gh's login";
-  return said.slice(-2).join(' ') || 'gh failed';
+  return redactUserinfo(said.slice(-2).join(' ') || 'gh failed');
 }
 
 /** How a clone ended: stopped (and why), or the process's exit code (null when an office before this one started it). */

@@ -22,6 +22,7 @@ export interface ProjectInfo {
   name: string;
   dir: string;
   branch?: string;
+  /** GitHub `owner/repo`, or `host/path` for another remote. Never a URL with userinfo. */
   remote?: string;
   agentCmd: string;
   defaultProvider: AgentProvider;

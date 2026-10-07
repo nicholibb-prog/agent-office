@@ -30,6 +30,7 @@ import { landedWork, landedWorkers, type Landed } from './leave-on-merge.js';
 import type { Ledger } from './usage.js';
 import type { Capacity } from './machine.js';
 import { officePrompt, type PromptSource } from './prompts.js';
+import { readOriginUrl, sanitizeRemoteUrl } from './git/remote-url.js';
 
 type ToastLevel = 'info' | 'warn' | 'error';
 
@@ -102,7 +103,7 @@ export function projectInfo(dir: string, name: string, agentCmd: string, agentAr
     name,
     dir,
     branch: git(['rev-parse', '--abbrev-ref', 'HEAD']),
-    remote: git(['remote', 'get-url', 'origin']),
+    remote: sanitizeRemoteUrl(readOriginUrl(dir)),
     agentCmd: [agentCmd, ...agentArgs].join(' '),
     defaultProvider: configuredProvider(agentCmd),
     agentProviders: agentProviders(configuredProvider(agentCmd)),
