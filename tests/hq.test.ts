@@ -728,7 +728,7 @@ test('chat sends num_predict 256 and a refused URL does not fall back', async ()
 });
 
 test('Okkin look-alike names are rejected, including digits that fold to okkin', async () => {
-  const lookalikes = ['Okk\u0456n', 'O-k-k-i-n', 'okkin2', 'Okkin\u200b', 'Okk\u00EFn', 'Okk\u00EDn', '\u039F\u039A\u039A\u0399\u039D', '\u1D0F\u1D0B\u1D0B\u026A\u0274', '0kk1n', 'okk\u0131n', '0kkin'];
+  const lookalikes = ['Okk\u0456n', 'O-k-k-i-n', 'okkin2', 'Okkin\u200b', 'Okk\u00EFn', 'Okk\u00EDn', '\u039F\u039A\u039A\u0399\u039D', '\u1D0F\u1D0B\u1D0B\u026A\u0274', '0kk1n', 'okk\u0131n', '0kkin', 'O\u0138\u0138in', 'Okk\u00A1n', 'o\u0138\u0138\u00A1n'];
   for (const name of lookalikes) assert.equal(refusesOkkinName(name), true, name);
   const dataDir = dir('look');
   const { ctx, token } = ctxOf(dataDir);
