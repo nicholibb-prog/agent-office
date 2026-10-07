@@ -10,6 +10,7 @@ import { pageRoutes } from './pages.js';
 import { searchRoutes } from './search.js';
 import { serviceRoutes } from './services.js';
 import { bridgeRoutes } from './bridge.js';
+import { officeRoutes } from './office.js';
 
 export const routes: readonly Route[] = [
   // Anyone.
@@ -37,6 +38,10 @@ export const routes: readonly Route[] = [
   pageRoutes.favicon,
   // Signed in.
   authRoutes.whoami,
+  officeRoutes.state,
+  officeRoutes.sinceClose,
+  officeRoutes.dismiss,
+  officeRoutes.close,
   agentRoutes.models,
   fileRoutes.image,
   fileRoutes.whiteboardFile,
