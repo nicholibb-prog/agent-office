@@ -82,8 +82,11 @@ function tokenFromReq(req: http.IncomingMessage): string {
   return '';
 }
 
-/** Bridge auth: Host allowlist + Origin check + (token OR office session). Loopback alone is not enough. */
-export function bridgeGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): boolean {
+/**
+ * Host allowlist, Origin, and JSON Content-Type. Does not look at a bridge token or a session.
+ * Approval routes use this and then require a signed-in office session on their own.
+ */
+export function bridgeShape(req: http.IncomingMessage, res: http.ServerResponse): boolean {
   if (!hostOk(req)) {
     send(res, 403, { error: 'host not allowed' });
     return false;
@@ -96,6 +99,12 @@ export function bridgeGate(ctx: Ctx, req: http.IncomingMessage, res: http.Server
     send(res, 415, { error: 'Content-Type must be application/json' });
     return false;
   }
+  return true;
+}
+
+/** Bridge auth: Host allowlist + Origin check + (token OR office session). Loopback alone is not enough. */
+export function bridgeGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  if (!bridgeShape(req, res)) return false;
   const expected = bridgeToken(ctx.cfg.dataDir);
   const got = tokenFromReq(req);
   if (got && safeTokenEq(got, expected)) return true;
