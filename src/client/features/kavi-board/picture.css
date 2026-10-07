@@ -1,0 +1,7 @@
+/* Kavi's picture window over the Bridge NPC (features/kavi-board/picture.ts). A still picture, not a call. */
+.kavi-picture { position: absolute; left: 0; top: 0; margin: 0; width: 140px; padding: 6px; border-radius: 18px; background: rgba(29, 53, 87, 0.92); border: 2px solid var(--paper, #fffaf3); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); transform-origin: 50% 100%; pointer-events: none !important; user-select: none; }
+.kavi-picture.hidden { display: none; }
+.kavi-picture-frame { position: relative; width: 128px; height: 128px; border-radius: 13px; overflow: hidden; background: #edf2f4; }
+.kavi-picture-img { display: block; width: 128px; height: 128px; object-fit: cover; }
+.kavi-picture-name { position: absolute; left: 6px; bottom: 6px; padding: 1px 7px; border-radius: 8px; background: rgba(43, 45, 66, 0.8); color: #fffaf3; font-size: 11px; font-weight: 900; }
+.kavi-picture-label { margin: 5px 2px 0; color: #fffaf3; font-size: 11px; font-weight: 800; line-height: 1.25; text-align: center; }
