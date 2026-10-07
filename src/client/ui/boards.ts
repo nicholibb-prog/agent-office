@@ -1,5 +1,5 @@
 import './boards.css';
-import type { GhIssue, GhLabel, GhPull, WorkerInfo } from '../../shared/protocol';
+import { ghBoardBlock, ghBoardHint, type GhIssue, type GhLabel, type GhPull, type WorkerInfo } from '../../shared/protocol';
 import type { Net } from '../net';
 import { store, workerForPull } from '../state';
 import { h, openModal, timeAgo } from './dom';
@@ -250,8 +250,9 @@ export function openBoard(kind: 'issues' | 'pulls', net: Net, actions: BoardActi
     const focused = active && body.contains(active) ? active.getAttribute('data-focus') : null;
     const caret = active instanceof HTMLInputElement ? ([active.selectionStart, active.selectionEnd] as const) : null;
     body.replaceChildren();
-    if (st.error && !st.items.length) {
-      body.append(h('div.board-error', {}, `Couldn't load from GitHub: ${st.error}`, h('br'), h('small', {}, 'The server runs `gh` in the project directory — make sure it is installed and authenticated (gh auth login).')));
+    const block = ghBoardBlock(st.error);
+    if (block || (st.error && !st.items.length)) {
+      body.append(h('div.board-error', {}, block ?? `Couldn't load from GitHub: ${st.error}`, h('br'), h('small', {}, ghBoardHint(st.error))));
       return;
     }
     const all = boardLabels(st.items);

@@ -3,6 +3,7 @@
  * requests, issues and services, and the people in it. Enter does it; Shift+Enter walks you over to
  * where it's done first.
  */
+import { ghBoardHint, ghListsBlock } from '../../../shared/protocol';
 import { DESK_BY_ID, DESKS, WING_DESKS, deskSeat, type DeskDef } from '../../../shared/layout';
 import { isPaletteKey } from '../../../shared/palette';
 import type { Ctx } from '../../core/context';
@@ -106,7 +107,11 @@ export function installPalette(ctx: Ctx, parts: PaletteParts) {
     out.push(at('whiteboard', 'the whiteboard', { icon: '📝', kind: 'Board', title: 'Whiteboard', open: () => openWhiteboard(net) }));
     out.push(at('meeting', 'the meeting room', { icon: '🤝', kind: 'Board', title: 'Meeting room', keywords: ['call a meeting'], open: () => meeting.showMeeting() }));
 
-    for (const pr of store.pulls.items) {
+    const ghBlock = ghListsBlock(store.issues, store.pulls);
+    if (ghBlock) {
+      out.push(at('issues', 'the Issues board', { icon: '🐙', kind: 'Board', title: ghBlock, detail: ghBoardHint(ghBlock), open: () => openBoard('issues', net, actions.boardActions()) }));
+    }
+    for (const pr of ghBlock ? [] : store.pulls.items) {
       out.push(
         at('pulls', 'the PR board', {
           icon: '🔀',
@@ -117,7 +122,7 @@ export function installPalette(ctx: Ctx, parts: PaletteParts) {
         }),
       );
     }
-    for (const issue of store.issues.items) {
+    for (const issue of ghBlock ? [] : store.issues.items) {
       out.push(
         at('issues', 'the Issues board', {
           icon: '📌',
