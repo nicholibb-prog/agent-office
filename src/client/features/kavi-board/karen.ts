@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mesh, roundedBox, toon } from '../../world/toon';
 import type { Collider } from '../../world/types';
 import type { Fixture } from '../../world/office/fixture';
-import { blockerAt, stepTo, type Body } from '../../player/collide';
+import { stepToward, type Body } from '../../player/collide';
 
 /** Face-computer NPC. No desk. Patrols the office. */
 const HOME = { x: -8.9, z: 5.55 } as const;
@@ -108,12 +108,8 @@ export function buildKaviKaren(officeColliders: Collider[]): KaviKarenNpc {
     const step = Math.min(dist, speed * dt);
     const ox = group.position.x;
     const oz = group.position.z;
-    const nx = ox + (dx / dist) * step;
-    const nz = oz + (dz / dist) * step;
     // Resolve against office walls/desks each axis (same as player).
-    stepTo(body, nx, oz);
-    stepTo(body, group.position.x, nz);
-    const moved = Math.hypot(group.position.x - ox, group.position.z - oz);
+    const moved = stepToward(body, target.x, target.z, step);
     if (moved < step * 0.15) {
       // Stuck on geometry — skip waypoint instead of walking through.
       wp = (wp + 1) % PATROL.length;

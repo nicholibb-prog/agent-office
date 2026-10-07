@@ -27,6 +27,7 @@ import { installHintBar } from './core/hintbar';
 import { installKeyboard, installKeyGuards } from './input/keyboard';
 import { installFocus } from './input/focus';
 import { installPointer } from './input/pointer';
+import { installAisles } from './features/aisles';
 import { installArcade } from './features/arcade';
 import { installBar } from './features/bar';
 import { installBarGames } from './features/bargames';
@@ -143,6 +144,8 @@ parts.arrival = installArrival(ctx, core, parts);
 parts.maps = installMaps(ctx, core, parts);
 parts.peers = installPeers(ctx, core, parts);
 parts.walking = installWalking(ctx, core, parts);
+// Before the views: a worker strolling the aisles is back in its seat before they hear it has work.
+installAisles(ctx, parts);
 parts.views = installWorkerViews(ctx, core, parts);
 parts.actions = installWorkerActions(ctx, core, parts);
 parts.waiting = installWaiting(ctx, core, parts);
