@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deskFace, KEYSTROKE_MS, paintDesk, screenLines, type DeskFace } from '../src/client/features/workers/desktop.js';
+import { deskFace, deskStatusIsWorking, emptyDeskFace, KEYSTROKE_MS, paintDesk, paintEmptyDesk, screenLines, type DeskFace } from '../src/client/features/workers/desktop.js';
 import type { ScreenState } from '../src/client/state/store.js';
 import { noteShellOutput, SHELL_QUIET_MS, shellQuiet } from '../src/server/workers/presence.js';
 import type { Worker } from '../src/server/workers/types.js';
@@ -36,16 +36,20 @@ function paint(over: Partial<DeskFace> & Pick<DeskFace, 'pace' | 'chip' | 'now'>
   return ops;
 }
 
-test('desk pace follows working, needs-input, idle and a recent keystroke', () => {
+test('desk pace follows working, needs-input, idle — never a fake WORKING chip', () => {
   assert.deepEqual(deskFace('working', undefined, 10_000), { pace: 'working', chip: 'WORKING' });
-  assert.deepEqual(deskFace('starting', undefined, 10_000), { pace: 'working', chip: 'STARTING' });
+  assert.deepEqual(deskFace('starting', undefined, 10_000), { pace: 'calm', chip: 'STARTING' });
   assert.deepEqual(deskFace('needs_input', undefined, 10_000), { pace: 'attention', chip: 'NEEDS YOU' });
   assert.deepEqual(deskFace('idle', undefined, 10_000), { pace: 'calm', chip: 'idle' });
   assert.deepEqual(deskFace('done', undefined, 10_000), { pace: 'calm', chip: 'done' });
   assert.deepEqual(deskFace('offline', undefined, 10_000), { pace: 'calm', chip: 'asleep' });
-  assert.deepEqual(deskFace('idle', 10_000 - 1000, 10_000), { pace: 'working', chip: 'WORKING' });
+  // A recent keystroke must not paint WORKING unless status is truly working.
+  assert.deepEqual(deskFace('idle', 10_000 - 1000, 10_000), { pace: 'calm', chip: 'idle' });
   assert.deepEqual(deskFace('idle', 10_000 - KEYSTROKE_MS, 10_000), { pace: 'calm', chip: 'idle' });
   assert.deepEqual(deskFace('exited', 10_000 - 100, 10_000), { pace: 'calm', chip: 'asleep' });
+  assert.equal(deskStatusIsWorking('working'), true);
+  assert.equal(deskStatusIsWorking('idle'), false);
+  assert.equal(deskStatusIsWorking('starting'), false);
 });
 
 test('screen lines keep the tail of the terminal and drop blank rows', () => {
@@ -111,4 +115,31 @@ test('shell output marks a sitting shell working, and silence sends it back to i
   const asking = shell('shell', 'needs_input');
   assert.equal(noteShellOutput(asking, 3_000), undefined);
   assert.equal(asking.outputAt, 3_000);
+});
+
+test('an empty desk paints an honest empty state, not a busy desktop', () => {
+  const { ctx, ops } = canvasSpy();
+  paintEmptyDesk(ctx, 1024, 680);
+  const texts = ops.filter((op) => op.kind === 'fillText').map((op) => op.args[0]);
+  assert.ok(texts.includes('No one at this desk'));
+  assert.ok(!texts.includes('WORKING'));
+  assert.ok(!texts.some((t) => typeof t === 'string' && /working/i.test(t) && t !== 'No one at this desk'));
+
+  const emptyOps = paint({ ...emptyDeskFace(SAME_SECOND), pace: 'calm', chip: 'empty', now: SAME_SECOND });
+  const emptyTexts = emptyOps.filter((op) => op.kind === 'fillText').map((op) => op.args[0]);
+  assert.ok(emptyTexts.includes('No one at this desk'));
+  assert.ok(!emptyTexts.includes('WORKING'));
+});
+
+test('a non-working status never paints a live working desktop animation', () => {
+  for (const status of ['idle', 'done', 'starting', 'offline', 'exited', 'needs_input'] as const) {
+    const face = deskFace(status, 10_000 - 100, 10_000);
+    assert.notEqual(face.pace, 'working', status);
+    assert.notEqual(face.chip, 'WORKING', status);
+    const a = paint({ ...face, now: SAME_SECOND, name: 'bot-a', lines: [] });
+    const b = paint({ ...face, now: SAME_SECOND + 600, name: 'bot-a', lines: [] });
+    // Calm / attention without live work: frame-to-frame must not look like a working scroll.
+    if (face.pace === 'calm') assert.deepEqual(a, b, status);
+    assert.ok(!a.some((op) => op.kind === 'fillText' && op.args[0] === 'WORKING'), status);
+  }
 });
