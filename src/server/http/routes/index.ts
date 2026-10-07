@@ -9,6 +9,7 @@ import { githubRoutes } from './github.js';
 import { pageRoutes } from './pages.js';
 import { searchRoutes } from './search.js';
 import { serviceRoutes } from './services.js';
+import { bridgeRoutes } from './bridge.js';
 
 export const routes: readonly Route[] = [
   // Anyone.
@@ -20,6 +21,15 @@ export const routes: readonly Route[] = [
   authRoutes.link,
   authRoutes.logout,
   pageRoutes.health,
+  bridgeRoutes.chatRecent,
+  bridgeRoutes.say,
+  bridgeRoutes.crewStatus,
+  bridgeRoutes.crewStatusGet,
+  bridgeRoutes.status,
+  bridgeRoutes.kaviFeed,
+  bridgeRoutes.kaviFeedGet,
+  bridgeRoutes.kaviOutbox,
+  bridgeRoutes.kaviOutboxGet,
   pageRoutes.assets,
   pageRoutes.login,
   pageRoutes.claim,

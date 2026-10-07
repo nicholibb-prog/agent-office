@@ -93,7 +93,10 @@ export function writeOfficeCommands(dataDir: string): string | undefined {
     if (!script) continue;
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const file = path.join(dir, name);
-    writeFileSync(file, `#!/bin/sh\n# ${what} (see bin/${name}.js).\nexec ${shq(process.execPath)} ${shq(script)} "$@"\n`, { mode: 0o700 });
+    const shBody = WIN
+      ? `#!/bin/sh\n# ${what} (see bin/${name}.js).\n${shq(process.execPath)} ${shq(script)} "$@"\n`
+      : `#!/bin/sh\n# ${what} (see bin/${name}.js).\nexec ${shq(process.execPath)} ${shq(script)} "$@"\n`;
+    writeFileSync(file, shBody, { mode: 0o700 });
     chmodSync(file, 0o700);
     // cmd.exe and PowerShell find it by PATHEXT; Git Bash (Claude Code's shell there) runs the sh one.
     if (WIN) writeFileSync(`${file}.cmd`, `@"${process.execPath}" "${script}" %*\r\n`);

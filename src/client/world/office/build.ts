@@ -11,6 +11,8 @@ import { jukebox } from '../../features/jukebox/world';
 import { bookshelf } from '../../features/bookshelf/world';
 import { cabinet } from '../../features/cabinet/world';
 import { jevBoard } from '../../features/jev/world';
+import { kaviKaren } from '../../features/kavi-board/karen';
+import { kaviBoard } from '../../features/kavi-board/world';
 import { whiteboard } from '../../features/whiteboard/world';
 import { green, tee } from '../../features/golf/world';
 import { stack } from '../stack';
@@ -73,6 +75,8 @@ function floorPlan() {
     hoop,
     whiteboard,
     jevBoard,
+    kaviBoard,
+    kaviKaren,
     clearOfStairs,
   ] as const;
 }
@@ -163,3 +167,6 @@ export function buildOffice(): Office {
 
   return { ...(given as OfficeHandles), group, colliders, interactables, desks, fixtures: () => walls, setLook, setLevel, update };
 }
+
+
+
