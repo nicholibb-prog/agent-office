@@ -130,6 +130,7 @@ const RUN: [ServerMsg, string[]][] = [
   [msg({ t: 'leaveOnMerge', state: { on: true } }), ['leaveOnMerge']],
   [msg({ t: 'chat', name: 'A', color: '#fff', text: 'hi', at: 1 }), ['chat']],
   [msg({ t: 'toast', text: 'hi', level: 'info' }), []],
+  [msg({ t: 'jev', board: { rows: [{ rank: 1, name: 'Ada', score: 1, lines: 1, prs: 0, tasks: 0, breakroomMinutes: 0 }], trophies: [], rankedOn: '2026-10-06' } }), ['jev']],
   [msg({ t: 'floor.enter', peers: [peer('p-a', { floor: 'f2' })], ...floorView('f2') }), [...FLOOR_TOPICS, 'peers']],
 ];
 

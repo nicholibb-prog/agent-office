@@ -63,23 +63,30 @@ export function buildJevLeaderboard(): JevLeaderboardWhiteboard {
     g.fillText('Jev', W / 2, H * 0.1);
     g.font = `700 ${Math.round(H * 0.045)}px ${FONT}`;
     g.fillStyle = '#5c677d';
-    g.fillText('local rankings', W / 2, H * 0.18);
-    const rows = board.rows.slice(0, 6);
+    g.fillText(board.rankedOn ? `as of ${board.rankedOn}` : 'updates at midnight', W / 2, H * 0.18);
+    const extra = Math.max(0, board.rows.length - 8);
+    const rows = board.rows.slice(0, extra ? 7 : 8);
     if (!rows.length) {
       g.fillStyle = '#8d99ae';
       g.font = `700 ${Math.round(H * 0.06)}px ${FONT}`;
-      g.fillText('No scores yet', W / 2, H * 0.5);
+      g.fillText('No agents yet', W / 2, H * 0.5);
     } else {
       rows.forEach((row, i) => {
-        const y = H * (0.32 + i * 0.1);
+        const y = H * (0.3 + i * 0.08);
         g.textAlign = 'left';
         g.fillStyle = i === 0 ? '#ef476f' : '#2b2d42';
-        g.font = `800 ${Math.round(H * 0.055)}px ${FONT}`;
+        g.font = `800 ${Math.round(H * 0.05)}px ${FONT}`;
         g.fillText(`${row.rank}. ${row.name}`, W * 0.08, y);
         g.textAlign = 'right';
         g.fillStyle = '#118ab2';
         g.fillText(String(row.score), W * 0.92, y);
       });
+      if (extra) {
+        g.textAlign = 'left';
+        g.fillStyle = '#8d99ae';
+        g.font = `700 ${Math.round(H * 0.045)}px ${FONT}`;
+        g.fillText(`+${board.rows.length - rows.length} more`, W * 0.08, H * (0.3 + rows.length * 0.08));
+      }
     }
     texture.needsUpdate = true;
   };
