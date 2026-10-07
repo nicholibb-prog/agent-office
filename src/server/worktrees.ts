@@ -4,6 +4,7 @@ import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { LostBranch, WorktreeState } from '../shared/protocol.js';
+import { readOriginUrl, redactUserinfo } from './git/remote-url.js';
 
 export type { WorktreeCleanup, WorktreeState } from '../shared/protocol.js';
 
@@ -89,7 +90,7 @@ export class Worktrees {
         () => (this.fetchError = undefined),
         (err) => {
           // Its first complaint says what's wrong; the last line is advice about access rights.
-          const why = String((err as { stderr?: string }).stderr ?? '').split('\n').find((l) => /^(fatal|error):/.test(l)) ?? gitError(err);
+          const why = redactUserinfo(String((err as { stderr?: string }).stderr ?? '').split('\n').find((l) => /^(fatal|error):/.test(l)) ?? gitError(err));
           if (why !== this.fetchError) console.warn(`agent-office: couldn't fetch origin/${from} in ${this.dir}, so new worktrees start from what's here: ${why}`);
           this.fetchError = why;
         },
@@ -102,11 +103,7 @@ export class Worktrees {
   }
 
   private hasOrigin(): boolean {
-    try {
-      return !!this.gitSync(['remote', 'get-url', 'origin']);
-    } catch {
-      return false;
-    }
+    return readOriginUrl(this.dir, 5_000) !== undefined;
   }
 
   /**
@@ -373,7 +370,8 @@ export function describeWork(s: WorktreeState): string {
 /** The last line git printed, which is the one that says what's wrong. */
 export function gitError(err: unknown): string {
   const e = err as { stderr?: string; message?: string };
-  return String(e.stderr || e.message || err).trim().split('\n').filter(Boolean).pop() ?? 'git failed';
+  const line = String(e.stderr || e.message || err).trim().split('\n').filter(Boolean).pop() ?? 'git failed';
+  return redactUserinfo(line);
 }
 
 function real(p: string): string {

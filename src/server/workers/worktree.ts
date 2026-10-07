@@ -1,15 +1,16 @@
 // A worker's own worktree, or its workspace across repositories: their folder names, what's kept
 // of them in workers.json, making them, keeping each worker's branch up to date, noticing one deleted
 // from under a worker and putting it back, and what becomes of them when the worker goes home.
-import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { WorkerInfo, WorkerRepo } from '../../shared/protocol.js';
-import { normalizeRepo } from '../../shared/floors.js';
+import { originRepo } from '../git/remote-url.js';
 import { officePrompt } from '../prompts.js';
 import { WORKSPACE_FILES, WORKTREES_DIR, Worktrees, describeWork, workspaceOf, type WorktreeCleanup, type WorktreeRef, type WorktreeState } from '../worktrees.js';
 import { midTurn } from './lifecycle.js';
 import type { RepoSource, Worker, WorkerContext, Worktree } from './types.js';
+
+export { originRepo };
 
 /**
  * The folder each checkout gets in a workspace: its folder's name, made safe, with -2, -3… when two
@@ -48,15 +49,6 @@ export function validRepos(raw: unknown): WorkerRepo[] | undefined {
     return [{ floor, name, repo: str(r.repo), dir, path: rel, branch, base, from: str(r.from), pr }];
   });
   return repos.length ? repos : undefined;
-}
-
-/** owner/name of a checkout's origin on GitHub, when it has one. */
-export function originRepo(dir: string): string | undefined {
-  try {
-    return normalizeRepo(execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim());
-  } catch {
-    return undefined;
-  }
 }
 
 /** What starting a worker whose worktree was deleted (see WorkerInfo.lost) says instead. */

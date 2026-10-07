@@ -3,6 +3,7 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { ImageResult } from './decor.js';
 import { changedImageType, type ChangedFile, type ChangeStatus, type ChangesState } from '../shared/protocol.js';
+import { redactUserinfo } from './git/remote-url.js';
 
 // What a worker changed, for the Changes window at its desk: the files it touched and their diff,
 // against the branch the office was opened on. While anyone has the window open, the office polls
@@ -74,7 +75,7 @@ function run(cmd: string, args: string[], cwd: string, timeout = 30_000, env?: R
       if (typeof e.code === 'number') return resolve({ out: stdout, err: stderr, code: e.code });
       if (e.code === 'ENOENT') return reject(new GitError(`${cmd} is not installed on the server`));
       if (e.killed) return reject(new GitError(`${cmd} ${args[0]} took more than ${Math.round(timeout / 1000)}s and was stopped`));
-      reject(new GitError(String(e.message || err)));
+      reject(new GitError(redactUserinfo(String(e.message || err))));
     });
   });
 }
@@ -88,7 +89,7 @@ function runBytes(cmd: string, args: string[], cwd: string, maxBytes: number, ti
       if (typeof e.code === 'number') return reject(new GitError(reason({ out: '', err: stderr.toString('utf8'), code: e.code }, `${cmd} ${args[0]} failed`)));
       if (e.code === 'ENOENT') return reject(new GitError(`${cmd} is not installed on the server`));
       if (e.killed) return reject(new GitError(`${cmd} ${args[0]} took more than ${Math.round(timeout / 1000)}s and was stopped`));
-      reject(new GitError(String(e.message || err)));
+      reject(new GitError(redactUserinfo(String(e.message || err))));
     });
   });
 }
@@ -97,7 +98,7 @@ function runBytes(cmd: string, args: string[], cwd: string, maxBytes: number, ti
 function reason(r: Result, fallback: string): string {
   const lines = r.err.trim().split('\n').map((l) => l.trim()).filter(Boolean);
   const line = lines.find((l) => /^(fatal|error):/i.test(l)) ?? lines[lines.length - 1];
-  return line ? line.replace(/^(fatal|error):\s*/i, '') : fallback;
+  return redactUserinfo(line ? line.replace(/^(fatal|error):\s*/i, '') : fallback);
 }
 
 async function git(args: string[], cwd: string, timeout?: number, env?: Record<string, string>): Promise<string> {
@@ -320,7 +321,7 @@ export class Changes {
       if (!remote) return 'This project has no git remote to push to';
       await git(['push', '-u', remote, s.branch], t.cwd, 120_000, env);
       const r = await run('gh', ['pr', 'create', '--head', s.branch, '--base', s.prBase, '--title', title.trim(), '--body', body], t.cwd, 120_000, env);
-      const url = r.out.trim().split('\n').pop() ?? '';
+      const url = redactUserinfo(r.out.trim().split('\n').pop() ?? '');
       if (r.code !== 0 || !/^https?:\/\//.test(url)) throw new GitError(reason(r, url || 'gh pr create failed'));
       const number = Number(/\/(\d+)$/.exec(url)?.[1] ?? 0);
       this.opened.set(openedKey(repo, s.branch), { number, url });

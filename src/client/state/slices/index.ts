@@ -16,6 +16,7 @@ import { cars } from './cars';
 import { decor } from './decor';
 import { dog } from './dog';
 import { floorPlan } from './floor-plan';
+import { huddle } from './huddle';
 import { jail } from './jail';
 import { jev } from './jev';
 import { jukebox } from './jukebox';
@@ -63,4 +64,5 @@ export const SLICES: readonly Slice[] = [
   accounts,
   signins,
   jev,
+  huddle,
 ];

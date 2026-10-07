@@ -10,6 +10,7 @@ import { pageRoutes } from './pages.js';
 import { searchRoutes } from './search.js';
 import { serviceRoutes } from './services.js';
 import { bridgeRoutes } from './bridge.js';
+import { hqBriefRoutes } from './hq-brief.js';
 
 export const routes: readonly Route[] = [
   // Anyone.
@@ -30,12 +31,17 @@ export const routes: readonly Route[] = [
   bridgeRoutes.kaviFeedGet,
   bridgeRoutes.kaviOutbox,
   bridgeRoutes.kaviOutboxGet,
+  hqBriefRoutes.brief,
+  hqBriefRoutes.seen,
+  hqBriefRoutes.needs,
+  hqBriefRoutes.board,
   pageRoutes.assets,
   pageRoutes.login,
   pageRoutes.claim,
   pageRoutes.join,
   pageRoutes.favicon,
-  // Signed in.
+  // Signed in. The unblock answer is a person at the office, never a bridge token.
+  hqBriefRoutes.answer,
   authRoutes.whoami,
   agentRoutes.models,
   fileRoutes.image,

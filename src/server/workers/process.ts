@@ -4,6 +4,7 @@ import { accessSync, chmodSync, constants, existsSync, mkdirSync, writeFileSync 
 import { execFile, execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { redactUserinfo } from '../git/remote-url.js';
 
 export const WIN = process.platform === 'win32';
 
@@ -69,7 +70,7 @@ export function resolveCommand(cmd: string): string | null {
 export function run(cmd: string, args: string[], cwd: string, timeout = 30_000, env?: Record<string, string>): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(cmd, args, { cwd, encoding: 'utf8', timeout, maxBuffer: 4 * 1024 * 1024, env }, (err, stdout, stderr) => {
-      if (err) reject(new Error((stderr || err.message).trim().split('\n').filter(Boolean).slice(-2).join(' ') || `${cmd} failed`));
+      if (err) reject(new Error(redactUserinfo((stderr || err.message).trim().split('\n').filter(Boolean).slice(-2).join(' ') || `${cmd} failed`)));
       else resolve(stdout.trim());
     });
   });

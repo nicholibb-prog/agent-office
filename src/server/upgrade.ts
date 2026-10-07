@@ -4,6 +4,7 @@ import { mkdir, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { UpgradeState, VersionInfo } from '../shared/protocol.js';
+import { redactUserinfo } from './git/remote-url.js';
 
 /** The install this server runs from (deploy/provision.sh makes it a git checkout). */
 function findAppDir(): string | undefined {
@@ -29,7 +30,7 @@ const tail = (s: string, lines = 25) => s.trim().split('\n').slice(-lines).join(
 function run(cmd: string, args: string[], opts: { cwd?: string; timeout?: number } = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(cmd, args, { cwd: opts.cwd ?? APP_DIR, timeout: opts.timeout ?? 60_000, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8' }, (err, out, errOut) => {
-      if (err) reject(new Error(tail(`${out}\n${errOut}`) || err.message));
+      if (err) reject(new Error(redactUserinfo(tail(`${out}\n${errOut}`) || err.message)));
       else resolve(out.trim());
     });
   });

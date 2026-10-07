@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { SEAT_KEY } from '../../shared/hq-brief.js';
 import type { WorkerStatus } from '../../shared/protocol.js';
 import { clockWork } from './clock.js';
 import type { Worker } from './types.js';
@@ -16,9 +17,24 @@ export type HqLocal = {
   crewKeysLower: string[];
   humanAliases: string[];
   humanMapsTo: string;
+  /** Lowercased desk id or local label → generic seat key (`seat-a`, `desk-1`). */
+  seats: Record<string, string>;
 };
 
-export const EMPTY_HQ: HqLocal = { crewKeysLower: [], humanAliases: [], humanMapsTo: '' };
+export const EMPTY_HQ: HqLocal = { crewKeysLower: [], humanAliases: [], humanMapsTo: '', seats: {} };
+
+function seatMap(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v !== 'string') continue;
+    const key = k.trim().toLowerCase();
+    const seat = v.trim().toLowerCase();
+    if (!key || !SEAT_KEY.test(seat)) continue;
+    out[key] = seat;
+  }
+  return out;
+}
 
 /** Local HQ overrides (gitignored `.agent-office/hq-local.json`). Neutral defaults when absent. */
 export function loadHqLocal(statePath: string): HqLocal {
@@ -30,6 +46,7 @@ export function loadHqLocal(statePath: string): HqLocal {
       crewKeysLower: Array.isArray(raw.crewKeysLower) ? raw.crewKeysLower.map(String) : [],
       humanAliases: Array.isArray(raw.humanAliases) ? raw.humanAliases.map(String) : [],
       humanMapsTo: typeof raw.humanMapsTo === 'string' ? raw.humanMapsTo : '',
+      seats: seatMap(raw.seats),
     };
   } catch {
     return EMPTY_HQ;

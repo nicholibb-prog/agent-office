@@ -1,8 +1,10 @@
 // The meeting room: calling a meeting, stopping it, and clearing the table.
 import { isAgentEffort, isAgentProvider, type MeetingClientMsg, type MeetingRequest } from '../../../shared/protocol.js';
 import { OPEN_CODE_MODEL_MAX } from '../../../shared/providers.js';
+import { MEETING_SEAT } from '../../../shared/seat-provider.js';
 import { str } from '../../office/input.js';
 import { here } from './common.js';
+import { holdSeat } from './huddle.js';
 import type { HandlerMap, ViewPieces } from './types.js';
 
 export const meetingView: ViewPieces['meeting'] = (_ctx, floor) => floor?.meetings.state() ?? { current: null, past: [] };
@@ -31,6 +33,8 @@ export const meetingHandlers = {
       model: msg.model === undefined ? undefined : str(msg.model, OPEN_CODE_MODEL_MAX + 1),
       effort: isAgentEffort(msg.effort) ? msg.effort : undefined,
     };
+    const prompt = str(msg.prompt, 20000);
+    if (holdSeat(ctx, c, floor, MEETING_SEAT, prompt, who)) return;
     ctx.withSignIn(c, ctx.claudeFor(request.provider ?? floor.workers.officeDefault.provider), () => ctx.withFreshBase(c, floor, () => ctx.warn(c, floor.meetings.start(request, who, c.accountId))));
   },
   'meeting.stop'(ctx, c) {

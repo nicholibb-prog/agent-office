@@ -2,6 +2,7 @@
 import type { Ctx } from '../../core/context';
 import { aside, hintTitle, key, onE } from '../../core/hint';
 import { saveSettings, store } from '../../state';
+import { normalizeRepo } from '../../../shared/floors';
 import { openBookshelf } from './ui';
 import { clip, toast } from '../../ui/dom';
 
@@ -12,10 +13,10 @@ declare module '../../world/types' {
   }
 }
 
-/** The project on GitHub, from the floor's origin remote, when that's where it is. */
+/** The project on GitHub, from the floor's origin (`owner/repo`, or a github.com URL), when that's where it is. */
 function githubUrl(remote?: string): string | undefined {
-  const m = /github\.com[:/]([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/.exec(remote ?? '');
-  return m ? `https://github.com/${m[1]}` : undefined;
+  const repo = normalizeRepo(remote);
+  return repo ? `https://github.com/${repo}` : undefined;
 }
 
 export function installBookshelf(ctx: Ctx) {
