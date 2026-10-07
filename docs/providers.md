@@ -196,7 +196,7 @@ interface SeatAdapter {
 
 Honest words are only `offline`, `not_connected`, `queued`, `idle`, and `working`.
 
-- `offline` means the provider was reached for and did not answer (down or refused). A closed office is not `offline`; see [Open and closed](#open-and-closed).
+- `offline` means the provider was reached for and did not answer (down or refused). A closed office is not `offline`; see [Open and Closed (owner decision)](#open-and-closed-owner-decision).
 - `not_connected` means the tool or the credential is absent. The reason shown is `not connected — needs owner`.
 - `idle` means reachable, with no run in flight.
 - `working` means a real run or request is in flight. The chip clears when that promise settles, including when it errors. A missing provider is never WORKING. Chat does not force WORKING. `probe()` never makes a paid call and never starts a run. In the paid-adapter step a paid adapter's `probe()` is key presence only, or one documented free endpoint. That free endpoint still counts against the daily cap and is rate-limited.
@@ -416,7 +416,7 @@ type ProviderStatus = {
 
 Decay never promotes a state. A timer can move `working` or `idle` only toward `stale`, and `stale` only toward `offline`. It cannot move `stale` or `offline` back up, and it cannot move `needs-owner`. Today's chips still use 15 minutes to leave `working` (`WORKING_LEASE_MS`) and 45 minutes to reach `offline` (`OFFLINE_AFTER_MS`). The host-reality proposal, step 3, is a tighter grey: no real event for 10 minutes goes grey, whatever the row claims. That step is not decided. Until the owner's own Yes, the shim keeps today's lease times. A self-report alone never shows `working`. Today's `#11` chip still paints a fresh crew push as WORKING (Current state). That is the gap this step closes. Once it is built, the chip on screen follows this contract. `working` needs a real adapter, hook, or terminal event that is still in flight. The words shown for `needs-owner` are "Needs owner".
 
-Closing the office is not an event and not a fault. While it is closed, no row is written and no alert fires. After it opens again, a row with no real event since the close decays by the usual rules, because nothing new is known, but no alert or banner is raised for the closed span. See [Open and closed](#open-and-closed).
+Closing the office is not an event and not a fault. While it is closed, no row is written and no alert fires. After it opens again, a row with no real event since the close decays by the usual rules, because nothing new is known, but no alert or banner is raised for the closed span. See [Open and Closed (owner decision)](#open-and-closed-owner-decision).
 
 Each status carries the source that wrote it: `bridge-token`, `office-session`, `adapter-run`, `ollama-probe`, `hook`, or `file-replay`. A row from the shared bridge token is tagged `bridge-token`. That tag cannot override office-observed state, which is an `office-session`, an `adapter-run`, a `hook`, or a terminal event. It cannot replace that state, clear it, or move it to `working`. It also cannot resolve `needs-owner` or mark an office-launched run done. The audit records what today's `applyCrewPresence` still does. This contract does not keep that as a second rule.
 
@@ -528,11 +528,15 @@ Then the meeting room, and the rest.
 
 **Paid cloud adapters,** after plugin chairs. `cursor-cloud-agent` and `openai` may call their fixed hosts only when `AO_PAID_ENABLED=1`, and only after the owner's own Yes on that key. Missing or any other value means every paid adapter is off, even with a key present. That Yes does not set the flag. Each launch is code-tier and money-tier and needs its own session confirm. A pool claim or bot text does not launch. `probe()` stays key presence, or one documented free endpoint that counts against the daily cap. Short-lived runs stay hidden. A guest chair still needs a session confirm and a free slot under the cap. Per-provider and per-project spend caps apply. Each call reserves before it starts, settles after, and releases on failure. Stop paid halts every paid call at once. No automatic retry.
 
-## Open and closed
+## Open and Closed (owner decision)
 
-The owner's rule. It applies now and is not part of the proposal below. The office has no set closing time. It is open while the owner runs it, and bots may work any hour while it is open. It closes only when the owner closes it, by a manual shutdown or by the host sleeping. There is no schedule, no timer, and no auto-close.
+The owner's rule. It applies now and is not part of the proposal below.
 
-When it is closed, the UI shows "Closed since <time>", where the time is the real time it closed: the time the office recorded on a manual shutdown, or the last real event before the host slept. Closed is a normal state, not an Offline alarm. It raises no alert, no banner, and no Needs owner item. Seat chips are not marked `offline` because the office was closed.
+The office has no set closing time. It closes only when the owner closes it (manual shutdown or sleeping the host). Never add a schedule, timer, or automatic close.
+
+While the office is open, bots may work around the clock. Open and Closed are first-class normal states. Closed is not Offline and is not an alarm. When closed, show "Closed since HH:MM" using the actual close time (the time the office recorded on a manual shutdown, or the last real event before the host slept). It raises no alert, no banner, and no Needs owner item. Seat chips are not marked `offline` because the office was closed.
+
+On reopen, the first glance is a since-close delta (what finished, what is blocked, what needs owner).
 
 ## Host reality: open while the owner runs it (PROPOSAL, needs owner Yes)
 
