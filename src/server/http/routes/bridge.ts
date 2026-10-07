@@ -54,6 +54,8 @@ const LOOKALIKE: Record<string, string> = {
   l: 'i',
   L: 'i',
   '\u0131': 'i',
+  '\u00a1': 'i',
+  '\u0138': 'k',
   '\u03bf': 'o',
   '\u039f': 'o',
   '\u03ba': 'k',
