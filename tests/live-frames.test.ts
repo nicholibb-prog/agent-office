@@ -41,16 +41,16 @@ const frame = (data = PNG, mime = 'image/png') => ({ mime, data: data.toString('
 
 test('off by default: a seat cannot push until an office person switches it on', async () => {
   const { dir, ctx, r, store } = setup();
-  const tok = issueSeatToken(dir, 'seat-a');
-  assert.equal(store.enabled('seat-a'), false);
+  const tok = issueSeatToken(dir, 'seat-1');
+  assert.equal(store.enabled('seat-1'), false);
   const res = await call(r.push, ctx, req('POST', { 'x-bridge-token': tok }, frame()));
   assert.equal(res.status, 409);
-  assert.equal(store.frame('seat-a'), undefined);
+  assert.equal(store.frame('seat-1'), undefined);
 });
 
 test('push auth: no token, bad token and shared token are rejected', async () => {
   const { ctx, r, store } = setup(true);
-  store.setEnabled('seat-a', true);
+  store.setEnabled('seat-1', true);
   assert.equal((await call(r.push, ctx, req('POST', {}, frame()))).status, 403, 'session is not a seat');
   assert.equal((await call(r.push, ctx, req('POST', { 'x-bridge-token': 'nope'.repeat(10) }, frame()))).status, 401);
   assert.equal((await call(r.push, ctx, req('POST', { 'x-bridge-token': 'c'.repeat(64) }, frame()))).status, 403);
@@ -60,55 +60,55 @@ test('push auth: no token, bad token and shared token are rejected', async () =>
 
 test('the seat comes from the token, never from the body', async () => {
   const { dir, ctx, r, store } = setup();
-  const tok = issueSeatToken(dir, 'seat-a');
-  store.setEnabled('seat-a', true);
-  store.setEnabled('seat-b', true);
-  const res = await call(r.push, ctx, req('POST', { 'x-bridge-token': tok }, { ...frame(), seat: 'seat-b', name: 'seat-b' }));
+  const tok = issueSeatToken(dir, 'seat-1');
+  store.setEnabled('seat-1', true);
+  store.setEnabled('seat-2', true);
+  const res = await call(r.push, ctx, req('POST', { 'x-bridge-token': tok }, { ...frame(), seat: 'seat-2', name: 'seat-2' }));
   assert.equal(res.status, 200);
-  assert.ok(store.frame('seat-a'));
-  assert.equal(store.frame('seat-b'), undefined);
+  assert.ok(store.frame('seat-1'));
+  assert.equal(store.frame('seat-2'), undefined);
 });
 
 test('size cap, image-type check and rate cap', async () => {
   const { dir, ctx, r, store } = setup();
-  const tok = issueSeatToken(dir, 'seat-a');
-  store.setEnabled('seat-a', true);
+  const tok = issueSeatToken(dir, 'seat-1');
+  store.setEnabled('seat-1', true);
   const big = Buffer.concat([PNG, Buffer.alloc(2048)]);
   assert.equal((await call(r.push, ctx, req('POST', { 'x-bridge-token': tok }, frame(big)))).status, 413);
   assert.equal((await call(r.push, ctx, req('POST', { 'x-bridge-token': tok }, frame(Buffer.from('<svg/>'), 'image/png')))).status, 415);
   assert.equal((await call(r.push, ctx, req('POST', { 'x-bridge-token': tok }, frame()))).status, 200);
   assert.equal((await call(r.push, ctx, req('POST', { 'x-bridge-token': tok }, frame()))).status, 429);
   const t = Date.now();
-  assert.equal(store.push('seat-a', 'image/png', PNG, t + 300).ok, true);
+  assert.equal(store.push('seat-1', 'image/png', PNG, t + 300).ok, true);
 });
 
 test('viewing needs an office session; seat tokens cannot view; no frame = no live feed', async () => {
   const anon = setup(false);
-  anon.store.setEnabled('seat-a', true);
-  anon.store.push('seat-a', 'image/png', PNG);
-  assert.equal((await call(anon.r.frame, anon.ctx, req('GET', {}), '/api/live/frame/seat-a')).status, 401);
+  anon.store.setEnabled('seat-1', true);
+  anon.store.push('seat-1', 'image/png', PNG);
+  assert.equal((await call(anon.r.frame, anon.ctx, req('GET', {}), '/api/live/frame/seat-1')).status, 401);
   assert.equal((await call(anon.r.seats, anon.ctx, req('GET', {}))).status, 401);
-  assert.equal((await call(anon.r.toggle, anon.ctx, req('POST', {}, { seat: 'seat-a', on: false }))).status, 401);
-  const tok = issueSeatToken(anon.dir, 'seat-a');
-  assert.equal((await call(anon.r.frame, anon.ctx, req('GET', { 'x-bridge-token': tok }), '/api/live/frame/seat-a')).status, 403);
+  assert.equal((await call(anon.r.toggle, anon.ctx, req('POST', {}, { seat: 'seat-1', on: false }))).status, 401);
+  const tok = issueSeatToken(anon.dir, 'seat-1');
+  assert.equal((await call(anon.r.frame, anon.ctx, req('GET', { 'x-bridge-token': tok }), '/api/live/frame/seat-1')).status, 403);
 
   const s = setup(true);
-  assert.equal((await call(s.r.frame, s.ctx, req('GET', {}), '/api/live/frame/seat-a')).status, 404);
-  s.store.setEnabled('seat-a', true);
-  s.store.push('seat-a', 'image/png', PNG);
-  const ok = await call(s.r.frame, s.ctx, req('GET', {}), '/api/live/frame/seat-a');
+  assert.equal((await call(s.r.frame, s.ctx, req('GET', {}), '/api/live/frame/seat-1')).status, 404);
+  s.store.setEnabled('seat-1', true);
+  s.store.push('seat-1', 'image/png', PNG);
+  const ok = await call(s.r.frame, s.ctx, req('GET', {}), '/api/live/frame/seat-1');
   assert.equal(ok.status, 200);
   assert.ok(Buffer.isBuffer(ok.body) && ok.body.equals(PNG));
-  assert.equal(s.store.frame('seat-a', Date.now() + 11_000), undefined, 'stale frame is no live feed');
-  s.store.setEnabled('seat-a', false);
-  assert.equal(s.store.frame('seat-a'), undefined, 'switching off drops the frame');
+  assert.equal(s.store.frame('seat-1', Date.now() + 11_000), undefined, 'stale frame is no live feed');
+  s.store.setEnabled('seat-1', false);
+  assert.equal(s.store.frame('seat-1'), undefined, 'switching off drops the frame');
 });
 
 test('frames stay in memory: nothing is written to the data dir', async () => {
   const { dir, ctx, r, store } = setup();
-  const tok = issueSeatToken(dir, 'seat-a');
+  const tok = issueSeatToken(dir, 'seat-1');
   const before = readdirSync(dir).sort();
-  store.setEnabled('seat-a', true);
+  store.setEnabled('seat-1', true);
   await call(r.push, ctx, req('POST', { 'x-bridge-token': tok }, frame()));
   assert.deepEqual(readdirSync(dir).sort(), before);
 });
@@ -121,15 +121,15 @@ test('desk face: idle has no live field (unchanged); working with no frame says 
 
 test('stale frames are deleted from memory by frame() and list()', () => {
   const s = new LiveFrames({ maxBytes: 1024, minIntervalMs: 0, staleMs: 1000 });
-  s.setEnabled('seat-a', true);
-  s.setEnabled('seat-b', true);
+  s.setEnabled('seat-1', true);
+  s.setEnabled('seat-2', true);
   const t = Date.now();
-  s.push('seat-a', 'image/png', PNG, t);
-  s.push('seat-b', 'image/png', PNG, t);
-  assert.equal(s.frame('seat-a', t + 2000), undefined);
-  assert.equal(s.held('seat-a'), false, 'frame() dropped it');
-  assert.deepEqual(s.list(t + 2000), [{ seat: 'seat-a', live: false }, { seat: 'seat-b', live: false }]);
-  assert.equal(s.held('seat-b'), false, 'list() dropped it');
+  s.push('seat-1', 'image/png', PNG, t);
+  s.push('seat-2', 'image/png', PNG, t);
+  assert.equal(s.frame('seat-1', t + 2000), undefined);
+  assert.equal(s.held('seat-1'), false, 'frame() dropped it');
+  assert.deepEqual(s.list(t + 2000), [{ seat: 'seat-1', live: false }, { seat: 'seat-2', live: false }]);
+  assert.equal(s.held('seat-2'), false, 'list() dropped it');
 });
 
 test('drive frames: off by default per seat, served with source=drive once switched on', async () => {
