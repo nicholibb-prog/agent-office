@@ -6,6 +6,7 @@ import path from 'node:path';
 import type { Ctx } from '../../office/context.js';
 import type { ChatLine } from '../../../shared/protocol.js';
 import { send } from '../util.js';
+import { readKaviDesk } from '../../kavi-desk.js';
 import type { Route } from '../router.js';
 
 const BRIDGE_FAILED = 'Bridge failed';
@@ -325,6 +326,16 @@ export const bridgeRoutes = {
       } catch {
         return send(res, 500, { error: BRIDGE_FAILED });
       }
+    },
+  },
+  kaviDesk: {
+    method: 'GET' as const,
+    path: '/api/bridge/kavi-desk',
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!bridgeGate(ctx, req, res)) return;
+      // Read-only folder twin. Path comes from the local env only, never from the request.
+      return send(res, 200, readKaviDesk(process.env.AGENT_OFFICE_KAVI_BRIDGE_DIR || undefined));
     },
   },
 } satisfies Record<string, Route>;

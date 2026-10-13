@@ -31,6 +31,7 @@ export const routes: readonly Route[] = [
   bridgeRoutes.kaviFeedGet,
   bridgeRoutes.kaviOutbox,
   bridgeRoutes.kaviOutboxGet,
+  bridgeRoutes.kaviDesk,
   hqBriefRoutes.brief,
   hqBriefRoutes.seen,
   hqBriefRoutes.needs,
