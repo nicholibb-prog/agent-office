@@ -4,9 +4,13 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, utimesSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { DRIVE_LINK, mergeThread, noteBody, readThread, threadFs } from '../src/server/kavi-thread.js';
-import { sendMessage, BRIDGE_ID_MARKER, KAVI_BRIDGE_FOLDER_ID } from '../src/server/kavi-send.js';
+import { driveLink, mergeThread, noteBody, readThread, threadFs } from '../src/server/kavi-thread.js';
+import { sendMessage, BRIDGE_ID_MARKER } from '../src/server/kavi-send.js';
 import { timeLabel } from '../src/client/features/kavi-board/send-panel.js';
+
+// Obviously fake Bridge folder id for tests; the real one lives only in the machine's environment.
+const KAVI_BRIDGE_FOLDER_ID = 'FAKE_folder_id_for_tests_0001';
+process.env.AGENT_OFFICE_KAVI_BRIDGE_FOLDER_ID = KAVI_BRIDGE_FOLDER_ID;
 
 function bridge() {
   const root = path.join(tmpdir(), 'ao-kthread-' + process.pid + '-' + Math.random().toString(36).slice(2));
@@ -40,8 +44,8 @@ test('readThread: owner notes from to-kavi, replies from to-george, each with it
   const t = readThread(r);
   assert.equal(t.state, 'ok');
   assert.equal(t.live, false);
-  assert.equal(t.driveLink, DRIVE_LINK);
-  assert.ok(DRIVE_LINK.endsWith(KAVI_BRIDGE_FOLDER_ID));
+  assert.equal(t.driveLink, driveLink());
+  assert.equal(t.driveLink, 'https://drive.google.com/drive/folders/' + KAVI_BRIDGE_FOLDER_ID);
   assert.deepEqual(t.items.map((i) => [i.from, i.text, i.at]), [
     ['kavi', 'Earlier hello', new Date(T - 60_000).toISOString()],
     ['owner', 'first note', new Date(T).toISOString()],
@@ -67,7 +71,7 @@ test('Major Files reply dir is refused before any fs call', () => {
   const orig = { ...threadFs };
   const calls: string[] = [];
   threadFs.realpathSync = (p: string) => (calls.push('real:' + p), orig.realpathSync(p));
-  threadFs.readdirSync = (p: string) => (calls.push('dir:' + p), orig.readdirSync(p));
+  threadFs.listNames = (p: string, n: number) => (calls.push('dir:' + p), orig.listNames(p, n));
   try {
     for (const p of ['C:\\Users\\owner\\Documents\\Major Files\\Bridge', '/home/owner/major_files/bridge', '/x/MAJOR-FILES']) {
       const t = readThread(p);
@@ -117,13 +121,13 @@ test('a symlinked to-kavi pointing at Major Files is refused before it is listed
   rmSync(path.join(r, 'to-kavi'), { recursive: true });
   symlinkSync(mf, path.join(r, 'to-kavi'));
   const listed: string[] = [];
-  const orig = threadFs.readdirSync;
-  threadFs.readdirSync = (p: string) => (listed.push(p), orig(p));
+  const orig = threadFs.listNames;
+  threadFs.listNames = (p: string, n: number) => (listed.push(p), orig(p, n));
   try {
     assert.deepEqual(readThread(r).items, []);
     assert.ok(!listed.some((p) => /major files/i.test(p)), 'Major Files never listed');
   } finally {
-    threadFs.readdirSync = orig;
+    threadFs.listNames = orig;
   }
   rmSync(r, { recursive: true, force: true });
   rmSync(path.join(tmpdir(), 'ao-kmf-' + process.pid), { recursive: true, force: true });
@@ -182,4 +186,37 @@ test('a thread with only owner notes has no reply items (the screen says No repl
   const t = readThread(r);
   assert.deepEqual(t.items.map((i) => i.from), ['owner']);
   rmSync(r, { recursive: true, force: true });
+});
+
+test('scan cap: a folder is read lazily and never past MAX_SCAN names', () => {
+  const r = bridge();
+  for (let i = 0; i < MAX_SCAN + 120; i++) writeFileSync(path.join(r, 'to-george', `n${i}.md`), 'x');
+  const orig = threadFs.listNames;
+  const got: number[] = [];
+  threadFs.listNames = (p: string, n: number) => {
+    const names = orig(p, n);
+    got.push(names.length);
+    return names;
+  };
+  try {
+    readThread(r);
+  } finally {
+    threadFs.listNames = orig;
+  }
+  assert.ok(got.length > 0);
+  for (const n of got) assert.ok(n <= MAX_SCAN, `listed ${n}`);
+  assert.equal(Math.max(...got), MAX_SCAN);
+  rmSync(r, { recursive: true, force: true });
+});
+
+test('no folder id configured: the thread offers no Drive link', () => {
+  const prev = process.env.AGENT_OFFICE_KAVI_BRIDGE_FOLDER_ID;
+  delete process.env.AGENT_OFFICE_KAVI_BRIDGE_FOLDER_ID;
+  try {
+    const r = bridge();
+    assert.equal(readThread(r).driveLink, '');
+    rmSync(r, { recursive: true, force: true });
+  } finally {
+    process.env.AGENT_OFFICE_KAVI_BRIDGE_FOLDER_ID = prev;
+  }
 });

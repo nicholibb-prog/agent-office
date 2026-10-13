@@ -127,7 +127,7 @@ export function mountKaviSendPanel(): KaviPc {
     fetch('/api/kavi/thread', { credentials: 'same-origin' })
       .then((r) => (r.ok ? (r.json() as Promise<Thread>) : Promise.reject(new Error(String(r.status)))))
       .then((t) => {
-        link = t.driveLink || link;
+        link = t.driveLink || "";
         if (t.state === 'unconfigured') setStatus('The Bridge folder is not set up on this machine yet.', true);
         else if (t.state === 'unreachable') setStatus('The Bridge folder is unreachable.', true);
         paint(t.items || []);

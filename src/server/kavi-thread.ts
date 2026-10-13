@@ -2,22 +2,36 @@
 // (to-george/*.md|*.txt), read locally from the synced Bridge folder and merged by time.
 // Read only. Major Files is refused before any fs call. There is no typing state: replies are
 // files that already exist, so the thread can only show what has arrived.
-import { lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { lstatSync, opendirSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { isMajorFiles } from './major-files.js';
-import { KAVI_BRIDGE_FOLDER_ID, TO_KAVI } from './kavi-send.js';
+import { bridgeFolderId, TO_KAVI } from './kavi-send.js';
 
 export const TO_GEORGE = 'to-george';
 export const MAX_THREAD = 60;
 export const MAX_TEXT = 4000;
-export const DRIVE_LINK = `https://drive.google.com/drive/folders/${KAVI_BRIDGE_FOLDER_ID}`;
+/** The Open-in-Drive link for the configured Bridge folder, or '' when none is configured. */
+export function driveLink(): string {
+  const id = bridgeFolderId();
+  return id ? `https://drive.google.com/drive/folders/${encodeURIComponent(id)}` : '';
+}
 const OWNER_NOTE = /^owner-to-kavi-.+\.md$/;
 const REPLY = /\.(md|txt)$/i;
 
 /** fs calls the thread makes; tests spy on them. */
 export const threadFs = {
   realpathSync: (p: string) => realpathSync(p),
-  readdirSync: (p: string) => readdirSync(p),
+  /** At most `max` entry names, read lazily so a huge folder is never listed in full. */
+  listNames: (p: string, max: number): string[] => {
+    const d = opendirSync(p);
+    const out: string[] = [];
+    try {
+      for (let e = d.readSync(); e && out.length < max; e = d.readSync()) out.push(e.name);
+    } finally {
+      d.closeSync();
+    }
+    return out;
+  },
 };
 
 export interface ThreadItem {
@@ -71,7 +85,7 @@ function readSide(root: string, name: string, match: RegExp, from: ThreadItem['f
   if (!dir) return [];
   let names: string[];
   try {
-    names = threadFs.readdirSync(dir);
+    names = threadFs.listNames(dir, MAX_SCAN);
   } catch {
     return [];
   }
@@ -107,7 +121,7 @@ function readSide(root: string, name: string, match: RegExp, from: ThreadItem['f
 }
 
 export function readThread(dir: string | undefined): KaviThread {
-  const base = { items: [] as ThreadItem[], live: false as const, driveLink: DRIVE_LINK };
+  const base = { items: [] as ThreadItem[], live: false as const, driveLink: driveLink() };
   if (!dir) return { ...base, state: 'unconfigured' };
   if (isMajorFiles(dir)) return { ...base, state: 'unreachable' };
   let root: string;
