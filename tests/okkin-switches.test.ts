@@ -12,7 +12,7 @@ import { loadPowerConfig } from '../src/server/hq/okkin-power.js';
 import { benchText, chosenIndex, stopsView, switchView, type LoftLike } from '../src/client/features/okkin-loft/model.js';
 
 // textPlane draws on a canvas: a stand-in 2D context is enough to build the scene in node.
-const ctx2d = new Proxy({}, { get: (_t, k) => (k === 'measureText' ? () => ({ width: 40 }) : () => undefined), set: () => true });
+const ctx2d = new Proxy({}, { get: (_t, k) => (k === 'measureText' ? () => ({ width: 40 }) : () => ({ addColorStop() {} })), set: () => true });
 (globalThis as { document?: unknown }).document ??= { createElement: () => ({ getContext: () => ctx2d, width: 0, height: 0 }) };
 
 const empty = () => mkdtempSync(path.join(tmpdir(), 'ao-switches-'));

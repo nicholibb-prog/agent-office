@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { mesh, roundedBox, textPlane, toon } from '../../world/toon';
 import type { Collider, Interactable } from '../../world/types';
 import type { Fixture } from '../../world/office/fixture';
-import { OKKIN_CONSOLE, OKKIN_LOFT, OKKIN_MODELS } from '../../../shared/okkin-loft';
+import { OKKIN_CONSOLE, OKKIN_LOFT, OKKIN_MODELS, OKKIN_PEDESTAL, OKKIN_SCROLL, OKKIN_SIGN } from '../../../shared/okkin-loft';
+import { buildPedestal, buildScroll, buildSign } from './regalia';
 
 export type LoftState = {
   power: 'on' | 'off';
@@ -37,7 +38,9 @@ export function buildOkkinLoft(): OkkinLoftView {
   const cz = (L.minZ + L.maxZ) / 2;
   const len = L.maxZ - L.minZ;
   // Dais: a thin aluminum plinth, just a visual (0.04 high), so walking is unchanged.
-  group.add(mesh(roundedBox(L.maxX - L.minX, 0.04, len, 0.02), toon('#d9dde3'), (L.minX + L.maxX) / 2, 0.02, cz, false));
+  // The stone pedestal everything stands on, with the engraving cut into its front.
+  const PH = OKKIN_PEDESTAL.height;
+  group.add(buildPedestal().group);
   const rackMat = toon('#2b2f36');
   const glassMat = toon('#9fb4c7', { transparent: true, opacity: 0.35 });
   const rackX = L.maxX - L.rackDepth / 2 - 0.05;
@@ -46,13 +49,13 @@ export function buildOkkinLoft(): OkkinLoftView {
   const rw = len / racks - 0.08;
   for (let i = 0; i < racks; i++) {
     const z = L.minZ + (i + 0.5) * (len / racks);
-    group.add(mesh(roundedBox(L.rackDepth, L.rackHeight, rw, 0.03), rackMat, rackX, L.rackHeight / 2 + 0.04, z));
-    group.add(mesh(new THREE.BoxGeometry(0.01, L.rackHeight - 0.2, rw - 0.1), glassMat, rackX - L.rackDepth / 2 - 0.01, L.rackHeight / 2 + 0.04, z, false));
+    group.add(mesh(roundedBox(L.rackDepth, L.rackHeight, rw, 0.03), rackMat, rackX, L.rackHeight / 2 + PH, z));
+    group.add(mesh(new THREE.BoxGeometry(0.01, L.rackHeight - 0.2, rw - 0.1), glassMat, rackX - L.rackDepth / 2 - 0.01, L.rackHeight / 2 + PH, z, false));
     for (let r = 0; r < 9; r++) {
       const m = new THREE.MeshBasicMaterial({ color: '#2a3b2a' });
       leds.push(m);
       const led = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.03, 0.05), m);
-      led.position.set(rackX - L.rackDepth / 2 - 0.02, 0.35 + r * 0.2, z - rw / 3);
+      led.position.set(rackX - L.rackDepth / 2 - 0.02, PH + 0.3 + r * 0.2, z - rw / 3);
       group.add(led);
     }
   }
@@ -60,13 +63,22 @@ export function buildOkkinLoft(): OkkinLoftView {
   const glowMat = new THREE.MeshBasicMaterial({ color: '#66d9ff', transparent: true, opacity: 0.0 });
   const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.5, len - 0.2), glowMat);
   glow.rotation.x = -Math.PI / 2;
-  glow.position.set(rackX - L.rackDepth / 2 - 0.25, 0.05, cz);
+  glow.position.set(rackX - L.rackDepth / 2 - 0.25, PH + 0.01, cz);
   group.add(glow);
-  // Nameplate above the racks.
-  const plate = textPlane('OKKIN');
-  plate.position.set(rackX - L.rackDepth / 2 - 0.02, L.rackHeight + 0.4, cz);
-  plate.rotation.y = -Math.PI / 2;
-  group.add(plate);
+  // The OKKIN sign above it all, facing the floor; the 日光 scroll on its stand at the north end.
+  const sign = buildSign();
+  sign.position.set(rackX - L.rackDepth / 2, OKKIN_SIGN.y, cz);
+  sign.rotation.y = -Math.PI / 2;
+  group.add(sign);
+  for (const sx of [-1, 1]) {
+    const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 6.8 - OKKIN_SIGN.y - OKKIN_SIGN.height / 2, 6), toon('#c9a227'));
+    chain.position.set(rackX - L.rackDepth / 2, (6.8 + OKKIN_SIGN.y + OKKIN_SIGN.height / 2) / 2, cz + sx * (OKKIN_SIGN.width / 2 - 0.15));
+    group.add(chain);
+  }
+  const scroll = buildScroll();
+  scroll.position.set(OKKIN_SCROLL.x, 0, OKKIN_SCROLL.z);
+  scroll.rotation.y = -Math.PI / 2;
+  group.add(scroll);
 
   // The console: a pedestal in front of the racks with the POWER switch (left) and the MODEL dial (right), facing -x.
   const C = OKKIN_CONSOLE;
@@ -158,7 +170,9 @@ export function buildOkkinLoft(): OkkinLoftView {
   };
   paint();
   const colliders: Collider[] = [
-    { minX: L.maxX - L.rackDepth - 0.1, maxX: L.maxX, minZ: L.minZ, maxZ: L.maxZ, top: L.rackHeight + 0.04 },
+    { minX: OKKIN_PEDESTAL.minX, maxX: OKKIN_PEDESTAL.maxX, minZ: OKKIN_PEDESTAL.minZ, maxZ: OKKIN_PEDESTAL.maxZ, top: OKKIN_PEDESTAL.height },
+    { minX: L.maxX - L.rackDepth - 0.1, maxX: L.maxX, minZ: L.minZ, maxZ: L.maxZ, top: L.rackHeight + OKKIN_PEDESTAL.height },
+    { minX: OKKIN_SCROLL.x - 0.25, maxX: OKKIN_SCROLL.x + 0.25, minZ: OKKIN_SCROLL.z - OKKIN_SCROLL.width / 2, maxZ: OKKIN_SCROLL.z + OKKIN_SCROLL.width / 2, top: OKKIN_SCROLL.bottom + OKKIN_SCROLL.height + 0.25 },
     { minX: C.x - C.depth / 2, maxX: C.x + C.depth / 2, minZ: C.z - C.width / 2, maxZ: C.z + C.width / 2, top: C.height },
   ];
   // E or a click on the switch or the dial: see installOkkinLoft (index.ts) for what they do.
