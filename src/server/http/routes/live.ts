@@ -5,6 +5,7 @@ import type http from 'node:http';
 import type { Ctx } from '../../office/context.js';
 import { liveFrames, LIVE_MAX_BYTES, type LiveFrames } from '../../live-frames.js';
 import { readBody, send } from '../util.js';
+import { readDriveFrame } from '../../drive-frames.js';
 import { bridgeShape, seatGate } from './bridge.js';
 import type { Route } from '../router.js';
 
@@ -76,9 +77,14 @@ export function liveRoutesFor(store: LiveFrames) {
       handle(ctx: Ctx, { req, res, path }: R) {
         if (!sessionGate(ctx, req, res)) return;
         const seat = decodeURIComponent(String(path ?? req.url ?? '').split('?')[0].replace(/^.*\/api\/live\/frame\//, '')).toLowerCase();
-        const f = store.frame(seat);
+        // Pushed frames first (live); else the synced Drive Bridge file (near-live). Both only when switched on.
+        const pushed = store.frame(seat);
+        const f = pushed ?? (store.enabled(seat) ? readDriveFrame(seat) : undefined);
         if (!f) return send(res, 404, { error: 'no live feed' });
-        res.writeHead(200, { 'content-type': f.mime, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'x-frame-at': String(f.at) });
+        res.writeHead(200, {
+          'content-type': f.mime, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
+          'x-frame-at': String(f.at), 'x-frame-source': pushed ? 'push' : 'drive',
+        });
         res.end(f.bytes);
       },
     },

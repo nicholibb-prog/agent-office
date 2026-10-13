@@ -131,3 +131,28 @@ test('stale frames are deleted from memory by frame() and list()', () => {
   assert.deepEqual(s.list(t + 2000), [{ seat: 'seat-a', live: false }, { seat: 'seat-b', live: false }]);
   assert.equal(s.held('seat-b'), false, 'list() dropped it');
 });
+
+test('drive frames: off by default per seat, served with source=drive once switched on', async () => {
+  const s = setup(true);
+  const d = path.join(s.dir, 'bridge');
+  mkdirSync(path.join(d, 'live'), { recursive: true });
+  writeFileSync(path.join(d, 'live', 'seat-1.jpg'), Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(32)]));
+  const prev = process.env.AO_BRIDGE_LOCAL_DIR;
+  process.env.AO_BRIDGE_LOCAL_DIR = d;
+  try {
+    assert.equal((await call(s.r.frame, s.ctx, req('GET', {}), '/api/live/frame/seat-1')).status, 404, 'off by default');
+    s.store.setEnabled('seat-1', true);
+    let hdrs: Record<string, string> = {};
+    let status = 0;
+    const res = { writeHead(c: number, h: Record<string, string>) { status = c; hdrs = h ?? {}; return res; }, setHeader() {}, end() {} } as unknown as ServerResponse;
+    await (s.r.frame.handle as (c: never, a: unknown) => unknown)(s.ctx, { req: req('GET', {}), res, path: '/api/live/frame/seat-1' });
+    assert.equal(status, 200);
+    assert.equal(hdrs['x-frame-source'], 'drive');
+    const anon = setup(false);
+    anon.store.setEnabled('seat-1', true);
+    assert.equal((await call(anon.r.frame, anon.ctx, req('GET', {}), '/api/live/frame/seat-1')).status, 401, 'session still required');
+  } finally {
+    if (prev === undefined) delete process.env.AO_BRIDGE_LOCAL_DIR;
+    else process.env.AO_BRIDGE_LOCAL_DIR = prev;
+  }
+});
