@@ -6,10 +6,14 @@ import { mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, symlinkSyn
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
-  BRIDGE_ID_MARKER, KAVI_BRIDGE_FOLDER_ID, MAX_FILE_BYTES, isMajorFiles, readBack, sendFile, sendMessage, safeName,
+  BRIDGE_ID_MARKER, MAX_FILE_BYTES, isMajorFiles, readBack, sendFile, sendMessage, safeName,
 } from '../src/server/kavi-send.js';
 import { requestHandler } from '../src/server/http/router.js';
 import { kaviSendRoutes } from '../src/server/http/routes/kavi-send.js';
+
+// Obviously fake Bridge folder id for tests; the real one lives only in the machine's environment.
+const KAVI_BRIDGE_FOLDER_ID = 'FAKE_folder_id_for_tests_0001';
+process.env.AGENT_OFFICE_KAVI_BRIDGE_FOLDER_ID = KAVI_BRIDGE_FOLDER_ID;
 
 function bridge(id = KAVI_BRIDGE_FOLDER_ID) {
   const root = path.join(tmpdir(), 'ao-kbridge-' + process.pid + '-' + Math.random().toString(36).slice(2));
@@ -24,7 +28,7 @@ const files = (root: string) => readdirSync(path.join(root, 'to-kavi')).sort();
 test('parent-id read-back: a send returns the pinned Bridge folder id', () => {
   const r = bridge();
   const out = sendMessage(r, 'hello Kavi');
-  assert.equal(out.folderId, '1PX8OuEqf8rYYUro7dR3aq0NN8RGg7I1Q');
+  assert.equal(out.folderId, KAVI_BRIDGE_FOLDER_ID);
   assert.equal(out.live, false);
   const f = sendFile(r, 'plan.pdf', Buffer.from('%PDF fake'));
   assert.equal(f.folderId, KAVI_BRIDGE_FOLDER_ID);
@@ -203,4 +207,42 @@ test('shared Major Files matcher: spellings, slash styles and case', async () =>
   const r = bridge();
   assert.throws(() => safeName('major_files'), /Major Files/);
   rmSync(r, { recursive: true, force: true });
+});
+
+test('no folder id configured: sends are refused with an honest message and read-back is unverified', () => {
+  const r = bridge();
+  const prev = process.env.AGENT_OFFICE_KAVI_BRIDGE_FOLDER_ID;
+  for (const v of [undefined, '', 'bad id with spaces', 'short']) {
+    if (v === undefined) delete process.env.AGENT_OFFICE_KAVI_BRIDGE_FOLDER_ID;
+    else process.env.AGENT_OFFICE_KAVI_BRIDGE_FOLDER_ID = v;
+    assert.throws(() => sendMessage(r, 'hi'), /not configured on this machine/);
+    assert.throws(() => sendFile(r, 'a.txt', Buffer.from('x')), /not configured on this machine/);
+    assert.deepEqual(readBack(r), { configured: true, folderId: null, verified: false, live: false });
+  }
+  process.env.AGENT_OFFICE_KAVI_BRIDGE_FOLDER_ID = prev;
+  assert.deepEqual(files(r), []);
+  rmSync(r, { recursive: true, force: true });
+});
+
+test('the real Bridge folder id is not in the repo (checked by hash only)', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { createHash } = await import('node:crypto');
+  // SHA-256 of the real id. The id itself, or any piece of it, never appears in the tree.
+  const REAL_ID_SHA256 = '52a7ca0c3cd6e474595b69009abe5d0ea9a8b09278ddf0c932239187083ada5d';
+  const tracked = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean);
+  const leaks: string[] = [];
+  for (const f of tracked) {
+    let text: string;
+    try {
+      const buf = readFileSync(f);
+      if (buf.includes(0)) continue; // binary
+      text = buf.toString('utf8');
+    } catch {
+      continue;
+    }
+    for (const tok of text.match(/[A-Za-z0-9_-]{25,60}/g) ?? []) {
+      if (createHash('sha256').update(tok).digest('hex') === REAL_ID_SHA256) leaks.push(f);
+    }
+  }
+  assert.deepEqual(leaks, []);
 });

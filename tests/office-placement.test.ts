@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BALCONY_DOOR, DESKS, DESK_SIZE, FLOOR, EXIT_DOOR, STAIRS, WINDOWS } from '../src/shared/layout.js';
-import { KAVI_BOARD, KAVI_HOME, KAVI_PATROL } from '../src/shared/kavi-office.js';
+import { KAVI_BOARD, KAVI_DESK, KAVI_DESK_BOX, KAVI_HOME, KAVI_PATROL } from '../src/shared/kavi-office.js';
 import { JEV_BOARD } from '../src/shared/jev.js';
 
 type Box = { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -106,4 +106,59 @@ test("Okkin's racks leave the foot of the loft stairs and its approach clear", (
   assert.equal(overlaps(loft, foot), false, 'racks block the foot of the stairs');
   // The whole flight keeps a walkable 1 m strip along its north side.
   assert.ok(loft.maxZ <= STAIRS.minZ - 1, 'racks within 1 m of the stairs');
+});
+
+test("Kavi's desk sits by her board on the west wall, inside the room, clear of desks, board, door and stairs", () => {
+  const d = KAVI_DESK_BOX;
+  assert.ok(d.minX >= FLOOR.minX && d.maxX <= FLOOR.maxX && d.minZ >= FLOOR.minZ && d.maxZ <= FLOOR.maxZ, 'inside the room');
+  assert.ok(d.minX - FLOOR.minX < 0.2, 'back against the west wall');
+  for (const z of deskZones) assert.equal(overlaps(d, z), false, 'clear of every desk pod, chair and walkway');
+  assert.equal(overlaps(d, boards.kavi), false, 'clear of the Bridge board');
+  assert.equal(overlaps(d, boards.jev), false);
+  assert.ok(Math.abs(KAVI_DESK.z - KAVI_BOARD.z) < 3, 'next to her board');
+  const door = { minZ: EXIT_DOOR.u - EXIT_DOOR.width / 2 - 0.6, maxZ: EXIT_DOOR.u + EXIT_DOOR.width / 2 + 0.6 };
+  assert.ok(d.maxZ < door.minZ || d.minZ > door.maxZ, 'exit door and its approach clear');
+  const stairs = { minX: Math.min(STAIRS.fromX, STAIRS.toX), maxX: Math.max(STAIRS.fromX, STAIRS.toX), minZ: STAIRS.minZ, maxZ: STAIRS.maxZ };
+  assert.equal(overlaps(d, stairs), false, 'stairs clear');
+  assert.equal(Math.abs(Math.sin(KAVI_DESK.rotY)), 1, 'screen faces into the room');
+});
+
+test("Kavi's robot rests and walks clear of her desk, with an aisle in front of it", () => {
+  const d = KAVI_DESK_BOX;
+  const home: Box = { minX: KAVI_HOME.x - 0.5, maxX: KAVI_HOME.x + 0.5, minZ: KAVI_HOME.z - 0.35, maxZ: KAVI_HOME.z + 0.35 };
+  assert.equal(overlaps(home, d), false);
+  for (let i = 0; i < KAVI_PATROL.length; i++) {
+    const a = KAVI_PATROL[i]!;
+    const b = KAVI_PATROL[(i + 1) % KAVI_PATROL.length]!;
+    for (let t = 0; t <= 1; t += 0.02) {
+      const x = a.x + (b.x - a.x) * t;
+      const z = a.z + (b.z - a.z) * t;
+      assert.equal(overlaps({ minX: x - 0.4, maxX: x + 0.4, minZ: z - 0.4, maxZ: z + 0.4 }, d), false, `patrol leg ${i}`);
+    }
+  }
+  // A 1 m walkway in front of the desk stays free of desk pods.
+  const aisle: Box = { minX: d.maxX, maxX: d.maxX + 1, minZ: d.minZ, maxZ: d.maxZ };
+  for (const z of deskZones) assert.equal(overlaps(aisle, z), false, 'aisle in front of her desk');
+});
+
+test("Kavi's desk is a solid office fixture and her computer is the click target", async () => {
+  const { readFileSync } = await import('node:fs');
+  const desk = readFileSync('src/client/features/kavi-board/desk.ts', 'utf8');
+  assert.match(desk, /colliders: Collider\[\] = \[\{ \.\.\.KAVI_DESK_BOX \}\]/);
+  assert.match(readFileSync('src/client/world/office/build.ts', 'utf8'), /^\s+kaviDesk,$/m);
+  assert.match(readFileSync('src/client/features/kavi-board/index.ts', 'utf8'), /intersectObject\(ctx\.office\.kaviDesk\.computer/);
+});
+
+test("Kavi's desk clears the Okkin loft island and racks, the stairs, and every seat and free-seat peg", async () => {
+  const { OKKIN_LOFT, OKKIN_LOFT_SPOT } = await import('../src/shared/okkin-loft.js');
+  const { SEATS, SEATING, STAIRS: ST } = await import('../src/shared/layout.js');
+  const d = KAVI_DESK_BOX;
+  // The island plus its racks' depth and the standing spot in front of the panel.
+  const island: Box = { minX: OKKIN_LOFT.minX - OKKIN_LOFT.rackDepth, maxX: OKKIN_LOFT.maxX, minZ: OKKIN_LOFT.minZ, maxZ: OKKIN_LOFT.maxZ };
+  assert.equal(overlaps(d, island), false, 'Okkin loft island and racks');
+  assert.equal(overlaps(d, { minX: OKKIN_LOFT_SPOT.x - 0.5, maxX: OKKIN_LOFT_SPOT.x + 0.5, minZ: OKKIN_LOFT_SPOT.z - 0.5, maxZ: OKKIN_LOFT_SPOT.z + 0.5 }), false, 'Okkin panel spot');
+  assert.equal(overlaps(d, { minX: Math.min(ST.fromX, ST.toX), maxX: Math.max(ST.fromX, ST.toX), minZ: ST.minZ, maxZ: ST.maxZ }), false, 'loft stairs');
+  // Every seat (desks, wing desks, bean bags: where the free-seat "+" peg floats) with a 1 m margin.
+  for (const s of SEATS) assert.equal(overlaps(d, { minX: s.x - 1, maxX: s.x + 1, minZ: s.z - 1, maxZ: s.z + 1 }), false, `seat ${s.id}`);
+  for (const s of SEATING) assert.equal(overlaps(d, { minX: s.x - 0.6, maxX: s.x + 0.6, minZ: s.z - 0.6, maxZ: s.z + 0.6 }), false, `seating ${s.id}`);
 });

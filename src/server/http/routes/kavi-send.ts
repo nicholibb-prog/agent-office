@@ -5,6 +5,7 @@ import { send } from '../util.js';
 import { hostOk, originOk } from './bridge.js';
 import { BodyTooLarge, closeTooLarge, readJsonBody } from '../read-body.js';
 import { KaviSendError, MAX_FILE_BYTES, readBack, sendFile, sendMessage } from '../../kavi-send.js';
+import { readThread } from '../../kavi-thread.js';
 import type { Route } from '../router.js';
 
 const bridgeDir = () => process.env.AGENT_OFFICE_KAVI_BRIDGE_DIR || undefined;
@@ -54,6 +55,15 @@ export const kaviSendRoutes = {
     handle(_ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
       if (!kaviSessionGate(req, res)) return;
       return send(res, 200, readBack(bridgeDir()));
+    },
+  },
+  thread: {
+    method: 'GET' as const,
+    path: '/api/kavi/thread',
+    auth: 'session' as const,
+    handle(_ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!kaviSessionGate(req, res)) return;
+      return send(res, 200, readThread(bridgeDir()));
     },
   },
   message: {

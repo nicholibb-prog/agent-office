@@ -168,8 +168,19 @@ upload; the office holds no Google OAuth token, refresh token or service-account
 - Files are created only (`wx`): an existing name gets ` (2)`, ` (3)` and so on. Nothing is overwritten,
   deleted or listed. Names with separators, `..`, a leading dot or control characters are refused, and
   `to-kavi` must be a real folder (not a symlink) directly inside the bridge folder.
-- The bridge root must hold a one-line `.bridge-folder-id` file. Sends are refused unless it reads back
-  `1PX8OuEqf8rYYUro7dR3aq0NN8RGg7I1Q`. `GET /api/kavi/bridge` and every send return only that id.
+- `AGENT_OFFICE_KAVI_BRIDGE_FOLDER_ID` holds the Bridge folder's Drive id (for example
+  `FAKE_folder_id_example_0000`; keep the real one in the machine's environment, never in the repo).
+  The bridge root must hold a one-line `.bridge-folder-id` file with the same id. Sends are refused when
+  the variable is unset or the marker does not match, and the screen offers no Drive link without it. `GET /api/kavi/bridge` and every send return only that id.
   This is a local marker check, not a Drive API call.
 - Anything under `Documents\Major Files` is refused before it is read.
 - Not a live call: Kavi answers later through the Bridge. The panel never shows a made-up reply.
+
+### Kavi's desk computer (conversation)
+
+Clicking Kavi's desk computer, or the **Kavi's screen** button, opens her screen as a modal. Notes go
+through `POST /api/kavi/message` (above). `GET /api/kavi/thread` (office session, loopback Host) merges
+the owner's notes from `to-kavi/owner-to-kavi-*.md` with Kavi's replies from
+`<AGENT_OFFICE_KAVI_BRIDGE_DIR>/to-george/*.md|*.txt`, oldest first, each with its file time. The path
+is checked for Major Files before any filesystem call. The screen polls every 20 seconds while open.
+It is not a live call and never shows a typing indicator. Escape closes it and focus stays inside while open.

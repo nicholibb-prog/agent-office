@@ -8,8 +8,15 @@ import { isMajorFiles } from './major-files.js';
 
 export { isMajorFiles };
 
-/** The Kavi-George Bridge folder in Drive. The local marker must read back exactly this. */
-export const KAVI_BRIDGE_FOLDER_ID = '1PX8OuEqf8rYYUro7dR3aq0NN8RGg7I1Q';
+/**
+ * The Kavi-George Bridge folder's Drive id, from this machine's environment only (never the repo).
+ * The local marker must read back exactly this. Unset or malformed means sends are refused.
+ */
+export function bridgeFolderId(env: NodeJS.ProcessEnv = process.env): string | null {
+  const id = String(env.AGENT_OFFICE_KAVI_BRIDGE_FOLDER_ID || '').trim();
+  return /^[A-Za-z0-9_-]{10,128}$/.test(id) ? id : null;
+}
+export const NO_FOLDER_ID = 'The Bridge folder id is not configured on this machine (AGENT_OFFICE_KAVI_BRIDGE_FOLDER_ID), so sending is off';
 /** One-line file in the bridge root holding the Drive folder id, placed once by the owner. */
 export const BRIDGE_ID_MARKER = '.bridge-folder-id';
 export const TO_KAVI = 'to-kavi';
@@ -71,8 +78,9 @@ export function readBack(dir: string | undefined): BridgeReadBack {
   if (!dir) return { configured: false, folderId: null, verified: false, live: false };
   try {
     const { root } = resolveBridge(dir);
+    const want = bridgeFolderId();
     const id = readMarker(root);
-    const verified = id === KAVI_BRIDGE_FOLDER_ID;
+    const verified = !!want && id === want;
     return { configured: true, folderId: verified ? id : null, verified, live: false };
   } catch {
     return { configured: true, folderId: null, verified: false, live: false };
@@ -128,8 +136,10 @@ export interface SendResult {
 
 function verifiedBridge(dir: string | undefined) {
   const b = resolveBridge(dir);
+  const want = bridgeFolderId();
+  if (!want) throw new KaviSendError(503, NO_FOLDER_ID);
   const id = readMarker(b.root);
-  if (id !== KAVI_BRIDGE_FOLDER_ID) throw new KaviSendError(409, 'bridge folder id did not read back as the Kavi-George Bridge');
+  if (!id || id !== want) throw new KaviSendError(409, 'bridge folder id did not read back as the Kavi-George Bridge');
   return { ...b, folderId: id };
 }
 

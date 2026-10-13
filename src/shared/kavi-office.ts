@@ -17,3 +17,17 @@ export const KAVI_PATROL: readonly { x: number; z: number }[] = [
   { x: -14.5, z: -7.2 },
   { x: -14.5, z: 1 },
 ];
+/**
+ * Kavi's desk and computer: against the west wall just south of her board, between the window at
+ * z 1 and the board, its back to the wall and the screen facing into the room (+x). A small desk
+ * with no chair (her robot stands), kept clear of the desk pods, her patrol and the exit door.
+ */
+export const KAVI_DESK = { x: FLOOR.minX + 0.4, z: 1.9, rotY: Math.PI / 2, width: 1.4, depth: 0.7, height: 0.78 } as const;
+/** The desk's floor footprint (a quarter turn: its width runs along z). */
+export const KAVI_DESK_BOX = {
+  minX: KAVI_DESK.x - KAVI_DESK.depth / 2,
+  maxX: KAVI_DESK.x + KAVI_DESK.depth / 2,
+  minZ: KAVI_DESK.z - KAVI_DESK.width / 2,
+  maxZ: KAVI_DESK.z + KAVI_DESK.width / 2,
+  top: 1.45,
+} as const;

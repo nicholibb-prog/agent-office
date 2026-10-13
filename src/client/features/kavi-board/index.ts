@@ -1,4 +1,5 @@
 /** Karen (the face-computer, whose screen shows Kavi's picture) and the Bridge title board. Both are fixtures on the office floor. */
+import * as THREE from 'three';
 import type { Ctx } from '../../core/context';
 import { mountKaviSendPanel } from './send-panel';
 
@@ -10,7 +11,20 @@ const FEED_EVERY = 5;
  * Karen's walking and her face (Kavi's picture, see picture.ts) stay on her fixture.
  */
 export function installKaviBoard(ctx: Ctx) {
-  mountKaviSendPanel();
+  // After a confirmed send the Bridge board shows it, until real Bridge titles arrive.
+  const pcScreen = mountKaviSendPanel((name) => board.show([`Sent: ${name}`, 'Waiting on Kavi']));
+  // Clicking Kavi's computer on her desk opens her screen. Aim with the mouse, or the crosshair when locked.
+  const ray = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  ctx.canvas.addEventListener('click', (e) => {
+    if (!ctx.inOffice()) return;
+    const r = ctx.canvas.getBoundingClientRect();
+    if (document.pointerLockElement) ndc.set(0, 0);
+    else ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, ctx.camera);
+    const hit = ray.intersectObject(ctx.office.kaviDesk.computer, true)[0];
+    if (hit && hit.distance < 6) pcScreen.open();
+  });
   const board = ctx.office.kaviBoard;
   let feedAge = 0;
   ctx.ticks.add('world', ({ dt }) => {
