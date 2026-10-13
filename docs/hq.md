@@ -89,3 +89,16 @@ When a seat's chip is idle, the desk card is quiet, and you are not in its talk 
 A morning delta and a needsOwner strip are not here. They belong in a later change.
 
 After you edit `hq-local.json`, restart the office. A sync process of your own has to move `chat-outbox.jsonl` and `chat-inbox.jsonl`. Ollama has to be listening on loopback, with `OKKIN_MODEL` and `OKKIN_MODEL_ALLOW` set to tags you have already pulled.
+
+## Okkin's controls are owner-only
+
+Power on/off, the model switch and Ask to Okkin are checked on the server (`src/server/hq/okkin-owner.ts`).
+The owner is an office **account** session whose id is on the pool's `approvers` list in
+`.agent-office/work-pool-policy.json` (the same accounts that give an owner-yes). A shared-password
+session has no account, so it is not the owner. The bridge token, per-seat tokens and any Bearer are
+read-only: a change from them is 403 `owner only`, as is one from any other session. Each refusal is
+appended to `.agent-office/okkin-refusals.log` (time, route, caller kind; no secrets). The loft status
+stays readable and carries `owner: false` for non-owners, and the panel shows "Owner only".
+
+A locked switch always says why in the panel, e.g. on Windows until the ACL is verified:
+"Power switch locked: operator must verify okkin-power.json ACL and set AO_OKKIN_POWER_WINDOWS_ACL_OK=1".

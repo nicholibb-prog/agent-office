@@ -48,6 +48,8 @@ function fakeWorker(info: Partial<Worker['info']> & Pick<Worker['info'], 'id' | 
 function ctxOf(dataDir: string, who?: { id: string; role: 'admin' | 'member' } | 'shared') {
   const token = 'e'.repeat(64);
   writeFileSync(path.join(dataDir, 'bridge-token'), token);
+  // Okkin's controls are owner-only (see okkin-owner.test.ts): the account here is the owner.
+  if (who && who !== 'shared') writeFileSync(path.join(dataDir, 'work-pool-policy.json'), JSON.stringify({ approvers: [who.id] }), { mode: 0o600 });
   const session = who === 'shared' ? {} : who ? { account: { id: who.id, role: who.role } } : undefined;
   return {
     token,

@@ -8,6 +8,7 @@ import { send } from '../util.js';
 import { BodyTooLarge, closeTooLarge, readJsonBody } from '../read-body.js';
 import type { Route } from '../router.js';
 import { bridgeGate, pushCrew, sessionOnly } from './bridge.js';
+import { logOkkinRefusal, okkinCaller } from '../../hq/okkin-owner.js';
 import { activeSeatMap, CREW_SEATS, ageLabel, isSeatId, liveDesk, offlineQueuedNotice, rosterChip, seatDisplayName, type BridgeBeat, type SeatId } from '../../../shared/hq.js';
 import { loadHqLocal, readCrewFile } from '../../workers/crew.js';
 import { cardFor, ingestInbox, notePlayerChat, readThread, appendThread, writeCard } from '../../hq/relay.js';
@@ -52,6 +53,26 @@ async function readJson<T extends object>(req: http.IncomingMessage, res: http.S
     else send(res, 400, { error: 'bad json' });
     return undefined;
   }
+}
+
+/**
+ * Owner only, on the server: power, the model switch and Ask to Okkin. A token (bridge, seat, Bearer)
+ * or a non-owner session gets 403 'owner only', logged. Sends the response and returns false when refused.
+ */
+function okkinOwnerOnly(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse, route: string): boolean {
+  const early = okkinCaller(req, null, ctx.cfg.dataDir);
+  if (early.kind === 'bridge-token' || early.kind === 'bearer') {
+    logOkkinRefusal(ctx.cfg.dataDir, { route, caller: early.kind });
+    send(res, 403, { error: 'owner only' });
+    return false;
+  }
+  if (!sessionOnly(ctx, req, res)) return false;
+  const caller = okkinCaller(req, ctx.auth.sessionFromAnyCookie(req), ctx.cfg.dataDir);
+  if (caller.kind === 'owner') return true;
+  logOkkinRefusal(ctx.cfg.dataDir, { route, caller: caller.kind });
+  if (caller.kind === 'no-session') send(res, 401, { error: 'office session required' });
+  else send(res, 403, { error: 'owner only' });
+  return false;
 }
 
 function speaker(ctx: Ctx, req: http.IncomingMessage): { role: 'player' | 'guest'; by?: string; key: string } {
@@ -136,6 +157,9 @@ export const hqRoutes = {
     path: '/api/bridge/talk',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      // A token can't talk here at all (any seat, Okkin's included; sessionOnly sends the 403). Logged.
+      const tok = okkinCaller(req, null, ctx.cfg.dataDir).kind;
+      if (tok === 'bridge-token' || tok === 'bearer') logOkkinRefusal(ctx.cfg.dataDir, { route: 'POST /api/bridge/talk', caller: tok });
       if (!sessionOnly(ctx, req, res)) return;
       const body = await readJson<{ seat?: string; text?: string }>(req, res);
       if (!body) return;
@@ -143,6 +167,7 @@ export const hqRoutes = {
       if (!isSeatId(seat)) return send(res, 400, { error: 'unknown seat' });
       const text = String(body.text || '').slice(0, 500).trim();
       if (!text) return send(res, 400, { error: 'empty text' });
+      if (isOkkinSeat(seat) && !okkinOwnerOnly(ctx, req, res, 'POST /api/bridge/talk (okkin)')) return;
       const who = speaker(ctx, req);
       if (talkLimited(who.key)) return send(res, 429, { error: 'slow down' });
       const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
@@ -215,7 +240,7 @@ export const hqRoutes = {
     path: '/api/bridge/okkin/model',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!sessionOnly(ctx, req, res)) return;
+      if (!okkinOwnerOnly(ctx, req, res, 'POST /api/bridge/okkin/model')) return;
       if (switchCooling()) return send(res, 429, { error: 'slow down' });
       const body = await readJson<{ model?: string }>(req, res);
       if (!body) return;
@@ -266,6 +291,8 @@ export const hqRoutes = {
         power: snap.chip === 'offline' ? 'off' : 'on',
         powerControl: power.ok ? (powerRightsBlocked() ? 'no-rights' : powerCooling() ? 'cooling' : 'ready') : 'not-set-up',
         powerReason: power.ok ? null : power.reason,
+        // Read-only for everyone else: the panel shows 'Owner only' on the controls.
+        owner: okkinCaller(req, ctx.auth.sessionFromAnyCookie(req), ctx.cfg.dataDir).kind === 'owner',
         dial: stops.map((m) => ({ tag: m.tag, role: m.role, bestFor: m.bestFor, installed: m.installed, ramOk: ramAllows(m), minFreeRamGB: m.minFreeRamGB ?? null })),
         loaded: okkinLoaded(),
         queue: okkinQueueDepth(),
@@ -287,7 +314,7 @@ export const hqRoutes = {
     path: '/api/bridge/okkin/power',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!sessionOnly(ctx, req, res)) return;
+      if (!okkinOwnerOnly(ctx, req, res, 'POST /api/bridge/okkin/power')) return;
       const body = await readJson<{ action?: unknown }>(req, res);
       if (!body) return;
       const action = parseAction(body.action);

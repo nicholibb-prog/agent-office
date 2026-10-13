@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mesh, roundedBox, textPlane, toon } from '../../world/toon';
-import type { Collider } from '../../world/types';
+import type { Collider, Interactable } from '../../world/types';
 import type { Fixture } from '../../world/office/fixture';
 import { OKKIN_CONSOLE, OKKIN_LOFT, OKKIN_MODELS } from '../../../shared/okkin-loft';
 
@@ -19,6 +19,8 @@ const SWEEP = (270 * Math.PI) / 180;
 export const dialTurn = (i: number, n: number) => (n <= 1 ? 0 : -SWEEP / 2 + (SWEEP * i) / (n - 1));
 
 export interface OkkinLoftView {
+  /** The power switch and the dial: E or a click uses them. */
+  interactables: Interactable[];
   group: THREE.Group;
   colliders: Collider[];
   /** Real state only: off = dark; busy = only while Okkin has a request in flight. */
@@ -156,9 +158,17 @@ export function buildOkkinLoft(): OkkinLoftView {
     { minX: L.maxX - L.rackDepth - 0.1, maxX: L.maxX, minZ: L.minZ, maxZ: L.maxZ, top: L.rackHeight + 0.04 },
     { minX: C.x - C.depth / 2, maxX: C.x + C.depth / 2, minZ: C.z - C.width / 2, maxZ: C.z + C.width / 2, top: C.height },
   ];
+  // E or a click on the switch or the dial: see installOkkinLoft (index.ts) for what they do.
+  const interactables: Interactable[] = [
+    { kind: 'okkinswitch', x: C.x - C.depth / 2, z: C.z, radius: 1.6 },
+    { kind: 'okkindial', x: C.x - C.depth / 2, z: C.z + 0.25, radius: 1.6 },
+  ];
+  power.userData.interact = interactables[0];
+  dial.userData.interact = interactables[1];
   const view: OkkinLoftView & { tick(dt: number): void } = {
     group,
     colliders,
+    interactables,
     setState(s) {
       state = s;
       paint();
@@ -179,5 +189,5 @@ declare module '../../world/types' {
 
 export const okkinLoft: Fixture<'okkinLoft'> = () => {
   const built = buildOkkinLoft() as OkkinLoftView & { tick(dt: number): void };
-  return { group: built.group, colliders: built.colliders, interactables: [], handle: { okkinLoft: built }, update: (_t, dt) => built.tick(dt) };
+  return { group: built.group, colliders: built.colliders, interactables: built.interactables, handle: { okkinLoft: built }, update: (_t, dt) => built.tick(dt) };
 };

@@ -68,3 +68,8 @@ body:has([aria-modal="true"]:not([hidden])) :is(.since-close, #project) { visibi
 .okl-tick[data-status="not installed"] { color: #b25000; opacity: .7; text-decoration: line-through; }
 .okl-load { margin-top: 6px; padding: 6px 14px; font-size: 13px; align-self: flex-start; }
 .okl-knob { cursor: pointer; }
+/* Locked or off controls stay pressable (they say why); they just look quieter. */
+.okl-btn[aria-disabled="true"] { background: #a1a1a6; cursor: help; }
+.okl-power[aria-disabled="true"] { opacity: .7; cursor: help; }
+.okl-power-reason[data-locked="yes"] { color: #8a5a00; font-weight: 600; }
+.okl-signin { display: inline-block; margin-top: 8px; text-decoration: none; }

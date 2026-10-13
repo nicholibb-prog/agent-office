@@ -72,7 +72,7 @@ test('panel: even when the loft API fails, both controls still show (five stops,
   assert.ok(stopsView(null).every((s) => s.status === 'unknown' && !s.usable));
   const sw = switchView(null, 'The loft API refused (403: host not allowed).');
   assert.equal(sw.works, false);
-  assert.equal(sw.label, 'Not set up');
+  assert.equal(sw.label, "Can't reach Okkin");
   assert.match(sw.reason ?? '', /403/);
 });
 
