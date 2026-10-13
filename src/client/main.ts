@@ -53,6 +53,7 @@ import { installJev } from './features/jev';
 import { installHq } from './features/hq';
 import { installKaviBoard } from './features/kavi-board';
 import { installWorkPool } from './features/work-pool';
+import { installOkkinLoft } from './features/okkin-loft';
 import { installJukebox } from './features/jukebox';
 import { installMeeting } from './features/meeting';
 import { installHuddle } from './features/huddle';
@@ -188,6 +189,7 @@ installGong(ctx, { burstOver: parts.views.burstOver, workerViews: parts.views.wo
 installJev(ctx);
 installKaviBoard(ctx);
 installWorkPool(ctx);
+installOkkinLoft(ctx);
 
 parts.hintbar = installHintBar(ctx, core, parts);
 parts.emotes = installEmotes(ctx, { personOf });
