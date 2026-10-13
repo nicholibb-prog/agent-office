@@ -7,6 +7,7 @@
 // Request input is only the enum 'start' | 'stop'. Nothing from a request reaches argv or env.
 // Children run with execFile/spawn and shell: false, never through a shell, never elevated.
 import { execFile, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { appendFileSync, chmodSync, existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
@@ -18,7 +19,7 @@ export const PINNED_OLLAMA_HOST = '127.0.0.1:11434';
 
 export type PowerAction = 'start' | 'stop';
 export type Tuning = { num_ctx?: number; num_gpu?: number; keep_alive?: string | number };
-export type PowerConfig = { start: string[]; stop: string[]; tuning: Tuning };
+export type PowerConfig = { start: string[]; stop: string[]; tuning: Tuning; scriptSha256?: string };
 export type PowerLoad = { ok: true; config: PowerConfig } | { ok: false; reason: string };
 
 /** Programs and words that would elevate or hand the argv to a shell. Any of them disables the switch. */
@@ -33,12 +34,8 @@ function argvOk(argv: unknown): argv is string[] {
   if (!Array.isArray(argv) || argv.length === 0 || argv.length > 16) return false;
   for (const a of argv) if (typeof a !== 'string' || !a.trim() || a.length > 400) return false;
   const prog = path.win32.basename(path.basename(String(argv[0]))).toLowerCase();
-  // One narrow shape for a PowerShell stop script: -NoProfile -File <absolute .ps1>, nothing else.
-  // No -Command, no -EncodedCommand, no extra args. Still only usable once Dan passes the script.
-  if (/^(powershell|pwsh)(\.exe)?$/.test(prog)) {
-    const a = argv as string[];
-    return a.length === 4 && a[1] === '-NoProfile' && a[2] === '-File' && /^([a-zA-Z]:\\|\/)[^<>|&;`$\n\r"]+\.ps1$/.test(a[3]!) && !/runas/i.test(a[3]!);
-  }
+  // Exactly Dan's reviewed shape: powershell -NoProfile -ExecutionPolicy Bypass -File <absolute>\okkin-off-v2.ps1 [-WhatIf].
+  if (/^(powershell|pwsh)(\.exe)?$/.test(prog)) return psShapeOk(argv as string[]);
   if (FORBIDDEN.test(prog)) return false;
   for (const a of argv as string[]) {
     if (/^<.*>$/.test(a.trim()) || a.includes('<') || a.includes('>')) return false; // placeholder or redirection
@@ -46,6 +43,36 @@ function argvOk(argv: unknown): argv is string[] {
     if (FORBIDDEN.test(path.basename(a).toLowerCase()) && a !== argv[0]) return false;
   }
   return true;
+}
+
+export function psShapeOk(a: string[]): boolean {
+  if (a.length !== 6 && a.length !== 7) return false;
+  if (a[0]!.toLowerCase() !== 'powershell' || a[1] !== '-NoProfile' || a[2] !== '-ExecutionPolicy' || a[3] !== 'Bypass' || a[4] !== '-File') return false;
+  if (a.length === 7 && a[6] !== '-WhatIf') return false;
+  return /^[a-zA-Z]:\\[^<>|&;`$\n\r"]*\\okkin-off-v2\.ps1$/.test(a[5]!);
+}
+
+/** The script path in a PowerShell argv, or null. */
+export function scriptOf(argv: string[]): string | null {
+  return /^(powershell|pwsh)(\.exe)?$/i.test(path.win32.basename(argv[0] ?? '')) ? argv[5] ?? null : null;
+}
+
+/** Hex sha256 of a file, or null when unreadable. */
+export function fileSha256(file: string): string | null {
+  try {
+    return createHash('sha256').update(readFileSync(file)).digest('hex');
+  } catch {
+    return null;
+  }
+}
+
+/** 'VRAM freed MiB: n' and 'RAM freed MiB: n' from the stop script's output. Null when absent. */
+export function parseFreed(out: string): { vramMiB: number | null; ramMiB: number | null } {
+  const grab = (label: string) => {
+    const m = new RegExp(`^\\s*${label} freed MiB:\\s*(\\d+(?:\\.\\d+)?)\\s*$`, 'mi').exec(out);
+    return m ? Number(m[1]) : null;
+  };
+  return { vramMiB: grab('VRAM'), ramMiB: grab('RAM') };
 }
 
 function tuningOf(raw: unknown): Tuning {
@@ -86,14 +113,16 @@ export function loadPowerConfig(dataDir: string, opts: { fs?: PowerFs; platform?
     if (st.uid !== uid) return { ok: false, reason: 'power config not owned by this user' };
     if (st.mode & 0o022) return { ok: false, reason: 'power config is group- or world-writable' };
   }
-  let raw: { start?: unknown; stop?: unknown; tuning?: unknown };
+  let raw: { start?: unknown; stop?: unknown; tuning?: unknown; scriptSha256?: unknown };
   try {
     raw = JSON.parse(fs.read(file));
   } catch {
     return { ok: false, reason: 'power config is not JSON' };
   }
   if (!argvOk(raw.start) || !argvOk(raw.stop)) return { ok: false, reason: 'power control not set up' };
-  return { ok: true, config: { start: [...raw.start], stop: [...raw.stop], tuning: tuningOf(raw.tuning) } };
+  const pin = typeof raw.scriptSha256 === 'string' && /^[0-9a-f]{64}$/i.test(raw.scriptSha256) ? raw.scriptSha256.toLowerCase() : undefined;
+  if (raw.scriptSha256 !== undefined && !pin) return { ok: false, reason: 'scriptSha256 is not a sha256' };
+  return { ok: true, config: { start: [...raw.start], stop: [...raw.stop], tuning: tuningOf(raw.tuning), ...(pin ? { scriptSha256: pin } : {}) } };
 }
 
 /** The child's whole env: a few OS basics and the pinned host. Never a request value, never the parent's OLLAMA_*. */
@@ -111,7 +140,9 @@ export type Runner = {
   /** Start the service: detached, no shell. Resolves once spawned. */
   start(argv: string[], env: Record<string, string>): Promise<{ ok: boolean; error?: string }>;
   /** Run the stop command to completion: no shell. */
-  run(argv: string[], env: Record<string, string>): Promise<{ ok: boolean; code: number | null; stderr: string }>;
+  run(argv: string[], env: Record<string, string>): Promise<{ ok: boolean; code: number | null; stderr: string; stdout?: string }>;
+  /** sha256 of a file (the stop script). */
+  hash?(file: string): string | null;
   /** GPU memory used, MB, summed over GPUs (nvidia-smi), or null with no reading. */
   gpuUsedMB(): Promise<number | null>;
   /** Temperature and fan, as nvidia-smi reports them. Fan is often 'N/A' on laptops: shown as is. */
@@ -132,6 +163,7 @@ export function parseGpuStats(out: string): GpuStats | null {
 }
 
 export const realRunner: Runner = {
+  hash: fileSha256,
   gpuStats() {
     return new Promise((resolve) => {
       execFile('nvidia-smi', ['--query-gpu=memory.used,memory.total,temperature.gpu,fan.speed', '--format=csv,noheader,nounits'], { shell: false, timeout: 5000, encoding: 'utf8' }, (err, out) => resolve(err ? null : parseGpuStats(String(out))));
@@ -153,9 +185,9 @@ export const realRunner: Runner = {
   },
   run(argv, env) {
     return new Promise((resolve) => {
-      execFile(argv[0]!, argv.slice(1), { shell: false, env, timeout: 30_000, windowsHide: true, encoding: 'utf8' }, (err, _out, errOut) => {
+      execFile(argv[0]!, argv.slice(1), { shell: false, env, timeout: 30_000, windowsHide: true, encoding: 'utf8' }, (err, out, errOut) => {
         const code = err ? (typeof (err as { code?: unknown }).code === 'number' ? ((err as { code: number }).code) : null) : 0;
-        resolve({ ok: !err, code, stderr: String(errOut || (err ? err.message : '')).slice(0, 400) });
+        resolve({ ok: !err, code, stderr: String(errOut || (err ? err.message : '')).slice(0, 400), stdout: String(out || '').slice(0, 4000) });
       });
     });
   },
@@ -233,7 +265,7 @@ export type PowerDeps = {
   now?(): number;
 };
 
-export type PowerResult = { status: number; error?: string; power: 'on' | 'off'; beforeMB: number | null; afterMB: number | null; freedMB: number | null };
+export type PowerResult = { status: number; error?: string; power: 'on' | 'off'; beforeMB: number | null; afterMB: number | null; freedMB: number | null; script?: { vramMiB: number | null; ramMiB: number | null } };
 
 async function waitFor(check: () => Promise<boolean>, want: boolean, deps: PowerDeps, tries = 20): Promise<boolean> {
   const sleep = deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
@@ -257,6 +289,11 @@ export async function flipPower(dataDir: string, action: PowerAction, who: strin
   if (rightsBlocked) return { ...base, status: 503, error: 'stop command lacks rights; switch disabled' };
   if (busy) return { ...base, status: 409, error: 'power change in progress' };
   if (powerCooling(now())) return { ...base, status: 429, error: 'cooling down' };
+  const script = scriptOf(load.config.stop);
+  if (load.config.scriptSha256 && script) {
+    const got = (deps.runner.hash ?? fileSha256)(script);
+    if (got !== load.config.scriptSha256) return { ...base, status: 503, error: 'stop script hash does not match the pin; refused' };
+  }
   busy = true;
   lastAction = now();
   const env = childEnv();
@@ -305,7 +342,7 @@ export async function flipPower(dataDir: string, action: PowerAction, who: strin
     const freed = before !== null && after !== null ? Math.max(0, before - after) : null;
     const power = (await deps.reachable()) ? 'on' : 'off';
     log(power === 'off' ? 'off' : 'stop ran but Ollama still answers', freed);
-    return { status: power === 'off' ? 200 : 502, power, beforeMB: before, afterMB: after, freedMB: freed, ...(power === 'on' ? { error: 'Ollama still answers' } : {}) };
+    return { status: power === 'off' ? 200 : 502, power, beforeMB: before, afterMB: after, freedMB: freed, script: parseFreed(stopped.stdout ?? ''), ...(power === 'on' ? { error: 'Ollama still answers' } : {}) };
   } finally {
     busy = false;
   }

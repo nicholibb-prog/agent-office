@@ -105,10 +105,10 @@ test('power config: no shell, no elevation, owner + mode checks, Windows fails c
   assert.equal(loadPowerConfig('/x', { fs: fsOf(good, { uid: 2, mode: 0o100600 }), uid: 1, platform: 'linux' }).ok, false);
   assert.equal(loadPowerConfig('/x', { fs: fsOf(good, { uid: 1, mode: 0o100622 }), uid: 1, platform: 'linux' }).ok, false);
   assert.equal(loadPowerConfig('/x', { fs: fsOf(good), uid: 1, platform: 'win32', env: {} }).ok, false);
-  for (const bad of [['sh', '-c', 'x'], ['sudo', 'x'], ['runas', 'x'], ['sc', 'stop', 'x'], ['/bin/x', 'a;b'], ['/bin/x', '$(id)'], ['powershell', '-Command', 'x'], ['powershell', '-NoProfile', '-File', 'C:\\x.ps1', 'extra']]) {
+  for (const bad of [['sh', '-c', 'x'], ['sudo', 'x'], ['runas', 'x'], ['sc', 'stop', 'x'], ['/bin/x', 'a;b'], ['/bin/x', '$(id)'], ['powershell', '-Command', 'x'], ['powershell', '-NoProfile', '-File', 'C:\\x\\okkin-off-v2.ps1'], ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\\x\\other.ps1'], ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\\x\\okkin-off-v2.ps1', '-Command']]) {
     assert.equal(loadPowerConfig('/x', { fs: fsOf({ start: good.start, stop: bad }), uid: 1, platform: 'linux' }).ok, false, bad.join(' '));
   }
-  assert.equal(loadPowerConfig('/x', { fs: fsOf({ start: good.start, stop: ['powershell', '-NoProfile', '-File', 'C:\\ops\\okkin-off.ps1'] }), uid: 1, platform: 'linux' }).ok, true);
+  assert.equal(loadPowerConfig('/x', { fs: fsOf({ start: good.start, stop: ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\\ops\\okkin-off-v2.ps1', '-WhatIf'] }), uid: 1, platform: 'linux' }).ok, true);
 });
 
 function deps(over: Partial<PowerDeps> & { up?: { v: boolean } } = {}): PowerDeps {
@@ -150,5 +150,23 @@ test('power: 0.0.0.0 listener after start is stopped and logged; no-rights stop 
   assert.equal(r.status, 403);
   assert.equal(lacksRights({ code: 1, stderr: 'Permission denied' }), true);
   assert.equal(parseGpuStats('812, 8188, 45, [N/A]')?.fan, 'N/A');
+  rmSync(d, { recursive: true, force: true });
+});
+
+test('stop script: sha256 pin mismatch refuses; freed lines parsed', async () => {
+  const { parseFreed } = await import('../src/server/hq/okkin-power.js');
+  resetPowerForTests();
+  const d = dir();
+  const up = { v: true };
+  const base = deps({ up });
+  let ran = 0;
+  const load = { ok: true as const, config: { start: ['/bin/start'], stop: ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\\ops\\okkin-off-v2.ps1'], tuning: {}, scriptSha256: '7'.repeat(64) } };
+  const r = await flipPower(d, 'stop', 'n', { ...base, runner: { ...base.runner, hash: () => '0'.repeat(64), run: async () => (ran++, { ok: true, code: 0, stderr: '' }) } }, load);
+  assert.equal(r.status, 503);
+  assert.equal(ran, 0);
+  const ok = await flipPower(d, 'stop', 'n', { ...base, runner: { ...base.runner, hash: () => '7'.repeat(64), run: async () => ((up.v = false), { ok: true, code: 0, stderr: '', stdout: 'x\r\nVRAM freed MiB: 5120\r\nRAM freed MiB: 812.5\r\n' }) } }, load);
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.script, { vramMiB: 5120, ramMiB: 812.5 });
+  assert.deepEqual(parseFreed('nothing'), { vramMiB: null, ramMiB: null });
   rmSync(d, { recursive: true, force: true });
 });
