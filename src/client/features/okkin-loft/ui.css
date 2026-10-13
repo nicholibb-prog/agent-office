@@ -14,9 +14,10 @@
 .okl-center { display: flex; justify-content: center; padding: 8px 0; }
 .okl-power { display: flex; flex-direction: column; align-items: center; gap: 12px; border: 0; background: none; cursor: pointer; font: inherit; color: inherit; }
 .okl-power-ring { width: 96px; height: 96px; border-radius: 50%; background: linear-gradient(145deg, #f2f3f5, #c9ccd1); box-shadow: inset 0 2px 3px rgba(255,255,255,.9), 0 10px 24px rgba(0,0,0,.18); position: relative; transition: box-shadow .3s; }
-.okl-power-ring::after { content: ""; position: absolute; inset: 30px; border-radius: 50%; border: 3px solid #8e8e93; border-top-color: transparent; transition: border-color .3s; }
+.okl-power-ring { display: flex; align-items: center; justify-content: center; font-size: 40px; line-height: 1; color: #8e8e93; }
 .okl-power[aria-pressed="true"] .okl-power-ring { box-shadow: inset 0 2px 3px rgba(255,255,255,.9), 0 0 0 4px rgba(52,199,89,.25), 0 10px 30px rgba(52,199,89,.35); }
-.okl-power[aria-pressed="true"] .okl-power-ring::after { border-color: #34c759; border-top-color: transparent; }
+.okl-power[aria-pressed="true"] .okl-power-ring { color: #34c759; }
+.okl-power-ring[data-icon="setup"] { font-size: 34px; filter: grayscale(1); }
 .okl-power:disabled { cursor: not-allowed; opacity: .55; }
 .okl-power-label { font-size: 15px; font-weight: 600; }
 .okl-dial { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -36,7 +37,7 @@
 .okl-btn { padding: 10px 18px; border-radius: 12px; border: 0; background: #0071e3; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
 .okl-btn:disabled { background: #a1a1a6; cursor: not-allowed; }
 .okl-panel button:focus-visible, .okl-pill:focus-visible, .okl-job:focus-visible { outline: 3px solid #0071e3; outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { .okl-panel { animation: none; } .okl-stop, .okl-power-ring, .okl-power-ring::after { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .okl-panel { animation: none; } .okl-stop, .okl-power-ring { transition: none; } }
 .okl-dialwrap { display: flex; align-items: center; gap: 28px; }
 .okl-face { position: relative; width: 168px; height: 168px; flex: none; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #fbfbfd, #dcdfe4 70%); box-shadow: inset 0 1px 0 #fff, 0 12px 30px rgba(0,0,0,.14); }
 .okl-tick { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) rotate(var(--a)) translateY(-70px) rotate(calc(-1 * var(--a))); border: 0; background: none; font: inherit; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #6e6e73; cursor: pointer; padding: 2px; }
@@ -54,3 +55,5 @@
 .okl-input:focus-visible, .okl-tick:focus-visible { outline: 3px solid #0071e3; outline-offset: 2px; }
 .okl-note:empty { display: none; }
 @media (prefers-reduced-motion: reduce) { .okl-knob { transition: none; } }
+/* Any open modal, and the loft pill, sit above the "3D running slowly" offer: hide the offer while one is shown (it comes back after). */
+body:has([aria-modal="true"]:not([hidden])) .lite-offer, body:has(.okl-pill:not([hidden])) .lite-offer { display: none; }

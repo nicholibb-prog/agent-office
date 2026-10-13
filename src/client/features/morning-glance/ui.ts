@@ -58,7 +58,7 @@ export class SinceClosePanel {
 
   show(glance: SinceCloseGlance) {
     const reason =
-      glance.closeReason === 'unexpected' ? 'Unexpected stop' : glance.closeReason === 'owner' ? 'Owner close' : '';
+      glance.closeReason === 'unexpected' ? 'Office was closed' : glance.closeReason === 'owner' ? 'Closed by owner' : '';
     const since = glance.since ? timeLabel(glance.since) : '';
     this.meta.textContent = [reason, since ? `from ${since}` : ''].filter(Boolean).join(' · ');
 

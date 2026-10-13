@@ -98,3 +98,12 @@ test("Okkin's loft stays clear of desks, boards, stairs, elevator, TV, jukebox, 
   assert.ok(loft.maxX <= FLOOR.maxX - 2 && loft.minX >= FLOOR.minX + 2 && loft.minZ >= FLOOR.minZ + 2 && loft.maxZ <= FLOOR.maxZ - 2, 'freestanding: backs onto no wall, so it covers no wall board or sign');
   assert.equal(overlaps(spot, loft), false, 'the panel spot is open floor');
 });
+
+test("Okkin's racks leave the foot of the loft stairs and its approach clear", () => {
+  const loft: Box = { minX: OKKIN_LOFT.minX, maxX: OKKIN_LOFT.maxX, minZ: OKKIN_LOFT.minZ, maxZ: OKKIN_LOFT.maxZ };
+  // Where you step on (walkto's STAIRS_FOOT is 0.6 m west of the first step), with 1 m of room around it.
+  const foot: Box = { minX: STAIRS.fromX - 1.6, maxX: STAIRS.fromX + 0.6, minZ: STAIRS.minZ - 1, maxZ: STAIRS.maxZ };
+  assert.equal(overlaps(loft, foot), false, 'racks block the foot of the stairs');
+  // The whole flight keeps a walkable 1 m strip along its north side.
+  assert.ok(loft.maxZ <= STAIRS.minZ - 1, 'racks within 1 m of the stairs');
+});
