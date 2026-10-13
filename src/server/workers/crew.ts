@@ -65,6 +65,8 @@ export type CrewApplyOpts = {
   /** Seat id → last real heartbeat (ms). WORKING without a fresh seen stays idle. */
   seen?: Record<string, number>;
   leaseMs?: number;
+  /** A seat authenticated by a #20 seat token on this request; applied even if it is not a pool seat id. */
+  tokenSeat?: string;
 };
 
 type CrewFile = { updatedAt: string; crew: Record<string, string>; seen: Record<string, number>; source: string };
@@ -93,13 +95,17 @@ export function readCrewFile(dataDir: string): CrewFile | null {
  * Records a bridge push keyed by seat id only. Display names are dropped.
  * `seen` is stamped from this push (a real adapter heartbeat), not a clock nudge elsewhere.
  */
-export function writeCrewPush(dataDir: string, patch: Record<string, string>, source: string, now = Date.now()): CrewFile {
+/**
+ * `tokenSeat` is set when the patch key was taken from an authenticated #20 seat token; that seat is
+ * trusted as-is. Without it only pool seat ids are accepted.
+ */
+export function writeCrewPush(dataDir: string, patch: Record<string, string>, source: string, now = Date.now(), tokenSeat?: string): CrewFile {
   const prev = readCrewFile(dataDir);
   const crew = { ...(prev?.crew ?? {}) };
   const seen = { ...(prev?.seen ?? {}) };
   for (const [key, value] of Object.entries(patch)) {
     const seat = key.trim().toLowerCase();
-    if (!isPoolSeatId(seat)) continue;
+    if (!isPoolSeatId(seat) && seat !== tokenSeat) continue;
     const st = String(value).toLowerCase();
     if (st !== 'working' && st !== 'idle' && st !== 'busy' && st !== 'active' && st !== 'asleep' && st !== 'roam' && st !== 'offline' && st !== 'done') continue;
     crew[seat] = st === 'busy' || st === 'active' ? 'working' : st === 'asleep' || st === 'roam' || st === 'offline' || st === 'done' ? 'idle' : st;
@@ -130,7 +136,7 @@ export function applyCrewPresence(host: CrewHost, crew: Record<string, string>, 
   const want = new Map<string, 'working' | 'idle'>();
   for (const [k, v] of Object.entries(crew || {})) {
     const seat = k.trim().toLowerCase();
-    if (!isPoolSeatId(seat)) continue;
+    if (!isPoolSeatId(seat) && seat !== opts.tokenSeat) continue;
     const st = String(v).toLowerCase();
     if (st === 'working' || st === 'busy' || st === 'active') want.set(seat, 'working');
     else if (st === 'idle' || st === 'asleep' || st === 'roam' || st === 'offline' || st === 'done') want.set(seat, 'idle');

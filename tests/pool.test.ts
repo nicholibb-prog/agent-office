@@ -12,6 +12,7 @@ import { WorkPool } from '../src/server/pool/pool.js';
 import { createOkkinPuller } from '../src/server/pool/puller.js';
 import { enforcedLevel, keywordFloor, nextPresence, showsWorking, unsafeText, type PoolActor, type PoolJob, type PoolPolicy } from '../src/shared/pool.js';
 
+import { issueSeatToken, seatForToken } from '../src/server/seat-tokens.js';
 const BRIDGE = 'bridge-token-for-pool-tests-0123456789abcdef';
 const ADA: PoolActor = { id: 'acct-ada', label: 'Ada' };
 const PIPER: PoolActor = { id: 'id-piper', label: 'piper' };
@@ -40,6 +41,12 @@ function dirOf(t: { after(fn: () => void): void }) {
   writePolicy(dir);
   return dir;
 }
+
+/** #20: bridge POSTs need a per-seat token; the shared bridge-token is read-only. */
+function seatTok(dir: string): string {
+  return seatForToken(dir, SEAT_CACHE.get(dir) ?? '') ? SEAT_CACHE.get(dir)! : (SEAT_CACHE.set(dir, issueSeatToken(dir, 'seat-1')), SEAT_CACHE.get(dir)!);
+}
+const SEAT_CACHE = new Map<string, string>();
 
 function saw(job: PoolJob) {
   return { state: job.status, updatedAt: job.updatedAt, hash: job.contentHash ?? '' };
@@ -459,7 +466,7 @@ test('claimer and Dan come from the authenticated caller, never the body', async
   const job = post(pool, 'Gate', 'A review.', { level: 6, targetBot: (piper as { id: string }).id });
   const handler = requestHandler(office(dir, pool, { id: ADA.id, name: 'Ada' }), [poolRoutes.claim, poolRoutes.danPass, poolRoutes.complete]);
   const open = requestHandler(office(dir, pool), [poolRoutes.claim]);
-  const headers = { 'x-bridge-token': BRIDGE, 'x-pool-caller': (piper as { token: string }).token };
+  const headers = { 'x-bridge-token': seatTok(dir), 'x-pool-caller': (piper as { token: string }).token };
 
   const claimed = capture();
   await handler(jsonReq('/api/bridge/pool/claim', { id: job.id, by: 'pat', claimer: 'ada' }, headers), claimed.res);
@@ -467,7 +474,7 @@ test('claimer and Dan come from the authenticated caller, never the body', async
   assert.equal(claimed.got.json().job?.claim?.by, (piper as { id: string }).id);
 
   const stranger = capture();
-  await handler(jsonReq('/api/bridge/pool/claim', { id: job.id, by: 'Ada' }, { 'x-bridge-token': BRIDGE, 'x-pool-caller': 'not-a-token' }), stranger.res);
+  await handler(jsonReq('/api/bridge/pool/claim', { id: job.id, by: 'Ada' }, { 'x-bridge-token': seatTok(dir), 'x-pool-caller': 'not-a-token' }), stranger.res);
   assert.equal(stranger.got.status, 401);
   assert.equal(stranger.got.json().error, 'unknown caller');
 
@@ -476,7 +483,7 @@ test('claimer and Dan come from the authenticated caller, never the body', async
   assert.equal(anon.got.status, 401);
 
   const foreign = capture();
-  await handler(jsonReq('/api/bridge/pool/claim', { id: job.id }, { 'x-bridge-token': BRIDGE, origin: 'https://evil.example' }), foreign.res);
+  await handler(jsonReq('/api/bridge/pool/claim', { id: job.id }, { 'x-bridge-token': seatTok(dir), origin: 'https://evil.example' }), foreign.res);
   assert.equal(foreign.got.status, 403);
 
   const done = capture();
@@ -491,7 +498,7 @@ test('claimer and Dan come from the authenticated caller, never the body', async
 
   const pass = capture();
   await handler(
-    jsonReq('/api/bridge/pool/dan-pass', { id: job.id, state: seen.status, updatedAt: seen.updatedAt, hash: seen.contentHash, by: 'piper' }, { 'x-bridge-token': BRIDGE, 'x-pool-caller': (riley as { token: string }).token }),
+    jsonReq('/api/bridge/pool/dan-pass', { id: job.id, state: seen.status, updatedAt: seen.updatedAt, hash: seen.contentHash, by: 'piper' }, { 'x-bridge-token': seatTok(dir), 'x-pool-caller': (riley as { token: string }).token }),
     pass.res,
   );
   assert.equal(pass.got.status, 200);
@@ -594,7 +601,7 @@ test('a pool error is a fixed message', async (t) => {
   pool.complete = () => { throw new Error(marker); };
   const bridge = requestHandler(office(dir, pool, { id: ADA.id, name: 'Ada' }), [poolRoutes.complete]);
   const blown = capture();
-  await bridge(jsonReq('/api/bridge/pool/complete', { id: 'missing' }, { 'x-bridge-token': BRIDGE }), blown.res);
+  await bridge(jsonReq('/api/bridge/pool/complete', { id: 'missing' }, { 'x-bridge-token': seatTok(dir) }), blown.res);
   assert.equal(blown.got.status, 500);
   assert.equal(blown.got.raw.includes(marker), false);
 });

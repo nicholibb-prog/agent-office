@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { bridgeGate, bridgeRoutes } from '../src/server/http/routes/bridge.js';
+import { issueSeatToken } from '../src/server/seat-tokens.js';
 import { applyCrewPresence, writeCrewPush, type CrewHost } from '../src/server/workers/crew.js';
 import type { Worker } from '../src/server/workers/types.js';
 import type { WorkerInfo } from '../src/shared/protocol.js';
@@ -220,11 +221,12 @@ function deskWorker(name: string, deskId: string, status: WorkerInfo['status'] =
   return { info, viewers: new Map(), screenDirty: false, lastLines: [], leftNeedsInputAt: 0, keyframeAt: 0, hookToken: 'x', state: null } as unknown as Worker;
 }
 
-test('bridge say with shared token does not stamp account:true for an arbitrary body name', async () => {
+test('bridge say: shared token cannot post, seat token speaks only as its seat with account:true', async () => {
   const dir = path.join(tmpdir(), 'ao-bridge-say-' + Date.now());
   mkdirSync(dir, { recursive: true });
   const tok = 's'.repeat(64);
   writeFileSync(path.join(dir, 'bridge-token'), tok);
+  const seatTok = issueSeatToken(dir, 'seat-1');
   const lines: Record<string, unknown>[] = [];
   const ctx = {
     cfg: { dataDir: dir },
@@ -233,29 +235,29 @@ test('bridge say with shared token does not stamp account:true for an arbitrary 
     broadcast() {},
     floors: new Map(),
   } as never;
-  const { res, got } = captureRes();
-  const req = fakeIncoming({
-    headers: {
-      host: '127.0.0.1:4600',
-      'content-type': 'application/json',
-      'x-bridge-token': tok,
-    },
-    body: { name: 'Dan', text: 'hello from bridge' },
-  });
-  await bridgeRoutes.say.handle(ctx, { req, res });
-  assert.equal(got().status, 200);
-  assert.equal(lines.length, 1);
-  assert.equal(lines[0].name, 'Dan');
-  assert.equal(lines[0].account, undefined);
-  assert.equal('account' in lines[0], false);
+  const say = async (token: string | undefined, body: Record<string, unknown>) => {
+    const { res, got } = captureRes();
+    const headers: Record<string, string> = { host: '127.0.0.1:4600', 'content-type': 'application/json' };
+    if (token) headers['x-bridge-token'] = token;
+    await bridgeRoutes.say.handle(ctx, { req: fakeIncoming({ headers, body }), res });
+    return got();
+  };
+  assert.equal((await say(tok, { name: 'Dan', text: 'hello' })).status, 403);
+  assert.equal((await say(seatTok, { name: 'Dan', text: 'hello' })).status, 403);
+  assert.equal((await say(undefined, { name: 'Dan', text: 'hello' })).status, 401);
+  assert.equal(lines.length, 0);
+  assert.equal((await say(seatTok, { text: 'hello' })).status, 200);
+  assert.equal(lines[0].name, 'seat-1');
+  assert.equal(lines[0].account, true);
   rmSync(dir, { recursive: true, force: true });
 });
 
-test('status and crew-status cannot flip desks by display name alone on shared token', async () => {
+test('bridge/status and crew-status take the seat from the #20 seat token, never the body name', async () => {
   const dir = path.join(tmpdir(), 'ao-bridge-st-' + Date.now());
   mkdirSync(dir, { recursive: true });
   const tok = 't'.repeat(64);
   writeFileSync(path.join(dir, 'bridge-token'), tok);
+  const seatTok = issueSeatToken(dir, 'seat-1');
 
   const dan = deskWorker('Dan', 'desk-1', 'idle');
   const workers = new Map<string, Worker>([[dan.info.id, dan]]);
@@ -264,23 +266,6 @@ test('status and crew-status cannot flip desks by display name alone on shared t
     setStatus(w, status) { w.info.status = status; },
     emitUpdate() {},
   };
-
-  // Display label alone must not apply.
-  const byName = applyCrewPresence(host, { Dan: 'working', dan: 'working' }, { seen: { Dan: Date.now(), dan: Date.now() } });
-  assert.deepEqual(byName.applied, []);
-  assert.equal(dan.info.status, 'idle');
-
-  // Seat id with fresh seen binds via desk-N.
-  const bySeat = applyCrewPresence(host, { 'seat-1': 'working' }, { seen: { 'seat-1': Date.now() } });
-  assert.deepEqual(bySeat.applied, ['Dan=working']);
-  assert.equal(dan.info.status, 'working');
-
-  // WORKING without seen stays / returns idle.
-  dan.info.status = 'idle';
-  const noSeen = applyCrewPresence(host, { 'seat-1': 'working' }, {});
-  assert.deepEqual(noSeen.applied, ['Dan=idle']);
-  assert.equal(dan.info.status, 'idle');
-
   const ctx = {
     cfg: { dataDir: dir },
     auth: { fromRequest: () => undefined, fromAnyCookie: () => false },
@@ -292,43 +277,45 @@ test('status and crew-status cannot flip desks by display name alone on shared t
       },
     }]]),
   } as never;
+  const hit = async (route: 'status' | 'crewStatus', token: string | undefined, body: Record<string, unknown>) => {
+    const { res, got } = captureRes();
+    const headers: Record<string, string> = { host: '127.0.0.1:4600', 'content-type': 'application/json' };
+    if (token) headers['x-bridge-token'] = token;
+    await bridgeRoutes[route].handle(ctx, { req: fakeIncoming({ headers, body }), res });
+    return got();
+  };
 
-  const bad = captureRes();
-  await bridgeRoutes.status.handle(ctx, {
-    req: fakeIncoming({
-      headers: { host: '127.0.0.1:4600', 'content-type': 'application/json', 'x-bridge-token': tok },
-      body: { name: 'Dan', status: 'working' },
-    }),
-    res: bad.res,
-  });
-  assert.equal(bad.got().status, 400);
-  assert.match(String(bad.got().json().error), /seat id/);
+  // Display labels alone never apply.
+  assert.deepEqual(applyCrewPresence(host, { Dan: 'working' }, { seen: { Dan: Date.now() } }).applied, []);
   assert.equal(dan.info.status, 'idle');
 
-  const good = captureRes();
-  await bridgeRoutes.status.handle(ctx, {
-    req: fakeIncoming({
-      headers: { host: '127.0.0.1:4600', 'content-type': 'application/json', 'x-bridge-token': tok },
-      body: { name: 'seat-1', status: 'working' },
-    }),
-    res: good.res,
-  });
-  assert.equal(good.got().status, 200);
+  // Mismatched body name -> 403, even with a valid seat token.
+  const bad = await hit('status', seatTok, { name: 'Dan', status: 'working' });
+  assert.equal(bad.status, 403);
+  assert.equal((await hit('status', seatTok, { name: 'seat-2', status: 'working' })).status, 403);
+  assert.equal(dan.info.status, 'idle');
+
+  // No token -> existing auth refusal; shared token -> read-only refusal.
+  assert.equal((await hit('status', undefined, { status: 'working' })).status, 401);
+  assert.equal((await hit('status', tok, { name: 'seat-1', status: 'working' })).status, 403);
+  assert.equal(dan.info.status, 'idle');
+
+  // Token seat used: no name, or the matching name, binds seat-1 -> desk-1.
+  const good = await hit('status', seatTok, { status: 'working' });
+  assert.equal(good.status, 200);
+  assert.equal(good.json().name, 'seat-1');
+  assert.equal(dan.info.status, 'working');
+  dan.info.status = 'idle';
+  assert.equal((await hit('status', seatTok, { name: 'SEAT-1', status: 'working' })).status, 200);
   assert.equal(dan.info.status, 'working');
 
-  const crew = captureRes();
+  // crew-status: only the token's own seat key.
   dan.info.status = 'idle';
-  await bridgeRoutes.crewStatus.handle(ctx, {
-    req: fakeIncoming({
-      headers: { host: '127.0.0.1:4600', 'content-type': 'application/json', 'x-bridge-token': tok },
-      body: { crew: { Dan: 'working', 'seat-1': 'working' } },
-    }),
-    res: crew.res,
-  });
-  assert.equal(crew.got().status, 200);
-  const payload = crew.got().json();
-  assert.equal((payload.crew as Record<string, string>).Dan, undefined);
-  assert.equal((payload.crew as Record<string, string>)['seat-1'], 'working');
+  assert.equal((await hit('crewStatus', seatTok, { crew: { Dan: 'working', 'seat-1': 'working' } })).status, 403);
+  assert.equal(dan.info.status, 'idle');
+  const crew = await hit('crewStatus', seatTok, { crew: { 'seat-1': 'working' } });
+  assert.equal(crew.status, 200);
+  assert.equal((crew.json().crew as Record<string, string>)['seat-1'], 'working');
   assert.equal(dan.info.status, 'working');
 
   const pushed = writeCrewPush(dir, { Dan: 'idle', 'seat-2': 'idle' }, 'test');

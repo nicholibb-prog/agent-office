@@ -5,7 +5,6 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import type { Ctx } from '../../office/context.js';
 import type { ChatLine } from '../../../shared/protocol.js';
-import { isPoolSeatId } from '../../../shared/pool.js';
 import { writeCrewPush } from '../../workers/crew.js';
 import { send } from '../util.js';
 import { seatForToken } from '../../seat-tokens.js';
@@ -207,10 +206,11 @@ export const bridgeRoutes = {
       const name = seat;
       const text = String(body.text || '').slice(0, 500).trim();
       if (!text) return send(res, 400, { error: 'empty text' });
-      // Shared bridge token must not stamp account:true from a free body name (signed-in badge spoof).
+      // account:true comes only from the authenticated seat token, never from a body name.
       const line: ChatLine = {
         from: 'bridge',
         name,
+        account: true,
         color: typeof body.color === 'string' ? body.color.slice(0, 16) : '#8d99ae',
         text,
         at: Date.now(),
@@ -243,13 +243,13 @@ export const bridgeRoutes = {
       let file;
       try {
         // Seat ids only; display names never flip a desk. seen is stamped on this push.
-        file = writeCrewPush(ctx.cfg.dataDir, crew, 'bridge');
+        file = writeCrewPush(ctx.cfg.dataDir, crew, 'bridge', Date.now(), seat);
       } catch {
         return send(res, 500, { error: BRIDGE_FAILED });
       }
       const results: { floor: string; applied: string[] }[] = [];
       for (const floor of ctx.floors.values()) {
-        const r = floor.workers.applyCrewPresence(file.crew, { seen: file.seen });
+        const r = floor.workers.applyCrewPresence(file.crew, { seen: file.seen, tokenSeat: seat });
         results.push({ floor: floor.id, applied: r.applied });
       }
       return send(res, 200, { ok: true, updatedAt: file.updatedAt, crew: file.crew, seen: file.seen, source: file.source, results });
@@ -289,19 +289,16 @@ export const bridgeRoutes = {
       }
       const name = seat;
       if (st !== 'working' && st !== 'idle') return send(res, 400, { error: 'status working|idle' });
-      // Shared token must bind to a seat id — display labels alone cannot flip a desk.
-      if (!isPoolSeatId(name)) {
-        return send(res, 400, { error: 'seat id required' });
-      }
+      // The seat comes from the #20 seat token only; a body name never picks the desk.
       let file;
       try {
-        file = writeCrewPush(ctx.cfg.dataDir, { [name]: st }, 'bridge-status');
+        file = writeCrewPush(ctx.cfg.dataDir, { [name]: st }, 'bridge-status', Date.now(), seat);
       } catch {
         return send(res, 500, { error: BRIDGE_FAILED });
       }
       const results: { floor: string; applied: string[] }[] = [];
       for (const floor of ctx.floors.values()) {
-        results.push({ floor: floor.id, applied: floor.workers.applyCrewPresence(file.crew, { seen: file.seen }).applied });
+        results.push({ floor: floor.id, applied: floor.workers.applyCrewPresence(file.crew, { seen: file.seen, tokenSeat: seat }).applied });
       }
       return send(res, 200, { ok: true, name, status: st, results });
     },
