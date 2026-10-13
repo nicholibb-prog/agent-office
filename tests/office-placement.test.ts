@@ -58,6 +58,7 @@ test('the Jev board on the south wall clears the balcony door, the windows and t
 });
 
 import { OKKIN_LOFT, OKKIN_LOFT_SPOT } from '../src/shared/okkin-loft.js';
+import { POOL_BOARD, POOL_POSTER } from '../src/shared/pool-place.js';
 import { BOARDS, CABINET, ELEVATOR, ELEVATOR_FRONT, GONG, JUKEBOX, MACHINE_MONITOR, MEETING_ROOM, PLANTS, POLES, SEATING, TV, WING, WHITEBOARD, LOFT, BOOKSHELF } from '../src/shared/layout.js';
 
 test("Okkin's loft stays clear of desks, boards, stairs, elevator, TV, jukebox, gong and the back-office bay", () => {
@@ -86,6 +87,8 @@ test("Okkin's loft stays clear of desks, boards, stairs, elevator, TV, jukebox, 
     ...Object.fromEntries(PLANTS.map(([x, z], i) => [`plant${i}`, { minX: x - 0.6, maxX: x + 0.6, minZ: z - 0.6, maxZ: z + 0.6 }])),
     ...Object.fromEntries(POLES.map((p, i) => [`pole${i}`, { minX: p.x - 1.2, maxX: p.x + 1.2, minZ: p.z - 1.2, maxZ: p.z + 1.2 }])),
     ...Object.fromEntries(SEATING.filter((s) => s.y === 0 && !s.id.startsWith('roof-')).map((s) => [`seat-${s.id}`, { minX: s.x - 2, maxX: s.x + 2, minZ: s.z - 2, maxZ: s.z + 2 }])),
+    poolBoard: { minX: POOL_BOARD.x - POOL_BOARD.width/2 - 0.2, maxX: POOL_BOARD.x + POOL_BOARD.width/2 + 0.2, minZ: POOL_BOARD.z - 0.6, maxZ: POOL_BOARD.z + 0.6 },
+    poolPoster: { minX: POOL_POSTER.x - 0.5, maxX: POOL_POSTER.x + 0.5, minZ: POOL_POSTER.z - 0.5, maxZ: POOL_POSTER.z + 0.5 },
     whiteboard: { minX: WHITEBOARD.x - WHITEBOARD.width / 2, maxX: WHITEBOARD.x + WHITEBOARD.width / 2, minZ: WHITEBOARD.z - 0.3, maxZ: WHITEBOARD.z + 0.3 },
   };
   for (const [name, b] of Object.entries(others)) {
