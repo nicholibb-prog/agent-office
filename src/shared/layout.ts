@@ -25,10 +25,8 @@ export interface DeskDef {
 
 const DESK_WIDTH = 2.2;
 const DESK_DEPTH = 1.1;
-/** How far out from a desk's centre its chair stands (AUD-19: was 0.9, which let chairs clip the desk). */
-export const CHAIR_OFFSET = 1.05;
-/** The chair's seat runs this far in front of its centre (half of the 0.58 cushion). */
-export const CHAIR_HALF_DEPTH = 0.29;
+/** A desk's chair stands this far out from its centre (AUD-19: was 0.9), its seat this deep each side of that. */
+export const CHAIR_OFFSET = 1.05, CHAIR_HALF_DEPTH = 0.29;
 export const DESK_SIZE = { width: DESK_WIDTH, depth: DESK_DEPTH, height: 0.78 } as const;
 
 function buildDesks(): DeskDef[] {
@@ -281,10 +279,14 @@ export const BOOKSHELF = { x: -6.5, z: FLOOR.maxZ - 0.21, width: 1.7, depth: 0.4
 export function facing(x: number, z: number, tx: number, tz: number): number {
   return Math.atan2(tx - x, tz - z);
 }
-const DESKS_MID = (() => {
-  const all = DESKS;
-  return { x: all.reduce((a, d) => a + d.x, 0) / all.length, z: all.reduce((a, d) => a + d.z, 0) / all.length };
-})();
+/** The middle of the desks. */
+export const DESKS_MID = { x: DESKS.reduce((a, d) => a + d.x, 0) / DESKS.length, z: DESKS.reduce((a, d) => a + d.z, 0) / DESKS.length };
+/** Arriving in the elevator car: turned toward the desks (AUD-15), but no more than still looks out through its doors. */
+/** The most the car turns you off straight out (rad): more and its side wall fills the view, not the doorway. */
+export const ARRIVAL_TURN = 0.25;
+export function arrivalFacing(x: number, z: number): number {
+  return Math.max(-ARRIVAL_TURN, Math.min(ARRIVAL_TURN, facing(x, z, DESKS_MID.x, DESKS_MID.z)));
+}
 /** Where you stand on coming in, facing the desks (AUD-15), not the old board spot. */
 export const SPAWN = { x: 8, z: 7, rotY: facing(8, 7, DESKS_MID.x, DESKS_MID.z) } as const;
 
