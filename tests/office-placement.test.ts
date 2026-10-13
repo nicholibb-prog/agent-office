@@ -56,3 +56,54 @@ test('the Jev board on the south wall clears the balcony door, the windows and t
   for (const w of WINDOWS.filter((w) => w.wall === 'south' && w.y0 < 3)) assert.ok(clear(w.u - w.width / 2, w.u + w.width / 2), `window at ${w.u}`);
   assert.ok(clear(STAIRS.fromX, STAIRS.toX), 'stairs');
 });
+
+import { OKKIN_LOFT, OKKIN_LOFT_SPOT } from '../src/shared/okkin-loft.js';
+import { POOL_BOARD, POOL_POSTER } from '../src/shared/pool-place.js';
+import { BOARDS, CABINET, ELEVATOR, ELEVATOR_FRONT, GONG, JUKEBOX, MACHINE_MONITOR, MEETING_ROOM, PLANTS, POLES, SEATING, TV, WING, WHITEBOARD, LOFT, BOOKSHELF } from '../src/shared/layout.js';
+
+test("Okkin's loft stays clear of desks, boards, stairs, elevator, TV, jukebox, gong and the back-office bay", () => {
+  const loft: Box = { minX: OKKIN_LOFT.minX, maxX: OKKIN_LOFT.maxX, minZ: OKKIN_LOFT.minZ, maxZ: OKKIN_LOFT.maxZ };
+  const spot: Box = { minX: OKKIN_LOFT_SPOT.x - 0.4, maxX: OKKIN_LOFT_SPOT.x + 0.4, minZ: OKKIN_LOFT_SPOT.z - 0.4, maxZ: OKKIN_LOFT_SPOT.z + 0.4 };
+  const others: Record<string, Box> = {
+    ...Object.fromEntries(deskZones.map((z, i) => [`desk${i}`, z])),
+    ...boards,
+    stairs: { minX: STAIRS.fromX, maxX: STAIRS.toX, minZ: STAIRS.minZ, maxZ: STAIRS.maxZ },
+    loftUp: { minX: LOFT.minX, maxX: LOFT.maxX, minZ: LOFT.minZ, maxZ: LOFT.maxZ },
+    elevator: { minX: ELEVATOR.x - ELEVATOR.width / 2 - 0.5, maxX: ELEVATOR.x + ELEVATOR.width / 2 + 0.5, minZ: FLOOR.minZ, maxZ: ELEVATOR_FRONT + 1 },
+    tv: { minX: TV.x - 0.6, maxX: FLOOR.maxX, minZ: TV.z - TV.width / 2, maxZ: TV.z + TV.width / 2 },
+    jukebox: { minX: JUKEBOX.x - 1, maxX: FLOOR.maxX, minZ: JUKEBOX.z - 1, maxZ: JUKEBOX.z + 1 },
+    gong: { minX: GONG.x - GONG.width / 2, maxX: GONG.x + GONG.width / 2, minZ: FLOOR.minZ, maxZ: GONG.z + 0.6 },
+    wingMouth: { minX: WING.minX, maxX: WING.maxX, minZ: FLOOR.minZ, maxZ: FLOOR.minZ + 1.5 },
+    meeting: { minX: MEETING_ROOM.minX - 0.6, maxX: MEETING_ROOM.maxX, minZ: MEETING_ROOM.minZ - 0.6, maxZ: MEETING_ROOM.maxZ },
+    machineMonitor: { minX: FLOOR.minX, maxX: FLOOR.minX + 1, minZ: MACHINE_MONITOR.z - MACHINE_MONITOR.width / 2, maxZ: MACHINE_MONITOR.z + MACHINE_MONITOR.width / 2 },
+    cabinet: { minX: CABINET.x - 1, maxX: FLOOR.maxX, minZ: CABINET.z - 1, maxZ: CABINET.z + 1 },
+    bookshelf: { minX: BOOKSHELF.x - 1, maxX: BOOKSHELF.x + 1, minZ: BOOKSHELF.z - 1, maxZ: FLOOR.maxZ },
+    ...Object.fromEntries(Object.entries(BOARDS).map(([k, b]) => {
+      // A wall board plus 1.5 m of floor in front of it, so nothing stands between it and the room.
+      const across = Math.abs(Math.cos(b.rotY)) > 0.5;
+      const hw = b.width / 2;
+      return [`board-${k}`, across ? { minX: b.x - hw, maxX: b.x + hw, minZ: Math.min(b.z, b.z + 1.5 * Math.cos(b.rotY)), maxZ: Math.max(b.z, b.z + 1.5 * Math.cos(b.rotY)) } : { minX: Math.min(b.x, b.x + 1.5 * Math.sin(b.rotY)), maxX: Math.max(b.x, b.x + 1.5 * Math.sin(b.rotY)), minZ: b.z - hw, maxZ: b.z + hw }];
+    })),
+    ...Object.fromEntries(PLANTS.map(([x, z], i) => [`plant${i}`, { minX: x - 0.6, maxX: x + 0.6, minZ: z - 0.6, maxZ: z + 0.6 }])),
+    ...Object.fromEntries(POLES.map((p, i) => [`pole${i}`, { minX: p.x - 1.2, maxX: p.x + 1.2, minZ: p.z - 1.2, maxZ: p.z + 1.2 }])),
+    ...Object.fromEntries(SEATING.filter((s) => s.y === 0 && !s.id.startsWith('roof-')).map((s) => [`seat-${s.id}`, { minX: s.x - 2, maxX: s.x + 2, minZ: s.z - 2, maxZ: s.z + 2 }])),
+    poolBoard: { minX: POOL_BOARD.x - POOL_BOARD.width/2 - 0.2, maxX: POOL_BOARD.x + POOL_BOARD.width/2 + 0.2, minZ: POOL_BOARD.z - 0.6, maxZ: POOL_BOARD.z + 0.6 },
+    poolPoster: { minX: POOL_POSTER.x - 0.5, maxX: POOL_POSTER.x + 0.5, minZ: POOL_POSTER.z - 0.5, maxZ: POOL_POSTER.z + 0.5 },
+    whiteboard: { minX: WHITEBOARD.x - WHITEBOARD.width / 2, maxX: WHITEBOARD.x + WHITEBOARD.width / 2, minZ: WHITEBOARD.z - 0.3, maxZ: WHITEBOARD.z + 0.3 },
+  };
+  for (const [name, b] of Object.entries(others)) {
+    assert.equal(overlaps(loft, b), false, `loft overlaps ${name}`);
+    assert.equal(overlaps(spot, b), false, `panel spot overlaps ${name}`);
+  }
+  assert.ok(loft.maxX <= FLOOR.maxX - 2 && loft.minX >= FLOOR.minX + 2 && loft.minZ >= FLOOR.minZ + 2 && loft.maxZ <= FLOOR.maxZ - 2, 'freestanding: backs onto no wall, so it covers no wall board or sign');
+  assert.equal(overlaps(spot, loft), false, 'the panel spot is open floor');
+});
+
+test("Okkin's racks leave the foot of the loft stairs and its approach clear", () => {
+  const loft: Box = { minX: OKKIN_LOFT.minX, maxX: OKKIN_LOFT.maxX, minZ: OKKIN_LOFT.minZ, maxZ: OKKIN_LOFT.maxZ };
+  // Where you step on (walkto's STAIRS_FOOT is 0.6 m west of the first step), with 1 m of room around it.
+  const foot: Box = { minX: STAIRS.fromX - 1.6, maxX: STAIRS.fromX + 0.6, minZ: STAIRS.minZ - 1, maxZ: STAIRS.maxZ };
+  assert.equal(overlaps(loft, foot), false, 'racks block the foot of the stairs');
+  // The whole flight keeps a walkable 1 m strip along its north side.
+  assert.ok(loft.maxZ <= STAIRS.minZ - 1, 'racks within 1 m of the stairs');
+});

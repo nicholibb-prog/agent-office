@@ -39,6 +39,8 @@ export const routes: readonly Route[] = [
   hqRoutes.desk,
   hqRoutes.deskGet,
   hqRoutes.okkinModel,
+  hqRoutes.okkinLoft,
+  hqRoutes.okkinPower,
   hqRoutes.status,
   bridgeRoutes.kaviFeed,
   bridgeRoutes.kaviFeedGet,

@@ -1,0 +1,11 @@
+{
+  "_note": "EXAMPLE. Tags verified by Jack on the ProArt 2026-10-13; copy to .agent-office/okkin-loft.json. The dial offers only tags that /api/tags also returns. num_gpu is omitted on purpose. okkin:latest takes num_ctx 8192 from its Modelfile.",
+  "idleSleepMin": null,
+  "models": [
+    { "tag": "qwen3.5:4b", "role": "quick", "bestFor": ["quick", "summary"] },
+    { "tag": "okkin:latest", "role": "default", "bestFor": ["open", "chat"] },
+    { "tag": "qwen3.5:9b", "role": "chat", "bestFor": ["chat", "writing"], "keep_alive": "10m" },
+    { "tag": "ornith-1.5:9b", "role": "code", "bestFor": ["code"], "num_ctx": 16384, "keep_alive": "10m" },
+    { "tag": "hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M", "role": "big", "bestFor": ["long", "reasoning"], "keep_alive": 0, "minFreeRamGB": 22 }
+  ]
+}
