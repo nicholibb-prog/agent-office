@@ -297,7 +297,8 @@ export const hqRoutes = {
         powerControl: power.ok ? (powerRightsBlocked() ? 'no-rights' : powerCooling() ? 'cooling' : 'ready') : 'not-set-up',
         powerReason: power.ok ? null : power.reason,
         // Read-only for everyone else: the panel shows 'Owner only' on the controls.
-        owner: !botCredential(req) && okkinCaller(req).kind === 'owner',
+        // Polling: reads the owner session without extending its idle timer.
+        owner: !botCredential(req) && okkinCaller(req, { touch: false }).kind === 'owner',
         ownerState: botCredential(req) ? 'locked' : (pinOwnerIntegrity(ctx.cfg.dataDir), ownerState(req)),
         dial: stops.map((m) => ({ tag: m.tag, role: m.role, bestFor: m.bestFor, installed: m.installed, allowed: m.allowed, ramOk: ramAllows(m), minFreeRamGB: m.minFreeRamGB ?? null })),
         loaded: loadedNow,
@@ -372,6 +373,13 @@ export const hqRoutes = {
     path: '/api/bridge/okkin/owner/lock',
     auth: 'public' as const,
     handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      const bot = botCredential(req);
+      if (bot) {
+        logOkkinRefusal(ctx.cfg.dataDir, { route: 'POST /api/bridge/okkin/owner/lock', caller: bot });
+        return send(res, 403, { error: 'owner only' });
+      }
+      // Same checks as every state change here: a session, this office's Host and Origin, JSON.
+      if (!sessionOnly(ctx, req, res)) return;
       endOwnerSession(cookieOf(req));
       return send(res, 200, { ok: true, ownerState: 'locked' }, { 'set-cookie': clearOwnerCookieHeader(isSecure(req, ctx.cfg as never)) });
     },

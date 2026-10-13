@@ -233,3 +233,86 @@ test('Ask while off is greyed, and focus uses a palette-gold ring, not the syste
   const focus = css.slice(css.lastIndexOf('.okl-input:focus-visible'));
   assert.match(focus, /outline: 2px solid #c9a227/);
 });
+
+test('unlock rate limit: also GLOBAL (20 failures per 15 minutes across addresses, then everyone waits); the map is pruned and capped', async () => {
+  const { noteUnlockFailure, unlockLocked, unlockKeys, UNLOCK_TRIES_GLOBAL, UNLOCK_KEYS_MAX, UNLOCK_WINDOW_MS } = await import('../src/server/hq/okkin-owner.js');
+  resetOwnerForTests();
+  const t0 = 1_000_000;
+  for (let i = 0; i < UNLOCK_TRIES_GLOBAL - 1; i++) noteUnlockFailure(`10.0.0.${i}`, t0 + i);
+  assert.equal(unlockLocked('10.9.9.9', t0 + 100), false, 'under the global limit, a fresh address may try');
+  noteUnlockFailure('10.0.1.1', t0 + 200);
+  assert.equal(unlockLocked('10.9.9.9', t0 + 300), true, 'global lockout: every address');
+  assert.equal(unlockLocked('10.9.9.9', t0 + 200 + UNLOCK_WINDOW_MS + 1), false, 'over after 15 minutes');
+  assert.equal(unlockKeys(), 0, 'expired entries are pruned on the next call');
+  resetOwnerForTests();
+  for (let i = 0; i < UNLOCK_KEYS_MAX + 250; i++) noteUnlockFailure(`a${i}`, t0 + i * 10);
+  assert.ok(unlockKeys() <= UNLOCK_KEYS_MAX, `capped at ${UNLOCK_KEYS_MAX}`);
+  resetOwnerForTests();
+});
+
+test('Lock: session-only (Host, Origin, JSON), bot credentials 403, a fake Origin refused', async () => {
+  const { dataDir, seat, ready } = setup();
+  await ready;
+  const cookie = cookieFrom((await unlock(dataDir, PASS)).headers);
+  const lock = (h: Record<string, string>) => call(hqRoutes.okkinOwnerLock, office(dataDir), h, {});
+  const fake = await lock({ cookie, origin: 'https://evil.example' });
+  assert.equal(fake.status, 403);
+  assert.equal(fake.json.error, 'origin not allowed');
+  assert.equal((await lock({ cookie, 'x-bridge-token': seat })).status, 403);
+  assert.equal((await lock({ cookie, authorization: `Bearer ${BRIDGE}` })).status, 403);
+  assert.equal((await call(hqRoutes.okkinOwnerLock, ctxOf(dataDir, undefined), { cookie }, {})).status, 401, 'no office session');
+  fresh();
+  assert.notEqual((await call(hqRoutes.okkinModel, office(dataDir), { cookie }, { model: 'okkin:latest' })).status, 403, 'still unlocked after the refused locks');
+  assert.equal((await lock({ cookie })).status, 200);
+  fresh();
+  assert.equal((await call(hqRoutes.okkinModel, office(dataDir), { cookie }, { model: 'okkin:latest' })).status, 403, 'locked');
+});
+
+test('AGENT_OFFICE_OWNER_FILE: refused inside Major Files (as given or via a symlink) or inside the repo; never read or written', async () => {
+  const { ownerFileRefusal, CODE_ROOT } = await import('../src/server/hq/okkin-owner.js');
+  const tmp = mkdtempSync(path.join(tmpdir(), 'ao-owner-path-'));
+  // A stand-in only: a temp folder with that name, never the real Major Files.
+  const fakeMajor = path.join(tmp, 'Major Files', 'okkin-owner.json');
+  assert.equal(ownerFileRefusal(fakeMajor), 'inside Major Files');
+  await assert.rejects(setOwnerPassphrase(fakeMajor, PASS), /Major Files/);
+  assert.equal(existsSync(path.join(tmp, 'Major Files')), false, 'nothing was created');
+  const target = path.join(tmp, 'major_files');
+  (await import('node:fs')).mkdirSync(target);
+  (await import('node:fs')).symlinkSync(target, path.join(tmp, 'link'));
+  assert.equal(ownerFileRefusal(path.join(tmp, 'link', 'okkin-owner.json')), 'inside Major Files', 'realpath is checked');
+  const inRepo = path.join(CODE_ROOT, 'okkin-owner.json');
+  assert.equal(ownerFileRefusal(inRepo), 'inside the repo');
+  await assert.rejects(setOwnerPassphrase(inRepo, PASS), /repo/);
+  assert.equal(existsSync(inRepo), false);
+  assert.equal(ownerFileRefusal(path.join(tmp, 'conf', 'okkin-owner.json')), null);
+  // Fail closed: a refused path means nobody is the owner.
+  const { dataDir } = setup({ owner: false });
+  process.env.AGENT_OFFICE_OWNER_FILE = inRepo;
+  assert.equal((await unlock(dataDir, PASS)).json.error, 'owner not set up');
+  rmSync(tmp, { recursive: true, force: true });
+});
+
+test('an office-password session (no account) plus the right passphrase is the owner; a token or Authorization still 403', async () => {
+  const { dataDir, seat, ready } = setup({ policy: 'empty' });
+  await ready;
+  const r = await unlock(dataDir, PASS);
+  assert.equal(r.status, 200, 'no account and no approvers entry needed');
+  const cookie = cookieFrom(r.headers);
+  fresh();
+  assert.notEqual((await call(hqRoutes.okkinModel, office(dataDir), { cookie }, { model: 'okkin:latest' })).status, 403);
+  for (const h of [{ 'x-bridge-token': seat }, { authorization: 'Basic eDp5' }]) {
+    fresh();
+    assert.equal((await call(hqRoutes.okkinModel, office(dataDir), { ...h, cookie }, { model: 'okkin:latest' })).status, 403);
+  }
+});
+
+test('loft GET polling does not extend the owner idle timer', async () => {
+  const { okkinCaller } = await import('../src/server/hq/okkin-owner.js');
+  const { dataDir, ready } = setup();
+  await ready;
+  const start = Date.now() - OWNER_IDLE_MS + 60_000; // a minute of idle left
+  const cookie = `${OWNER_COOKIE}=${startOwnerSession(start)}`;
+  for (let i = 0; i < 3; i++) assert.equal((await call(hqRoutes.okkinLoft, office(dataDir), { cookie }, undefined)).json.ownerState, 'unlocked');
+  const req = { headers: { cookie } } as unknown as IncomingMessage;
+  assert.equal(okkinCaller(req, { now: start + OWNER_IDLE_MS + 1 }).kind, 'owner-expired', 'polling never touched it');
+});

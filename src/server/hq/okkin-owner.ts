@@ -4,9 +4,15 @@
 // `npm run owner:set` (TTY prompt, no echo, asked twice). Only a salted scrypt hash is stored, in an
 // owner-only file (0600, in a 0700 folder) outside the repo; the plaintext never touches disk, argv,
 // env or logs. 'Unlock owner' in the Okkin panel checks the passphrase (constant-time), rate-limited
-// (5 failures per 15 minutes per address, then locked out for 15 minutes), and on success sets a
+// (5 failures per 15 minutes per address, and 20 per 15 minutes across all addresses, each then
+// locked out for 15 minutes), and on success sets a
 // separate owner cookie: HttpOnly, SameSite=Strict, Secure on https, 15 minutes idle, 1 hour at most,
 // in memory only (a restart or Lock clears it). Power needs a fresh unlock (within 5 minutes).
+//
+// Who may unlock: anyone in an office-password session (or an account session) who types the right
+// passphrase. The owner does NOT need an account, and the approvers list (work-pool-policy.json) is
+// deliberately NOT consulted: it was dropped on purpose, so the passphrase is the one thing that makes
+// the owner. The session alone is never enough.
 //
 // Nothing else is the owner: not the office password session, not an account, and never a request
 // carrying a bot credential (x-bridge-token / seat token, x-pool-caller, any Authorization), even with
@@ -14,7 +20,9 @@
 //
 // TODO: a passkey (WebAuthn) instead of, or as well as, the passphrase.
 import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { isMajorFiles } from '../major-files.js';
 import type http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -36,6 +44,45 @@ export function ownerFile(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(base, 'agent-office', 'okkin-owner.json');
 }
 
+/** The repo (or installed package) this code runs from: the owner file may never live inside it. */
+export const CODE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+
+/** Where `p` really leads: the realpath of its nearest existing ancestor, plus the rest. */
+function realpathNearest(p: string): string {
+  let dir = path.resolve(p);
+  const rest: string[] = [];
+  for (;;) {
+    try {
+      return path.join(realpathSync(dir), ...rest);
+    } catch {
+      const up = path.dirname(dir);
+      if (up === dir) return path.resolve(p);
+      rest.unshift(path.basename(dir));
+      dir = up;
+    }
+  }
+}
+const inside = (child: string, root: string) => child === root || child.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
+
+/**
+ * Why `file` may not hold the owner hash, or null if it may. Major Files is checked on the path as
+ * given (no fs call at all), then on its realpath; and never inside the code's own repo. Every fs
+ * entry point below asks this first, so a refused path is never read or written.
+ */
+export function ownerFileRefusal(file: string): string | null {
+  if (isMajorFiles(path.resolve(file))) return 'inside Major Files';
+  const real = realpathNearest(file);
+  if (isMajorFiles(real)) return 'inside Major Files';
+  let root = CODE_ROOT;
+  try {
+    root = realpathSync(CODE_ROOT);
+  } catch {
+    // keep the resolved path
+  }
+  if (inside(real, root) || inside(path.resolve(file), CODE_ROOT)) return 'inside the repo';
+  return null;
+}
+
 type Stored = { v: 1; kdf: 'scrypt'; N: number; r: number; p: number; salt: string; hash: string };
 
 function derive(pass: string, salt: Buffer, s: { N: number; r: number; p: number }): Promise<Buffer> {
@@ -44,6 +91,8 @@ function derive(pass: string, salt: Buffer, s: { N: number; r: number; p: number
 
 /** Writes the hash (never the passphrase) to `file`: folder 0700, file 0600, atomically. */
 export async function setOwnerPassphrase(file: string, pass: string): Promise<void> {
+  const refused = ownerFileRefusal(file);
+  if (refused) throw new Error(`refusing AGENT_OFFICE_OWNER_FILE ${refused}; keep it in your user config folder`);
   if (pass.length < PASSPHRASE_MIN) throw new Error(`the owner passphrase needs at least ${PASSPHRASE_MIN} characters`);
   const salt = randomBytes(16);
   const hash = await derive(pass, salt, SCRYPT);
@@ -60,6 +109,7 @@ export async function setOwnerPassphrase(file: string, pass: string): Promise<vo
 
 /** The stored hash, or null when there's none (or it isn't owner-only on POSIX: then it doesn't count). */
 function readStored(file: string): Stored | null {
+  if (ownerFileRefusal(file)) return null; // fail closed: nobody is the owner
   try {
     if (!existsSync(file)) return null;
     if (process.platform !== 'win32') {
@@ -84,6 +134,7 @@ export const ownerSetUp = (file = ownerFile()) => readStored(file) !== null;
 export const INTEGRITY_EVERY_MS = 60_000;
 const integrity = { file: '', pinned: undefined as string | null | undefined, changed: false, dataDir: '', timer: null as NodeJS.Timeout | null };
 const fileSha = (file: string): string | null => {
+  if (ownerFileRefusal(file)) return null;
   try {
     return existsSync(file) ? createHash('sha256').update(readFileSync(file)).digest('hex') : null;
   } catch {
@@ -92,6 +143,7 @@ const fileSha = (file: string): string | null => {
 };
 const sidecar = (file: string) => `${file}.sha256`;
 function writeSidecar(file: string, sha: string | null) {
+  if (ownerFileRefusal(file)) return;
   try {
     if (sha) writeFileSync(sidecar(file), `${sha}\n`, { mode: 0o600 });
   } catch {
@@ -133,18 +185,37 @@ export async function checkOwnerPassphrase(file: string, pass: string): Promise<
   return got.length === want.length && timingSafeEqual(got, want);
 }
 
-// --- rate limit (per address), in memory ---
+// --- rate limit, in memory: per address, and globally across all addresses ---
+export const UNLOCK_TRIES_GLOBAL = 20;
+export const UNLOCK_KEYS_MAX = 1000;
 const fails = new Map<string, { at: number[]; lockedUntil: number }>();
+const global = { at: [] as number[], lockedUntil: 0 };
+/** Drops expired entries (every call), and caps the map at UNLOCK_KEYS_MAX keys (oldest first). */
+function prune(now: number) {
+  for (const [k, f] of fails) {
+    f.at = f.at.filter((t) => now - t < UNLOCK_WINDOW_MS);
+    if (!f.at.length && f.lockedUntil <= now) fails.delete(k);
+  }
+  global.at = global.at.filter((t) => now - t < UNLOCK_WINDOW_MS);
+  while (fails.size > UNLOCK_KEYS_MAX) fails.delete(fails.keys().next().value!);
+}
 export function unlockLocked(addr: string, now = Date.now()): boolean {
-  return (fails.get(addr)?.lockedUntil ?? 0) > now;
+  prune(now);
+  return global.lockedUntil > now || (fails.get(addr)?.lockedUntil ?? 0) > now;
 }
 export function noteUnlockFailure(addr: string, now = Date.now()) {
+  prune(now);
   const f = fails.get(addr) ?? { at: [], lockedUntil: 0 };
-  f.at = f.at.filter((t) => now - t < UNLOCK_WINDOW_MS);
   f.at.push(now);
   if (f.at.length >= UNLOCK_TRIES) f.lockedUntil = now + UNLOCK_WINDOW_MS;
-  fails.set(addr, f);
+  fails.delete(addr);
+  fails.set(addr, f); // most recent last, so the cap drops the oldest
+  global.at.push(now);
+  if (global.at.length >= UNLOCK_TRIES_GLOBAL) global.lockedUntil = now + UNLOCK_WINDOW_MS;
+  while (fails.size > UNLOCK_KEYS_MAX) fails.delete(fails.keys().next().value!);
 }
+/** For tests: how many addresses the limiter holds. */
+export const unlockKeys = () => fails.size;
 
 // --- owner sessions, in memory only (a restart clears them) ---
 type OwnerSession = { created: number; seen: number; unlocked: number };
@@ -162,6 +233,8 @@ export function endOwnerSession(token: string | null) {
 export function resetOwnerForTests() {
   sessions.clear();
   fails.clear();
+  global.at = [];
+  global.lockedUntil = 0;
   if (integrity.timer) clearInterval(integrity.timer);
   Object.assign(integrity, { file: '', pinned: undefined, changed: false, dataDir: '', timer: null });
 }
@@ -198,7 +271,7 @@ export function botCredential(req: http.IncomingMessage): 'bridge-token' | 'bear
 }
 
 /** Who is asking, for Okkin's controls. Touches (extends) a live owner session. */
-export function okkinCaller(req: http.IncomingMessage, opts: { file?: string; now?: number } = {}): OkkinCaller {
+export function okkinCaller(req: http.IncomingMessage, opts: { file?: string; now?: number; touch?: boolean } = {}): OkkinCaller {
   const bot = botCredential(req);
   if (bot) return { kind: bot };
   if (!checkOwnerIntegrity()) return { kind: 'owner-file-changed' };
@@ -212,14 +285,15 @@ export function okkinCaller(req: http.IncomingMessage, opts: { file?: string; no
     sessions.delete(key(token));
     return { kind: 'owner-expired' };
   }
-  s.seen = now;
+  // Only a real use extends the session: the panel's status polling (touch: false) never does.
+  if (opts.touch !== false) s.seen = now;
   return { kind: 'owner', fresh: now - s.unlocked <= OWNER_FRESH_MS };
 }
 
 export function ownerState(req: http.IncomingMessage, file = ownerFile()): OwnerState {
   if (!checkOwnerIntegrity()) return 'changed';
   if (!ownerSetUp(file)) return 'not-set-up';
-  return okkinCaller(req, { file }).kind === 'owner' ? 'unlocked' : 'locked';
+  return okkinCaller(req, { file, touch: false }).kind === 'owner' ? 'unlocked' : 'locked';
 }
 
 /** At this size the log rotates to .1 (replacing the old .1): two files at most, under 512 KB together. */

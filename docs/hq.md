@@ -109,6 +109,19 @@ the input. Success sets a separate owner cookie (`ao_okkin_owner`: HttpOnly, Sam
 Secure on https), held in server memory only: 15 minutes idle, 1 hour at most; Lock, signing out of the
 office, or a restart ends it. Power on/off also needs an unlock in the last 5 minutes.
 
+**Who may unlock.** Anyone in an office session (the shared office password is enough; the owner does
+not need an account) who types the right owner passphrase. The approvers list (`work-pool-policy.json`)
+is deliberately not consulted: that check was dropped on purpose, so the passphrase is the one thing
+that makes the owner, and a session alone never is. Unlocking is rate-limited per address (5 failures per
+15 minutes) and globally (20 failures per 15 minutes across all addresses), each followed by a 15-minute
+lockout; the limiter prunes expired entries and holds at most 1,000 addresses. Lock (`POST
+/api/bridge/okkin/owner/lock`) has the same checks as the other controls (session, Host, Origin, JSON);
+bot credentials get 403. The panel's status polling does not extend the owner's idle timer.
+
+**Where the hash may live.** `AGENT_OFFICE_OWNER_FILE` is refused (nobody is the owner, and `owner:set`
+fails) if it points inside Major Files (checked on the path as given, then on its realpath) or inside the
+office's own repo; nothing at a refused path is read or written.
+
 **Nobody else.** Not the office password session, not any account, and never a request carrying a bot
 credential (the bridge token or a seat token in `x-bridge-token`, an `x-pool-caller` token, or any
 `Authorization` header), even with an owner cookie alongside it: 403 `owner only`. Bots must never be
