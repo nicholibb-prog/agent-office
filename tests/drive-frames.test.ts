@@ -70,7 +70,7 @@ test('seat must be a real crew seat (isSeatId), not just a tidy string', async (
 
 test('refuses a Bridge folder under Major Files, as given or through a symlink', async () => {
   const { isMajorFiles } = await import('../src/server/major-files.js');
-  assert.ok(isMajorFiles('C:\\Users\\nick\\Major Files\\Bridge'));
+  assert.ok(isMajorFiles('C:\\Users\\owner\\Major Files\\Bridge'));
   assert.ok(isMajorFiles('/home/x/major_files/bridge'));
   assert.ok(!isMajorFiles('/home/x/Bridge/live'));
   const top = path.join(tmpdir(), 'ao-mf-' + process.pid + Math.random().toString(36).slice(2));
@@ -81,4 +81,22 @@ test('refuses a Bridge folder under Major Files, as given or through a symlink',
   const link = path.join(top, 'Bridge-link');
   symlinkSync(inside, link);
   assert.equal(readDriveFrame('seat-1', { AO_BRIDGE_LOCAL_DIR: link }), undefined, 'realpath lands in Major Files');
+});
+
+test('a Major Files path returns before realpath is ever called', async () => {
+  const { driveFs } = await import('../src/server/drive-frames.js');
+  const orig = driveFs.realpathSync;
+  const calls: string[] = [];
+  driveFs.realpathSync = (p: string) => (calls.push(p), orig(p));
+  try {
+    assert.equal(readDriveFrame('seat-1', { AO_BRIDGE_LOCAL_DIR: 'C:\\Users\\owner\\Major Files\\Bridge' }), undefined);
+    assert.equal(readDriveFrame('seat-1', { AO_BRIDGE_LOCAL_DIR: '/home/owner/major_files/bridge' }), undefined);
+    assert.deepEqual(calls, [], 'no realpath on a Major Files path');
+    const d = dir();
+    writeFileSync(path.join(d, 'live', 'seat-1.jpg'), JPG);
+    assert.ok(readDriveFrame('seat-1', { AO_BRIDGE_LOCAL_DIR: d }));
+    assert.ok(calls.length > 0, 'the spy does see normal paths');
+  } finally {
+    driveFs.realpathSync = orig;
+  }
 });
