@@ -86,7 +86,7 @@ test('bridgeGate POST requires application/json', () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-test('bridgeGate accepts x-bridge-token', () => {
+test('bridgeGate accepts the shared x-bridge-token for GET (read-only)', () => {
   const dir = path.join(tmpdir(), 'ao-bridge-t-' + Date.now());
   mkdirSync(dir, { recursive: true });
   const tok = 'd'.repeat(64);
@@ -99,7 +99,7 @@ test('bridgeGate accepts x-bridge-token', () => {
     ctx,
     fakeReq({
       headers: { host: '127.0.0.1:4600', 'content-type': 'application/json', 'x-bridge-token': tok },
-      method: 'POST',
+      method: 'GET',
     }),
     { writeHead() {}, end() {} } as ServerResponse,
   );

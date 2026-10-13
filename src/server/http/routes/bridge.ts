@@ -6,6 +6,7 @@ import path from 'node:path';
 import type { Ctx } from '../../office/context.js';
 import type { ChatLine } from '../../../shared/protocol.js';
 import { send } from '../util.js';
+import { seatForToken } from '../../seat-tokens.js';
 import type { Route } from '../router.js';
 
 const BRIDGE_FAILED = 'Bridge failed';
@@ -105,15 +106,46 @@ export function bridgeShape(req: http.IncomingMessage, res: http.ServerResponse)
   return true;
 }
 
-/** Bridge auth: Host allowlist + Origin check + (token OR office session). Loopback alone is not enough. */
-export function bridgeGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): boolean {
-  if (!bridgeShape(req, res)) return false;
-  const expected = bridgeToken(ctx.cfg.dataDir);
+export type BridgeCaller = { kind: 'seat'; seat: string } | { kind: 'shared' } | { kind: 'session' };
+
+/**
+ * Who is calling the bridge. A per-seat token names its seat; that is the only bridge identity.
+ * The old shared bridge-token is read-only (GET). A presented token that matches nothing is 401
+ * even when a session cookie is also present. Sends the error response and returns null on failure.
+ */
+export function bridgeCaller(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): BridgeCaller | null {
+  if (!bridgeShape(req, res)) return null;
   const got = tokenFromReq(req);
-  if (got && safeTokenEq(got, expected)) return true;
-  if (ctx.auth.fromRequest(req) || ctx.auth.fromAnyCookie(req)) return true;
+  if (got) {
+    const seat = seatForToken(ctx.cfg.dataDir, got);
+    if (seat) return { kind: 'seat', seat };
+    if (safeTokenEq(got, bridgeToken(ctx.cfg.dataDir))) {
+      if ((req.method || 'GET') === 'GET') return { kind: 'shared' };
+      send(res, 403, { error: 'shared bridge token is read-only; use a seat token' });
+      return null;
+    }
+    send(res, 401, { error: 'bridge token not recognised' });
+    return null;
+  }
+  if (ctx.auth.fromRequest(req) || ctx.auth.fromAnyCookie(req)) return { kind: 'session' };
   send(res, 401, { error: 'bridge token or office session required' });
-  return false;
+  return null;
+}
+
+/** Bridge auth: Host allowlist + Origin check + (seat token, read-only shared token, or office session). */
+export function bridgeGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  return bridgeCaller(ctx, req, res) !== null;
+}
+
+/** Routes that speak or set presence: a seat token only. Returns the caller's seat. */
+function seatGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): string | null {
+  const c = bridgeCaller(ctx, req, res);
+  if (!c) return null;
+  if (c.kind !== 'seat') {
+    send(res, 403, { error: 'seat token required' });
+    return null;
+  }
+  return c.seat;
 }
 
 /** Local HQ bridge: crew bots to office T-chat / presence / feed. */
@@ -133,14 +165,19 @@ export const bridgeRoutes = {
     path: '/api/bridge/say',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!bridgeGate(ctx, req, res)) return;
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
       let body: { name?: string; text?: string; color?: string };
       try {
         body = JSON.parse(await readBody(req)) as { name?: string; text?: string; color?: string };
       } catch {
         return send(res, 400, { error: 'bad json' });
       }
-      const name = String(body.name || 'agent').slice(0, 32).trim() || 'agent';
+      // Identity is the token's seat. A body name is allowed only when it is that seat.
+      if (body.name !== undefined && String(body.name).trim().toLowerCase() !== seat) {
+        return send(res, 403, { error: 'name does not match seat token' });
+      }
+      const name = seat;
       const text = String(body.text || '').slice(0, 500).trim();
       if (!text) return send(res, 400, { error: 'empty text' });
       const line: ChatLine = {
@@ -164,7 +201,8 @@ export const bridgeRoutes = {
     path: '/api/bridge/crew-status',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!bridgeGate(ctx, req, res)) return;
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
       let body: { crew?: Record<string, string> };
       try {
         body = JSON.parse(await readBody(req)) as { crew?: Record<string, string> };
@@ -172,6 +210,9 @@ export const bridgeRoutes = {
         return send(res, 400, { error: 'bad json' });
       }
       const crew = body.crew || {};
+      if (Object.keys(crew).some((k) => k.trim().toLowerCase() !== seat)) {
+        return send(res, 403, { error: 'a seat can only set its own status' });
+      }
       const payload = { updatedAt: new Date().toISOString(), crew, source: 'bridge' };
       try {
         const file = path.join(ctx.cfg.dataDir, 'crew-status.json');
@@ -207,16 +248,19 @@ export const bridgeRoutes = {
     path: '/api/bridge/status',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!bridgeGate(ctx, req, res)) return;
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
       let body: { name?: string; status?: string };
       try {
         body = JSON.parse(await readBody(req)) as { name?: string; status?: string };
       } catch {
         return send(res, 400, { error: 'bad json' });
       }
-      const name = String(body.name || '').trim();
       const st = String(body.status || '').toLowerCase();
-      if (!name) return send(res, 400, { error: 'name required' });
+      if (body.name !== undefined && String(body.name).trim().toLowerCase() !== seat) {
+        return send(res, 403, { error: 'a seat can only set its own status' });
+      }
+      const name = seat;
       if (st !== 'working' && st !== 'idle') return send(res, 400, { error: 'status working|idle' });
       const crew: Record<string, string> = { [name]: st };
       let merged = crew;
