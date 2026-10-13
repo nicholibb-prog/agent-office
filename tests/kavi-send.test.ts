@@ -224,13 +224,25 @@ test('no folder id configured: sends are refused with an honest message and read
   rmSync(r, { recursive: true, force: true });
 });
 
-test('the real Bridge folder id is not in the repo', async () => {
+test('the real Bridge folder id is not in the repo (checked by hash only)', async () => {
   const { execFileSync } = await import('node:child_process');
-  let hits = '';
-  try {
-    hits = execFileSync('git', ['grep', '-l', '-e', ['1PX8', 'OuEqf8rYYUro7dR3aq0NN8RGg7I1Q'].join(''), '--', '.'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch {
-    hits = ''; // git grep exits 1 when nothing matches
+  const { createHash } = await import('node:crypto');
+  // SHA-256 of the real id. The id itself, or any piece of it, never appears in the tree.
+  const REAL_ID_SHA256 = '52a7ca0c3cd6e474595b69009abe5d0ea9a8b09278ddf0c932239187083ada5d';
+  const tracked = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean);
+  const leaks: string[] = [];
+  for (const f of tracked) {
+    let text: string;
+    try {
+      const buf = readFileSync(f);
+      if (buf.includes(0)) continue; // binary
+      text = buf.toString('utf8');
+    } catch {
+      continue;
+    }
+    for (const tok of text.match(/[A-Za-z0-9_-]{25,60}/g) ?? []) {
+      if (createHash('sha256').update(tok).digest('hex') === REAL_ID_SHA256) leaks.push(f);
+    }
   }
-  assert.equal(hits, '');
+  assert.deepEqual(leaks, []);
 });

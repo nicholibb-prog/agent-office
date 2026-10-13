@@ -56,7 +56,7 @@ export interface KaviPc {
   close(): void;
 }
 
-export function mountKaviSendPanel(): KaviPc {
+export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): KaviPc {
   const style = el('style', '');
   style.textContent = CSS;
   document.head.appendChild(style);
@@ -136,6 +136,7 @@ export function mountKaviSendPanel(): KaviPc {
   const done = (r: Response) =>
     r.json().then((j: { name?: string; folderId?: string; error?: string }) => {
       if (r.ok && j.folderId) {
+        if (j.name) onSent(j.name);
         link = `https://drive.google.com/drive/folders/${encodeURIComponent(j.folderId)}`;
         setStatus("Sent to Kavi's Bridge folder.", false, true);
         return true;

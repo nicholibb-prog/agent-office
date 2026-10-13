@@ -11,7 +11,8 @@ const FEED_EVERY = 5;
  * Karen's walking and her face (Kavi's picture, see picture.ts) stay on her fixture.
  */
 export function installKaviBoard(ctx: Ctx) {
-  const pcScreen = mountKaviSendPanel();
+  // After a confirmed send the Bridge board shows it, until real Bridge titles arrive.
+  const pcScreen = mountKaviSendPanel((name) => board.show([`Sent: ${name}`, 'Waiting on Kavi']));
   // Clicking Kavi's computer on her desk opens her screen. Aim with the mouse, or the crosshair when locked.
   const ray = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
