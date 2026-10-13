@@ -14,6 +14,7 @@ import { jevBoard } from '../../features/jev/world';
 import { kaviKaren } from '../../features/kavi-board/karen';
 import { kaviBoard } from '../../features/kavi-board/world';
 import { poolBoard, poolPoster } from '../../features/work-pool/world';
+import { okkinLoft } from '../../features/okkin-loft/world';
 import { whiteboard } from '../../features/whiteboard/world';
 import { green, tee } from '../../features/golf/world';
 import { stack } from '../stack';
@@ -80,6 +81,7 @@ function floorPlan() {
     kaviKaren,
     poolBoard,
     poolPoster,
+    okkinLoft,
     clearOfStairs,
   ] as const;
 }
