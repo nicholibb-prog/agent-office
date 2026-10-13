@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { freemem } from 'node:os';
 import path from 'node:path';
 import { modelTagOk } from '../../shared/hq.js';
+import { OKKIN_MODELS } from '../../shared/okkin-loft.js';
 
 export const LOFT_FILE = 'okkin-loft.json';
 
@@ -46,10 +47,20 @@ export function loadLoftConfig(dataDir: string): LoftConfig {
   }
 }
 
-/** The dial's stops: config order, kept only when /api/tags has the exact tag. */
-export function dialStops(config: LoftConfig, installed: readonly string[]): LoftModel[] {
+/**
+ * What the dial shows: the config's models, or with none configured the five built-in ones. Display
+ * only: it does not widen the Okkin allowlist (okkinSettings still reads loadLoftConfig), so a model
+ * outside it can be shown but not switched to.
+ */
+export function dialConfig(config: LoftConfig): LoftConfig {
+  return config.models.length ? config : { ...config, models: parseLoftConfig({ models: OKKIN_MODELS }).models };
+}
+
+export type DialStop = LoftModel & { installed: boolean };
+/** The dial's stops: every configured model, in config order, each marked installed or not (from /api/tags). */
+export function dialStops(config: LoftConfig, installed: readonly string[]): DialStop[] {
   const have = new Set(installed);
-  return config.models.filter((m) => have.has(m.tag));
+  return config.models.map((m) => ({ ...m, installed: have.has(m.tag) }));
 }
 
 /** A model gated on free RAM may only be picked when the box has that much free right now. */

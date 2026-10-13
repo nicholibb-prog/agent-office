@@ -2,9 +2,21 @@ import * as THREE from 'three';
 import { mesh, roundedBox, textPlane, toon } from '../../world/toon';
 import type { Collider } from '../../world/types';
 import type { Fixture } from '../../world/office/fixture';
-import { OKKIN_LOFT } from '../../../shared/okkin-loft';
+import { OKKIN_CONSOLE, OKKIN_LOFT, OKKIN_MODELS } from '../../../shared/okkin-loft';
 
-export type LoftState = { power: 'on' | 'off'; busy: boolean };
+export type LoftState = {
+  power: 'on' | 'off';
+  busy: boolean;
+  /** Whether the power switch works (real config passed). False: it shows 'NOT SET UP', never a fake state. */
+  switchWorks?: boolean;
+  switchLabel?: string;
+  dial?: { role: string; status: 'installed' | 'not installed' | 'unknown' }[];
+  dialIndex?: number;
+};
+
+/** The dial in the room turns through this sweep, like the panel's (270°). */
+const SWEEP = (270 * Math.PI) / 180;
+export const dialTurn = (i: number, n: number) => (n <= 1 ? 0 : -SWEEP / 2 + (SWEEP * i) / (n - 1));
 
 export interface OkkinLoftView {
   group: THREE.Group;
@@ -50,10 +62,87 @@ export function buildOkkinLoft(): OkkinLoftView {
   plate.rotation.y = -Math.PI / 2;
   group.add(plate);
 
+  // The console: a pedestal in front of the racks with the POWER switch (left) and the MODEL dial (right), facing -x.
+  const C = OKKIN_CONSOLE;
+  const consoleG = new THREE.Group();
+  consoleG.name = 'okkin-console';
+  consoleG.position.set(C.x, 0, C.z);
+  consoleG.rotation.y = -Math.PI / 2; // its front (+z local) faces -x, toward the floor
+  consoleG.add(mesh(roundedBox(C.width, C.height - 0.08, C.depth, 0.04), toon('#c9ccd1'), 0, (C.height - 0.08) / 2, 0));
+  const top = mesh(roundedBox(C.width + 0.06, 0.08, C.depth + 0.1, 0.03), toon('#f2f3f5'), 0, C.height - 0.04, 0.02);
+  top.rotation.x = 0.35;
+  consoleG.add(top);
+  const face = new THREE.Group();
+  face.position.set(0, C.height + 0.005, 0.02);
+  face.rotation.x = 0.35 - Math.PI / 2;
+  consoleG.add(face);
+  const label = (text: string, x: number, y: number, scale = 0.26) => {
+    const t = textPlane(text);
+    t.scale.setScalar(scale);
+    t.position.set(x, y, 0.012);
+    face.add(t);
+    return t;
+  };
+  // Power switch: a rocker in a housing, with a status lamp.
+  const power = new THREE.Group();
+  power.name = 'okkin-power-switch';
+  power.position.set(-C.width / 4, 0, 0);
+  power.add(mesh(new THREE.BoxGeometry(0.16, 0.2, 0.03), toon('#1d1d1f'), 0, 0, 0.015, false));
+  const lever = mesh(new THREE.BoxGeometry(0.1, 0.07, 0.05), toon('#f5f5f7'), 0, 0, 0.045, false);
+  lever.name = 'okkin-power-lever';
+  power.add(lever);
+  const lampMat = new THREE.MeshBasicMaterial({ color: '#8e8e93' });
+  const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.018, 16), lampMat);
+  lamp.position.set(0.11, 0.07, 0.032);
+  power.add(lamp);
+  face.add(power);
+  label('POWER', -C.width / 4, 0.16);
+  const notSetUp = label('NOT SET UP', -C.width / 4, -0.15, 0.2);
+  notSetUp.name = 'okkin-power-not-set-up';
+  // Model dial: a knob with a pointer, and one tick per model round it.
+  const dial = new THREE.Group();
+  dial.name = 'okkin-model-dial';
+  dial.position.set(C.width / 4, -0.01, 0);
+  dial.add(mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.01, 32), toon('#e9eaee'), 0, 0, 0.005, false).rotateX(Math.PI / 2));
+  const knob = new THREE.Group();
+  knob.add(mesh(new THREE.CylinderGeometry(0.06, 0.065, 0.04, 24), toon('#c3c6cc'), 0, 0, 0.03, false).rotateX(Math.PI / 2));
+  knob.add(mesh(new THREE.BoxGeometry(0.012, 0.05, 0.012), new THREE.MeshBasicMaterial({ color: '#0071e3' }), 0, 0.03, 0.052, false));
+  knob.name = 'okkin-dial-knob';
+  dial.add(knob);
+  const ticks: { mat: THREE.MeshBasicMaterial; label: THREE.Object3D }[] = [];
+  const roles = OKKIN_MODELS.map((m) => m.role);
+  roles.forEach((role, i) => {
+    const a = dialTurn(i, roles.length);
+    const mat = new THREE.MeshBasicMaterial({ color: '#6e6e73' });
+    const tick = new THREE.Mesh(new THREE.CircleGeometry(0.012, 10), mat);
+    tick.position.set(Math.sin(a) * 0.09, Math.cos(a) * 0.09, 0.012);
+    dial.add(tick);
+    const t = textPlane(role.toUpperCase());
+    t.scale.setScalar(0.13);
+    t.position.set(Math.sin(a) * 0.17, Math.cos(a) * 0.17, 0.012);
+    t.name = `okkin-dial-stop-${role}`;
+    dial.add(t);
+    ticks.push({ mat, label: t });
+  });
+  face.add(dial);
+  label('MODEL', C.width / 4, -0.22, 0.2);
+  group.add(consoleG);
+
   let state: LoftState = { power: 'off', busy: false };
   let t = 0;
   const paint = () => {
     const on = state.power === 'on';
+    // The switch: up when Okkin is really on. Not set up: amber lamp and the plate says so.
+    const works = !!state.switchWorks;
+    lever.rotation.x = on ? -0.45 : 0.45;
+    lampMat.color.set(!works ? '#ff9f0a' : on ? '#34c759' : '#8e8e93');
+    notSetUp.visible = !works;
+    const n = state.dial?.length || roles.length;
+    knob.rotation.z = -dialTurn(Math.min(state.dialIndex ?? 1, n - 1), n);
+    ticks.forEach((t, i) => {
+      const st = state.dial?.[i]?.status ?? 'unknown';
+      t.mat.color.set(i === (state.dialIndex ?? 1) ? '#0071e3' : st === 'not installed' ? '#ff9f0a' : st === 'installed' ? '#34c759' : '#6e6e73');
+    });
     glowMat.opacity = on ? 0.35 : 0;
     leds.forEach((m, i) => {
       if (!on) return m.color.set('#1f2a1f');
@@ -63,7 +152,10 @@ export function buildOkkinLoft(): OkkinLoftView {
     });
   };
   paint();
-  const colliders: Collider[] = [{ minX: L.maxX - L.rackDepth - 0.1, maxX: L.maxX, minZ: L.minZ, maxZ: L.maxZ, top: L.rackHeight + 0.04 }];
+  const colliders: Collider[] = [
+    { minX: L.maxX - L.rackDepth - 0.1, maxX: L.maxX, minZ: L.minZ, maxZ: L.maxZ, top: L.rackHeight + 0.04 },
+    { minX: C.x - C.depth / 2, maxX: C.x + C.depth / 2, minZ: C.z - C.width / 2, maxZ: C.z + C.width / 2, top: C.height },
+  ];
   const view: OkkinLoftView & { tick(dt: number): void } = {
     group,
     colliders,

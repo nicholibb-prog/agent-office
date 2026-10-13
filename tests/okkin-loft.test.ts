@@ -22,10 +22,10 @@ const fakeOllama = (tags: string[], extra: Record<string, unknown> = {}) => asyn
 };
 const down = async () => { throw new Error('ECONNREFUSED'); };
 
-test('dial = loft config ∩ /api/tags (mocked), never a hardcoded list', () => {
+test('dial = every configured model, each marked installed or not by /api/tags (mocked)', () => {
   const cfg = parseLoftConfig({ models: [{ tag: 'a:1b', role: 'quick', bestFor: ['quick'] }, { tag: 'b:9b', role: 'code', bestFor: ['code'], num_ctx: 16384 }, { tag: '../x' }] });
   assert.deepEqual(cfg.models.map((m) => m.tag), ['a:1b', 'b:9b']);
-  assert.deepEqual(dialStops(cfg, ['b:9b', 'z:2b']).map((m) => m.tag), ['b:9b']);
+  assert.deepEqual(dialStops(cfg, ['b:9b', 'z:2b']).map((m) => [m.tag, m.installed]), [['a:1b', false], ['b:9b', true]]);
   assert.equal(bestModelFor('code', cfg.models)?.tag, 'b:9b');
   assert.equal(ramAllows({ tag: 'big', role: 'big', bestFor: [], minFreeRamGB: 22 }, 8 * 1024 ** 3), false);
   assert.equal(parseLoftConfig({}).idleSleepMin, null);

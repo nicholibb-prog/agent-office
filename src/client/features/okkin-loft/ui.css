@@ -61,3 +61,10 @@ body:has([aria-modal="true"]:not([hidden])) .lite-offer, body:has(.okl-pill:not(
 body:has([aria-modal="true"]:not([hidden])) :is(.since-close, #project) { visibility: hidden; }
 @media (max-height: 640px) { .okl-panel { padding: 20px 24px; } .okl-head { margin-bottom: 10px; } .okl-panel h3 { margin-top: 14px; } }
 .okl-pick { display: flex; flex-direction: column; gap: 2px; }
+.okl-center { flex-direction: column; align-items: center; }
+.okl-center h3 { align-self: flex-start; }
+.okl-power-reason { max-width: 380px; text-align: center; }
+.okl-missing { font-size: 12px; font-weight: 700; color: #b25000; }
+.okl-tick[data-status="not installed"] { color: #b25000; opacity: .7; text-decoration: line-through; }
+.okl-load { margin-top: 6px; padding: 6px 14px; font-size: 13px; align-self: flex-start; }
+.okl-knob { cursor: pointer; }
