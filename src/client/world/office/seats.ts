@@ -100,12 +100,25 @@ export function buildDesk(def: DeskDef, index: number, trimMat: THREE.Material):
   return { def, group, laptopAnchor, seatAnchor, stage, chair: ch, vacancy, vacancyY };
 }
 
-/** The floating green "+" over an empty seat. */
-export function vacancyMarker(y: number): THREE.Group {
+/**
+ * The green "+" over an empty seat: anchored to the seat by a thin stem down to the desk top, and
+ * labelled "Free seat" (both faces) so it reads as a marker, not a floating shape.
+ */
+export function vacancyMarker(y: number, stem = 0.5): THREE.Group {
   const vacancy = new THREE.Group();
   const plusMat = toon('#7cf29a', { emissive: '#1f7a3a' });
   vacancy.add(mesh(box(0.28, 0.08, 0.08), plusMat, 0, 0, 0, false));
   vacancy.add(mesh(box(0.08, 0.28, 0.08), plusMat, 0, 0, 0, false));
+  vacancy.add(mesh(new THREE.CylinderGeometry(0.012, 0.012, stem, 6), toon('#5fbf7a'), 0, -0.14 - stem / 2, 0, false));
+  for (const ry of [0, Math.PI]) {
+    const label = textPlane('Free seat');
+    label.scale.setScalar(0.3);
+    label.position.set(0, 0.24, 0);
+    label.rotation.y = ry;
+    label.name = 'vacancy-label';
+    vacancy.add(label);
+  }
+  vacancy.name = 'vacancy';
   vacancy.position.set(0, y, 0);
   return vacancy;
 }

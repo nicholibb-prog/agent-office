@@ -94,8 +94,10 @@ export function buildDial(stops: Loft['dial'], active: string, on: boolean, pick
 export function renderPanel(root: HTMLElement, d: Loft | null, act: { power(a: 'start' | 'stop'): void; pick(tag: string): void; best(job: string): void; close(): void; ask?(text: string): void }, note = '', asked: { who: string; text: string }[] = []) {
   const on = d?.power === 'on';
   const ctl = d?.powerControl ?? 'not-set-up';
-  const ctlText = ctl === 'ready' ? (on ? 'Turn off' : 'Turn on') : ctl === 'cooling' ? 'Cooling down…' : ctl === 'no-rights' ? 'Power control needs rights' : 'Power control not set up';
-  const power = h('button.okl-power', { type: 'button', 'aria-pressed': on ? 'true' : 'false', 'aria-label': `Power, currently ${on ? 'on' : 'off'}. ${ctlText}`, disabled: ctl !== 'ready' || !d }, h('span.okl-power-ring'), h('span.okl-power-label', {}, ctlText));
+  const ctlText = ctl === 'ready' ? (on ? 'Turn off' : 'Turn on') : ctl === 'cooling' ? 'Cooling down…' : ctl === 'no-rights' ? 'Power control needs rights' : 'Not set up';
+  // A static icon for every state: off/on is the power glyph, an unconfigured control a setup (wrench) glyph. Never a spinner.
+  const icon = ctl === 'not-set-up' || ctl === 'no-rights' ? 'setup' : on ? 'on' : 'off';
+  const power = h('button.okl-power', { type: 'button', 'aria-pressed': on ? 'true' : 'false', 'aria-label': `Power, currently ${on ? 'on' : 'off'}. ${ctlText}`, disabled: ctl !== 'ready' || !d }, h('span.okl-power-ring', { 'data-icon': icon, 'aria-hidden': 'true' }, icon === 'setup' ? '🔧' : '⏻'), h('span.okl-power-label', {}, ctlText));
   power.addEventListener('click', () => act.power(on ? 'stop' : 'start'));
   const active = d?.okkin.model ?? d?.okkin.configured ?? '';
   const dial = buildDial(d?.dial ?? [], active, on, act.pick);
@@ -103,7 +105,7 @@ export function renderPanel(root: HTMLElement, d: Loft | null, act: { power(a: '
   const gpu = d?.gpu;
   const cards = h('div.okl-cards', {}, ...(d?.dial ?? []).map((s) => h('div.okl-card', {}, h('span.okl-tag', {}, s.tag), h('span.okl-v', {}, d?.bench[s.tag] ? `${d.bench[s.tag]!.tokensPerSec} tok/s` : 'not measured yet'))));
   const job = h('select.okl-job', { 'aria-label': 'Job type' }, ...['open', 'quick', 'chat', 'code', 'long'].map((j) => h('option', { value: j }, j)));
-  const best = h('button.okl-btn', { type: 'button', disabled: !on }, 'Best model for this job');
+  const best = h('button.okl-btn', { type: 'button' }, 'Best model for this job');
   best.addEventListener('click', () => act.best((job as HTMLSelectElement).value));
   const close = h('button.okl-close', { type: 'button', 'aria-label': 'Close' }, '×');
   close.addEventListener('click', act.close);
@@ -118,7 +120,7 @@ export function renderPanel(root: HTMLElement, d: Loft | null, act: { power(a: '
       stat('GPU', gpu ? `${gpu.usedMB ?? '?'} / ${gpu.totalMB ?? '?'} MiB · ${gpu.tempC ?? '?'}°C · fan ${gpu.fan}` : 'no reading'),
     ),
     h('section', {}, h('h3', {}, 'Benchmarks'), cards),
-    h('section.okl-row', {}, job, best, d?.pick ? h('span.okl-v', {}, `→ ${d.pick}`) : null),
+    on ? h('section.okl-row', {}, job, best, d?.pick ? h('span.okl-v', {}, `→ ${d.pick}`) : null) : h('p.okl-muted.okl-best-hint', {}, 'Best model pick needs the power on.'),
     askBox(on, asked, act.ask),
     d?.powerReason ? h('p.okl-muted', {}, d.powerReason) : null,
     h('p.okl-note', { role: 'status', 'aria-live': 'polite' }, note),
