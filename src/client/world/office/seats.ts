@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CHAIR_OFFSET, BEANBAGS, DESKS, DESK_SIZE, FLOOR, KIOSK, SEATING_BY_ID, STATIONS, STATION_AGENT, deskSeat, type DeskDef, type StationKind } from '../../../shared/layout';
 import { deskPoint } from '../../../shared/nav';
+import { VACANCY, VACANCY_MAX_Y, vacancyLabelShown, vacancyY as vacancyYFor } from '../../../shared/vacancy';
 import { mesh, roundedBox, textPlane, toon } from '../toon';
 import type { Collider, DeskView, Interactable } from '../types';
 import type { Fixture } from './fixture';
@@ -93,34 +94,45 @@ export function buildDesk(def: DeskDef, index: number, trimMat: THREE.Material):
   ch.position.set(0, 0, CHAIR_OFFSET);
   group.add(ch);
 
-  const vacancyY = height + 0.55;
+  // On the desk edge on the chair's side, so it never stands in the view across the floor.
+  const vacancyY = vacancyYFor(height);
   const vacancy = vacancyMarker(vacancyY);
+  vacancy.position.z = depth / 2 - 0.12;
   group.add(vacancy);
 
   return { def, group, laptopAnchor, seatAnchor, stage, chair: ch, vacancy, vacancyY };
 }
 
 /**
- * The green "+" over an empty seat: anchored to the seat by a thin stem down to the desk top, and
- * labelled "Free seat" (both faces) so it reads as a marker, not a floating shape.
+ * The small green "+" on the desk edge over an empty seat (see shared/vacancy.ts: at most 1 m off the
+ * floor), on a short stem, with a "Free seat" label that only shows close up (build.ts toggles it).
  */
-export function vacancyMarker(y: number, stem = 0.5): THREE.Group {
+export function vacancyMarker(y: number): THREE.Group {
+  const V = VACANCY;
   const vacancy = new THREE.Group();
   const plusMat = toon('#7cf29a', { emissive: '#1f7a3a' });
-  vacancy.add(mesh(box(0.28, 0.08, 0.08), plusMat, 0, 0, 0, false));
-  vacancy.add(mesh(box(0.08, 0.28, 0.08), plusMat, 0, 0, 0, false));
-  vacancy.add(mesh(new THREE.CylinderGeometry(0.012, 0.012, stem, 6), toon('#5fbf7a'), 0, -0.14 - stem / 2, 0, false));
+  const t = V.size * 0.3;
+  vacancy.add(mesh(box(V.size, t, t), plusMat, 0, 0, 0, false));
+  vacancy.add(mesh(box(t, V.size, t), plusMat, 0, 0, 0, false));
+  vacancy.add(mesh(new THREE.CylinderGeometry(0.01, 0.01, V.stem, 6), toon('#5fbf7a'), 0, -V.size / 2 - V.stem / 2, 0, false));
   for (const ry of [0, Math.PI]) {
     const label = textPlane('Free seat');
-    label.scale.setScalar(0.3);
-    label.position.set(0, 0.24, 0);
+    label.scale.setScalar(V.labelScale);
+    label.position.set(0, V.labelUp, 0);
     label.rotation.y = ry;
     label.name = 'vacancy-label';
+    label.visible = false;
     vacancy.add(label);
   }
   vacancy.name = 'vacancy';
-  vacancy.position.set(0, y, 0);
+  vacancy.position.set(0, Math.min(y, VACANCY_MAX_Y), 0);
   return vacancy;
+}
+
+/** Shows a marker's "Free seat" label only when `who` (the local player) is near it. */
+export function showVacancyLabel(vacancy: THREE.Object3D, wx: number, wz: number, who: { x: number; z: number } | undefined) {
+  const on = !!who && vacancyLabelShown(who.x - wx, who.z - wz);
+  for (const c of vacancy.children) if (c.name === 'vacancy-label') c.visible = on;
 }
 
 const BEANBAG_COLORS = ['#ff6b6b', '#4ecdc4', '#9b5de5', '#ffd166', '#f15bb5', '#00bbf9', '#06d6a0', '#fb8500'];
@@ -168,7 +180,8 @@ export function buildBeanbag(def: DeskDef, index: number): DeskView {
   stage.rotation.y = Math.PI;
   group.add(stage);
 
-  const vacancyY = 1.25;
+  // Just above the lap desk.
+  const vacancyY = vacancyYFor(0.45);
   const vacancy = vacancyMarker(vacancyY);
   group.add(vacancy);
 

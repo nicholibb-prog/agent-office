@@ -1,7 +1,10 @@
 // Okkin's loft panel: one power control, a model dial, honest readouts. Text only (no innerHTML).
 import type { Ctx } from '../../core/context';
 import { h } from '../../ui/dom';
-import { OKKIN_LOFT_SPOT } from '../../../shared/okkin-loft';
+import { OKKIN_LOFT_SPOT, modelShortName } from '../../../shared/okkin-loft';
+
+/** A model's short name, with the full tag on hover and for screen readers. */
+const tagEl = (sel: 'span.okl-tag', tag: string, extra = '') => h(sel, { title: tag, 'aria-label': `${tag}${extra}` }, `${modelShortName(tag)}${extra}`);
 import './ui.css';
 
 type Loft = {
@@ -16,6 +19,8 @@ type Loft = {
   bench: Record<string, { tokensPerSec: number }>;
   gpu: { usedMB: number | null; totalMB: number | null; tempC: number | null; fan: string } | null;
   pick: string | null;
+  pickReason?: string | null;
+  pickMeasured?: boolean | null;
   mock?: boolean;
 };
 
@@ -70,8 +75,8 @@ export function buildDial(stops: Loft['dial'], active: string, on: boolean, pick
     const s = stops[i]!;
     knob.style.setProperty('--a', `${dialAngle(i, stops.length)}deg`);
     knob.setAttribute('aria-valuenow', String(i));
-    knob.setAttribute('aria-valuetext', `${s.role || 'model'}: ${s.tag}${s.ramOk ? '' : ` (needs ${s.minFreeRamGB} GB free RAM)`}${on && s.tag === active ? ', active' : ''}${on ? '' : ', off'}`);
-    readout.replaceChildren(h('span.okl-role', {}, s.role || 'model'), h('span.okl-tag', {}, s.tag), !on ? h('span.okl-muted', {}, s.tag === active ? 'Off · selected when power is on' : 'Off') : s.tag === active ? h('span.okl-active', {}, 'Active') : h('span.okl-muted', {}, s.ramOk ? 'Press Enter to switch' : `Needs ${s.minFreeRamGB} GB free RAM`));
+    knob.setAttribute('aria-valuetext', `${s.role || 'model'}: ${modelShortName(s.tag)} (${s.tag})${s.ramOk ? '' : ` (needs ${s.minFreeRamGB} GB free RAM)`}${on && s.tag === active ? ', active' : ''}${on ? '' : ', off'}`);
+    readout.replaceChildren(h('span.okl-role', {}, s.role || 'model'), tagEl('span.okl-tag', s.tag), !on ? h('span.okl-muted', {}, s.tag === active ? 'Off · selected when power is on' : 'Off') : s.tag === active ? h('span.okl-active', {}, 'Active') : h('span.okl-muted', {}, s.ramOk ? 'Press Enter to switch' : `Needs ${s.minFreeRamGB} GB free RAM`));
   };
   knob.addEventListener('keydown', (e) => {
     if (!on) return;
@@ -103,7 +108,7 @@ export function renderPanel(root: HTMLElement, d: Loft | null, act: { power(a: '
   const dial = buildDial(d?.dial ?? [], active, on, act.pick);
   const stat = (k: string, v: string) => h('div.okl-stat', {}, h('span.okl-k', {}, k), h('span.okl-v', {}, v));
   const gpu = d?.gpu;
-  const cards = h('div.okl-cards', {}, ...(d?.dial ?? []).map((s) => h('div.okl-card', {}, h('span.okl-tag', {}, s.tag), h('span.okl-v', {}, d?.bench[s.tag] ? `${d.bench[s.tag]!.tokensPerSec} tok/s` : 'not measured yet'))));
+  const cards = h('div.okl-cards', {}, ...(d?.dial ?? []).map((s) => h('div.okl-card', {}, tagEl('span.okl-tag', s.tag), h('span.okl-v', {}, d?.bench[s.tag] ? `${d.bench[s.tag]!.tokensPerSec} tok/s` : 'not measured yet'))));
   const job = h('select.okl-job', { 'aria-label': 'Job type' }, ...['open', 'quick', 'chat', 'code', 'long'].map((j) => h('option', { value: j }, j)));
   const best = h('button.okl-btn', { type: 'button' }, 'Best model for this job');
   best.addEventListener('click', () => act.best((job as HTMLSelectElement).value));
@@ -116,11 +121,11 @@ export function renderPanel(root: HTMLElement, d: Loft | null, act: { power(a: '
     h('section.okl-stats', {},
       stat('Queue', d ? String(d.queue) : '—'),
       stat('Speed', d?.speed ? `${d.speed.tokensPerSec} tok/s` : 'not measured yet'),
-      stat('Loaded', d?.loaded.length ? d.loaded.map((m) => `${m.name}${m.vramMB !== null ? ` · ${m.vramMB} MB` : ''}`).join(', ') : 'none'),
+      stat('Loaded', d?.loaded.length ? d.loaded.map((m) => `${modelShortName(m.name)}${m.vramMB !== null ? ` · ${m.vramMB} MB` : ''}`).join(', ') : 'none'),
       stat('GPU', gpu ? `${gpu.usedMB ?? '?'} / ${gpu.totalMB ?? '?'} MiB · ${gpu.tempC ?? '?'}°C · fan ${gpu.fan}` : 'no reading'),
     ),
     h('section', {}, h('h3', {}, 'Benchmarks'), cards),
-    on ? h('section.okl-row', {}, job, best, d?.pick ? h('span.okl-v', {}, `→ ${d.pick}`) : null) : h('p.okl-muted.okl-best-hint', {}, 'Best model pick needs the power on.'),
+    on ? h('section.okl-row', {}, job, best, d?.pick ? h('span.okl-pick', {}, h('span.okl-v', { title: d.pick, 'aria-label': `Best pick: ${d.pick}` }, `→ ${modelShortName(d.pick)}`), d.pickReason ? h('span.okl-muted', {}, d.pickReason) : null) : null) : h('p.okl-muted.okl-best-hint', {}, 'Best model pick needs the power on.'),
     askBox(on, asked, act.ask),
     d?.powerReason ? h('p.okl-muted', {}, d.powerReason) : null,
     h('p.okl-note', { role: 'status', 'aria-live': 'polite' }, note),

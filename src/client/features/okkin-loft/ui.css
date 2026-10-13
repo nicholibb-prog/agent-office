@@ -60,3 +60,4 @@ body:has([aria-modal="true"]:not([hidden])) .lite-offer, body:has(.okl-pill:not(
 /* While any modal is open, the since-close toast and the project card step aside. */
 body:has([aria-modal="true"]:not([hidden])) :is(.since-close, #project) { visibility: hidden; }
 @media (max-height: 640px) { .okl-panel { padding: 20px 24px; } .okl-head { margin-bottom: 10px; } .okl-panel h3 { margin-top: 14px; } }
+.okl-pick { display: flex; flex-direction: column; gap: 2px; }

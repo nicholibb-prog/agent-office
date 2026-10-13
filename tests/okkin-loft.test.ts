@@ -197,3 +197,33 @@ test('round dial: 270° sweep, ends and middle', async () => {
   assert.equal(dialAngle(4, 5), 135);
   assert.equal(dialAngle(0, 1), 0);
 });
+
+test('best-model pick prefers measured models and says when it picks an unmeasured one', async () => {
+  const { bestModelPick } = await import('../src/server/hq/okkin-loft.js');
+  const stops = [
+    { tag: 'q:4b', role: 'quick', bestFor: ['quick'] },
+    { tag: 'okkin:latest', role: 'default', bestFor: [] },
+    { tag: 'q:9b', role: 'chat', bestFor: ['chat', 'open'] },
+    { tag: 'big', role: 'big', bestFor: ['long'], minFreeRamGB: 9999 },
+  ];
+  // The chat model isn't measured, the default is: pick the measured default, and say why.
+  const a = bestModelPick('open', stops, { 'okkin:latest': { tokensPerSec: 41 } });
+  assert.equal(a?.tag, 'okkin:latest');
+  assert.equal(a?.measured, true);
+  assert.match(a!.reason, /not benchmarked yet/);
+  // Measured and made for the job wins.
+  assert.equal(bestModelPick('chat', stops, { 'okkin:latest': { tokensPerSec: 41 }, 'q:9b': { tokensPerSec: 30 } })?.tag, 'q:9b');
+  // Nothing measured: falls back, honestly.
+  const c = bestModelPick('chat', stops, {});
+  assert.deepEqual(c, { tag: 'q:9b', measured: false, reason: 'not benchmarked yet' });
+  // A model that doesn't fit in RAM is never picked.
+  const { ramAllows } = await import('../src/server/hq/okkin-loft.js');
+  assert.notEqual(bestModelPick('long', stops, { big: { tokensPerSec: 99 } }, ramAllows)?.tag, 'big');
+});
+
+test('long Hugging Face model ids get a short name; plain tags stay', async () => {
+  const { modelShortName } = await import('../src/shared/okkin-loft.js');
+  assert.equal(modelShortName('hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'), 'Ornith 35B Q4');
+  assert.equal(modelShortName('qwen3.5:9b'), 'qwen3.5:9b');
+  assert.equal(modelShortName('okkin:latest'), 'okkin:latest');
+});

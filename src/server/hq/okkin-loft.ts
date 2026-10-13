@@ -63,3 +63,25 @@ export function bestModelFor(job: string, stops: readonly LoftModel[]): LoftMode
   const j = job.trim().toLowerCase();
   return stops.find((m) => m.bestFor.map((b) => b.toLowerCase()).includes(j)) ?? stops.find((m) => m.role === 'default') ?? null;
 }
+
+export type BestPick = { tag: string; measured: boolean; reason: string };
+/**
+ * The best-model pick, preferring measured models: a model meant for the job with a benchmark, then
+ * the default with one, then the fastest measured model. Only when nothing usable is measured does it
+ * fall back to an unmeasured one, and then it says so ('not benchmarked yet').
+ */
+export function bestModelPick(job: string, stops: readonly LoftModel[], bench: Record<string, { tokensPerSec: number }>, usable: (m: LoftModel) => boolean = () => true): BestPick | null {
+  const j = job.trim().toLowerCase();
+  const ok = stops.filter((m) => usable(m));
+  const measured = (m: LoftModel) => !!bench[m.tag] && bench[m.tag]!.tokensPerSec > 0;
+  const forJob = ok.filter((m) => m.bestFor.map((b) => b.toLowerCase()).includes(j));
+  const fastest = (ms: LoftModel[]) => [...ms].sort((a, b) => bench[b.tag]!.tokensPerSec - bench[a.tag]!.tokensPerSec)[0];
+  const mj = forJob.filter(measured);
+  if (mj.length) return { tag: fastest(mj)!.tag, measured: true, reason: `made for ${j || 'this job'}, ${bench[fastest(mj)!.tag]!.tokensPerSec} tok/s` };
+  const def = ok.find((m) => m.role === 'default' && measured(m));
+  if (def) return { tag: def.tag, measured: true, reason: forJob.length ? `the ${j} model is not benchmarked yet; default is measured` : 'default, measured' };
+  const any = ok.filter(measured);
+  if (any.length) return { tag: fastest(any)!.tag, measured: true, reason: `fastest measured, ${bench[fastest(any)!.tag]!.tokensPerSec} tok/s` };
+  const fallback = forJob[0] ?? ok.find((m) => m.role === 'default') ?? ok[0];
+  return fallback ? { tag: fallback.tag, measured: false, reason: 'not benchmarked yet' } : null;
+}

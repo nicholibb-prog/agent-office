@@ -15,7 +15,7 @@ import { isOkkinSeat, okkinClient, okkinThread, probeOkkin, switchOkkinModel, ta
 import { markSwitch, switchCooling, talkLimited } from '../../hq/limits.js';
 import { okkinJobs, okkinLastSpeed, okkinLoaded, okkinQueueDepth } from '../../hq/okkin.js';
 import { flipPower, loadPowerConfig, recheckExposure, parseAction, powerCooling, powerRightsBlocked, realRunner } from '../../hq/okkin-power.js';
-import { bestModelFor, dialStops, loadLoftConfig, ramAllows } from '../../hq/okkin-loft.js';
+import { bestModelPick, dialStops, loadLoftConfig, ramAllows } from '../../hq/okkin-loft.js';
 import { createOllama, psModels } from '../../ollama.js';
 import { OKKIN_OLLAMA_ORIGINS } from '../../hq/okkin.js';
 
@@ -258,6 +258,8 @@ export const hqRoutes = {
       const exposed = snap.chip !== 'offline' ? await recheckExposure(ctx.cfg.dataDir, realRunner, power) : false;
       const gpu = (await realRunner.gpuStats?.()) ?? null;
       const job = String(url.searchParams.get('job') || '').slice(0, 24);
+      const bench = benchmarks();
+      const best = job ? bestModelPick(job, stops, bench, ramAllows) : null;
       if (snap.chip === 'working' || snap.chip === 'switching') idleSince = Date.now();
       return send(res, 200, {
         okkin: snap,
@@ -268,11 +270,13 @@ export const hqRoutes = {
         loaded: okkinLoaded(),
         queue: okkinQueueDepth(),
         speed: okkinLastSpeed(),
-        bench: benchmarks(),
+        bench,
         jobs: okkinJobs(),
         pool: null,
         gpu,
-        pick: job ? bestModelFor(job, stops)?.tag ?? null : null,
+        pick: best?.tag ?? null,
+        pickReason: best?.reason ?? null,
+        pickMeasured: best?.measured ?? null,
         idleSleepMin: loft.idleSleepMin,
         exposed,
       });

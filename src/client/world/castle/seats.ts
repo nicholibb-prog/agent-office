@@ -4,6 +4,7 @@ import { BENCH_OUT, COUNCIL, type MapPlan } from '../../../shared/maps';
 import { boxFootprint } from '../../../shared/maps/props';
 import { deskPoint } from '../../../shared/nav';
 import { vacancyMarker } from '../office';
+import { vacancyY as vacancyYFor } from '../../../shared/vacancy';
 import type { DeskView, Interactable } from '../types';
 import { mesh, roundedBox, textPlane, toon } from '../toon';
 import { flame } from './fire';
@@ -70,7 +71,7 @@ export function placeSetting(kit: Kit, def: DeskDef, overflow: boolean): { view:
   g.add(stage);
   g.add(mesh(new THREE.CylinderGeometry(0.16, 0.13, 0.02, 14), toon('#8d939c'), -0.62, TABLE_TOP + 0.01, 0.12, false));
   g.add(mesh(new THREE.CylinderGeometry(0.045, 0.03, 0.14, 8), kit.mats.gold, -0.62, TABLE_TOP + 0.08, -0.12, false));
-  const vacancy = vacancyMarker(1.35);
+  const vacancy = vacancyMarker(vacancyYFor(0.8));
   g.add(vacancy);
   // An overflow seat is put away until they're all taken (see setBeanbags).
   g.visible = !overflow;
@@ -78,7 +79,7 @@ export function placeSetting(kit: Kit, def: DeskDef, overflow: boolean): { view:
   kit.interactables.push(it);
   g.userData.interact = it;
   kit.group.add(g);
-  return { view: { def, group: g, laptopAnchor, seatAnchor, stage, chair: new THREE.Group(), vacancy, vacancyY: 1.35 }, it };
+  return { view: { def, group: g, laptopAnchor, seatAnchor, stage, chair: new THREE.Group(), vacancy, vacancyY: vacancyYFor(0.8) }, it };
 }
 
 /** The round meeting table, its chairs, and the easel with the meeting's board and sign. */
@@ -219,12 +220,12 @@ function councilChair(kit: Kit, def: DeskDef): DeskView {
   const stage = new THREE.Object3D();
   stage.position.set(0, 0.48, 0.85);
   g.add(stage);
-  const vacancy = vacancyMarker(1.45);
+  const vacancy = vacancyMarker(vacancyYFor(0.8));
   g.add(vacancy);
   kit.group.add(g);
   kit.colliders.push({ minX: def.x + Math.sin(def.rotY) * 0.85 - 0.3, maxX: def.x + Math.sin(def.rotY) * 0.85 + 0.3, minZ: def.z + Math.cos(def.rotY) * 0.85 - 0.3, maxZ: def.z + Math.cos(def.rotY) * 0.85 + 0.3, top: 0.5 });
   const it: Interactable = { kind: 'desk', deskId: def.id, ...xz(deskSeat(def, 1.5)), radius: 1.1 };
   kit.interactables.push(it);
   g.userData.interact = it;
-  return { def, group: g, laptopAnchor, seatAnchor, stage, chair, vacancy, vacancyY: 1.45 };
+  return { def, group: g, laptopAnchor, seatAnchor, stage, chair, vacancy, vacancyY: vacancyYFor(0.8) };
 }

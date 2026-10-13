@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { VACANCY } from '../../../shared/vacancy';
+import { showVacancyLabel } from './seats';
 import type { WallRect } from '../../../shared/decor';
 import type { FloorPalette } from '../../../shared/floors';
 import { street } from '../outside';
@@ -161,11 +163,13 @@ export function buildOffice(): Office {
       d.open = want > d.open ? Math.min(1, d.open + dt * 2.5) : Math.max(0, d.open - dt * 1.6);
       d.show(d.open);
     }
+    const me = people[Symbol.iterator]().next().value as { x: number; z: number } | undefined;
     for (const d of desks.values()) {
       // A board agent waiting to be asked stands still (its own idle bob is in Worker.update).
       if (!d.vacancy.visible || !d.group.visible || d.def.station) continue;
-      d.vacancy.position.y = d.vacancyY + Math.sin(t * 2 + d.def.x) * 0.06;
+      d.vacancy.position.y = d.vacancyY + Math.sin(t * 2 + d.def.x) * VACANCY.bob;
       d.vacancy.rotation.y = t * 1.2;
+      showVacancyLabel(d.vacancy, d.def.x, d.def.z, me);
     }
     for (const u of updates) u(t, dt);
   };
