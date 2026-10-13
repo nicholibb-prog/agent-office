@@ -4,7 +4,7 @@ import { Office } from './office.js';
 import { forget, signIn, type Credentials } from './session.js';
 import { SshTunnel, sshArgs } from './ssh.js';
 import type { Forward } from './wire.js';
-import { resolvePassword, scrubPasswordArgv } from '../password-source.js';
+import { resolvePassword, scrubPasswordArgv, scrubPasswordEnv } from '../password-source.js';
 
 // `agent-office tunnel`, run on your own computer: every web server a worker starts in an office
 // somewhere else opens on the same port here, by itself, and closes when the worker stops it. It
@@ -96,6 +96,8 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env, 
   }
   // Env, then an owner-only file, then the deprecated flag (warned, value never shown).
   o.credentials.password = resolvePassword({ env, argvPassword, warn }).password || undefined;
+  scrubPasswordEnv(env);
+  if (env !== process.env) scrubPasswordEnv(process.env);
   if (argvPassword && argv === process.argv) scrubPasswordArgv(process.argv);
   return o;
 }

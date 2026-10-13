@@ -1,8 +1,8 @@
 # Launcher: start the office without `--password` on the command line
 
 `--password <value>` is visible to any process listing (Task Manager, `wmic`, `ps`).
-The kit's `start-office.cmd` should hand the password over through a file (preferred)
-or the environment. The server checks `AGENT_OFFICE_PASSWORD`, then
+The kit's `start-office.cmd` should hand the password over through an owner-only file.
+Don't use `setx` for it: that stores the password in plain text in the registry. The server checks `AGENT_OFFICE_PASSWORD`, then
 `AGENT_OFFICE_PASSWORD_FILE`, then the deprecated `--password` flag, and never prints the value.
 
 ## One-time setup (owner-only file)
@@ -26,23 +26,9 @@ node "%LOCALAPPDATA%\agent-office\app\dist\server\cli.js" --no-open %*
 endlocal
 ```
 
-## start-office.cmd (environment variable)
-
-Only if the variable is already set for the user account (for example with
-`setx AGENT_OFFICE_PASSWORD ...` typed once by the owner, never stored in the script):
-
-```bat
-@echo off
-setlocal
-if not defined AGENT_OFFICE_PASSWORD (
-  echo AGENT_OFFICE_PASSWORD is not set; see docs/launcher-password.md
-  exit /b 1
-)
-node "%LOCALAPPDATA%\agent-office\app\dist\server\cli.js" --no-open %*
-endlocal
-```
-
 Notes:
+- The office removes `AGENT_OFFICE_PASSWORD` and `AGENT_OFFICE_PASSWORD_FILE` from its environment
+  once read, so child processes don't inherit them.
 - Never `echo` the password or the file's contents in the launcher.
 - Files under `Documents\Major Files` are refused.
 - Paths above are placeholders; adjust `app\dist\server\cli.js` to wherever the kit installs the office.

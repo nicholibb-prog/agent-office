@@ -191,8 +191,8 @@ It is not a live call and never shows a typing indicator. Escape closes it and f
 
 `--password` on the command line shows up in any process listing, so it is deprecated.
 The server reads the password in this order: `AGENT_OFFICE_PASSWORD`, then
-`AGENT_OFFICE_PASSWORD_FILE` (a path to an owner-only file; one trailing newline is
-trimmed), then `--password` with a one-line warning. The value is never printed.
+`AGENT_OFFICE_PASSWORD_FILE` (a path to an owner-only file; surrounding whitespace is
+trimmed; a blank file is refused), then `--password` with a one-line warning. The value is never printed.
 
 ```sh
 # environment variable
