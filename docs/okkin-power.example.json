@@ -1,6 +1,7 @@
 {
-  "_note": "PLACEHOLDERS ONLY. The office refuses any argv containing < or >. Jack supplies the real argv; Dan approves it before it goes into .agent-office/okkin-power.json (owner-only, not group/world writable). No shell, no runas/sudo/sc.",
-  "start": ["<JACK_START_ARGV_0>", "<JACK_START_ARGV_1>"],
-  "stop": ["<JACK_STOP_ARGV_0>", "<JACK_STOP_ARGV_1>"],
+  "_note": "PLACEHOLDERS. Ships with no live command: the office refuses any argv containing < or >, so this file as-is leaves the switch on 'power control not set up'. Dan approves Jack's real argv before it goes into .agent-office/okkin-power.json (owned by the office user, not group/world writable; on Windows also set AO_OKKIN_POWER_WINDOWS_ACL_OK=1 only after checking the ACL by hand). No shell, no runas/sudo/sc.",
+  "_start_example_not_live": ["C:\\Users\\Nicho\\AppData\\Local\\Programs\\Ollama\\ollama app.exe"],
+  "start": ["<JACK_START_EXE_PENDING_DAN>"],
+  "stop": ["powershell", "-NoProfile", "-File", "<PATH_TO_okkin-off.ps1_PENDING_DAN>"],
   "tuning": {}
 }
