@@ -25,3 +25,7 @@
 - A shell script can't call the Google Drive connector. The connector is only reachable as an agent tool call, and using it needs no new credential.
 - Each upload is therefore one agent turn: 120–360 calls an hour per seat at a 10–30 s cadence. Each call is slow, costs tokens, and competes with the bot's real work.
 - Cheapest honest option: the WORKING bot runs the capture and the overwrite between its own tool steps, at most every 30 s, and the desk says "no live feed" whenever it falls behind (more than 60 s old).
+
+## Seat and folder rules (Dan's Crit fixes)
+- Seats are checked with `isSeatId` (`seat-1` … `seat-9`, `okkin`) when a seat is switched on, when the file is read, and in the capture script. A pattern match alone is not enough.
+- `AO_BRIDGE_LOCAL_DIR` is refused if the path as given, or its realpath, sits under a Major Files folder (`isMajorFiles` in `src/server/major-files.ts`).

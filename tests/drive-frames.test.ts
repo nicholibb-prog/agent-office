@@ -54,3 +54,31 @@ test('older than 60 s is no live feed', () => {
   utimesSync(f, ok, ok);
   assert.ok(readDriveFrame('seat-5', { AO_BRIDGE_LOCAL_DIR: d }));
 });
+
+test('seat must be a real crew seat (isSeatId), not just a tidy string', async () => {
+  const d = dir();
+  for (const s of ['seat-a', 'george', 'seat-10']) writeFileSync(path.join(d, 'live', s + '.jpg'), JPG);
+  writeFileSync(path.join(d, 'live', 'seat-9.jpg'), JPG);
+  for (const s of ['seat-a', 'george', 'seat-10']) assert.equal(readDriveFrame(s, { AO_BRIDGE_LOCAL_DIR: d }), undefined, s);
+  assert.ok(readDriveFrame('seat-9', { AO_BRIDGE_LOCAL_DIR: d }));
+  const { LiveFrames } = await import('../src/server/live-frames.js');
+  const store = new LiveFrames();
+  for (const s of ['seat-a', 'george', '../x', 'seat-10', '']) assert.equal(store.setEnabled(s, true), false, s);
+  assert.equal(store.setEnabled('seat-1', true), true);
+  assert.equal(store.setEnabled('okkin', true), true);
+});
+
+test('refuses a Bridge folder under Major Files, as given or through a symlink', async () => {
+  const { isMajorFiles } = await import('../src/server/major-files.js');
+  assert.ok(isMajorFiles('C:\\Users\\nick\\Major Files\\Bridge'));
+  assert.ok(isMajorFiles('/home/x/major_files/bridge'));
+  assert.ok(!isMajorFiles('/home/x/Bridge/live'));
+  const top = path.join(tmpdir(), 'ao-mf-' + process.pid + Math.random().toString(36).slice(2));
+  const inside = path.join(top, 'Major Files', 'Bridge');
+  mkdirSync(path.join(inside, 'live'), { recursive: true });
+  writeFileSync(path.join(inside, 'live', 'seat-1.jpg'), JPG);
+  assert.equal(readDriveFrame('seat-1', { AO_BRIDGE_LOCAL_DIR: inside }), undefined, 'direct path');
+  const link = path.join(top, 'Bridge-link');
+  symlinkSync(inside, link);
+  assert.equal(readDriveFrame('seat-1', { AO_BRIDGE_LOCAL_DIR: link }), undefined, 'realpath lands in Major Files');
+});
