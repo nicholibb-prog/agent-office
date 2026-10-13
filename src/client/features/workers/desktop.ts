@@ -27,17 +27,29 @@ export interface DeskFace {
   still?: boolean;
 }
 
-/** What the laptop should do, from the office's worker state. `typedAt` is lastInput.at (wall clock). */
-export function deskFace(status: WorkerStatus, typedAt: number | undefined, wallNow: number): { pace: DeskPace; chip: string } {
+/**
+ * What the laptop should do, from the office's worker state. Presence honesty: the chip says
+ * WORKING and the live desktop animation runs only when status is truly `working`. A recent
+ * keystroke or `starting` must not paint a fake busy desktop. `typedAt` is kept for callers that
+ * still pass lastInput.at; it no longer forces a WORKING chip.
+ */
+export function deskFace(status: WorkerStatus, _typedAt: number | undefined, _wallNow: number): { pace: DeskPace; chip: string } {
   if (status === 'working') return { pace: 'working', chip: 'WORKING' };
-  if (status === 'starting') return { pace: 'working', chip: 'STARTING' };
+  if (status === 'starting') return { pace: 'calm', chip: 'STARTING' };
   if (status === 'needs_input') return { pace: 'attention', chip: 'NEEDS YOU' };
-  if (typedAt !== undefined && wallNow - typedAt >= 0 && wallNow - typedAt < KEYSTROKE_MS && !isAsleep(status)) {
-    return { pace: 'working', chip: 'WORKING' };
-  }
   if (status === 'done') return { pace: 'calm', chip: 'done' };
   if (isAsleep(status)) return { pace: 'calm', chip: 'asleep' };
   return { pace: 'calm', chip: 'idle' };
+}
+
+/** Honest empty desk: no worker, no fake busy desktop. */
+export function emptyDeskFace(now: number): DeskFace {
+  return { pace: 'calm', chip: 'empty', now, name: '', lines: [], activity: undefined };
+}
+
+/** True only when the status itself is working — never for idle/starting/keystroke. */
+export function deskStatusIsWorking(status: WorkerStatus): boolean {
+  return status === 'working';
 }
 
 /** The last non-empty rows of a terminal mirror, for the desktop's terminal window. */
@@ -69,6 +81,10 @@ function chipColor(pace: DeskPace): string {
 
 /** One frame of the desk desktop. A calm face keeps its windows still; the clock on the bar can still tick. */
 export function paintDesk(ctx: CanvasRenderingContext2D, w: number, h: number, face: DeskFace) {
+  if (face.chip === 'empty') {
+    paintEmptyDesk(ctx, w, h);
+    return;
+  }
   const t = face.still ? 0 : face.now;
   const live = face.pace === 'working' && !face.still;
   ctx.save();
@@ -109,6 +125,25 @@ export function paintDesk(ctx: CanvasRenderingContext2D, w: number, h: number, f
     ctx, sideX, top + filesH + gap, sideW, h - (top + filesH + gap) - gap, 'activity', face, t,
     (x, y, ww, hh) => paintActivity(ctx, x, y, ww, hh, face, t, live),
   );
+  ctx.restore();
+}
+
+/** Honest empty state when nobody is at the desk — plain text, no live-work animation. */
+export function paintEmptyDesk(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#12141c';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#1b1e2b';
+  ctx.fillRect(0, 0, w, 44);
+  ctx.fillStyle = '#6c7086';
+  ctx.font = `700 ${Math.round(h / 28)}px ${FONT}`;
+  ctx.fillText('empty', w / 2, 22);
+  ctx.fillStyle = '#c8c9d8';
+  ctx.font = `600 ${Math.round(h / 16)}px ${FONT}`;
+  ctx.fillText('No one at this desk', w / 2, h / 2);
   ctx.restore();
 }
 

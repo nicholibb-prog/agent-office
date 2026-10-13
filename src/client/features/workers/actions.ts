@@ -357,7 +357,7 @@ export function installWorkerActions(ctx: Ctx, core: CoreState, parts: WorkerAct
       return {
         k: `${paused}|${full}|${m.workers}|${m.limit}|${!!m.pressure}|${sign}`,
         parts: [
-          h('span.title', {}, `${deskName} · empty`),
+          h('span.title', {}, `${deskName} · No one at this desk`),
           ...(full
             ? [h('span.cost', {}, `🚫 Office full · ${m.workers} of ${m.limit} workers`)]
             : [

@@ -7,7 +7,7 @@ import path from 'node:path';
 import { MeetingRoom, type MeetingWorkers } from '../src/server/meetings.js';
 import { Worktrees } from '../src/server/worktrees.js';
 import type { AgentChoice, MeetingRequest, WorkerInfo } from '../src/shared/protocol.js';
-import { MEETING_PATTERNS, MEETING_PATTERN_IDS, fixedRounds, isMeetingPattern } from '../src/shared/meetings.js';
+import { MEETING_PATTERNS, MEETING_PATTERN_IDS, buildDecisionLog, fixedRounds, formatDecisionLog, isMeetingPattern, meetingRoomAlarms } from '../src/shared/meetings.js';
 import { PROMPTS, type PromptId } from '../src/shared/prompts.js';
 
 function fixture(opts: { git?: boolean; rewritten?: Partial<Record<PromptId, string>>; officeDefault?: AgentChoice } = {}) {
@@ -97,7 +97,7 @@ function fixture(opts: { git?: boolean; rewritten?: Partial<Record<PromptId, str
       room.onWorker(w);
     }
   };
-  const start = (req: Partial<MeetingRequest>) => room.start({ pattern: 'debate', prompt: 'Which cache should we use?', roles: [], ...req } as MeetingRequest, 'Ada');
+  const start = (req: Partial<MeetingRequest>) => room.start({ pattern: 'debate', prompt: 'Which cache should we use?', roles: [], ...req } as MeetingRequest, 'owner');
   return { dir, room, workers, prompts, typed, toasts, reviews, take, settle, start, cwd, kill: (id: string) => manager.kill(id), close() { room.shutdown(); rmSync(dir, { recursive: true, force: true }); } };
 }
 
@@ -152,7 +152,7 @@ test('a meeting has no token limit: what its workers use is added up and shown, 
   f.take(0, '# Redis');
   m = f.room.state().current!;
   assert.equal(m.status, 'done');
-  assert.equal(f.room.clear('Ada'), undefined);
+  assert.equal(f.room.clear('owner'), undefined);
   assert.match(f.room.state().past[0].summary, /Debate · 2 rounds · 60\.5M tokens · \$31\.50 · ✅ decision\.md/);
 });
 
@@ -259,7 +259,7 @@ test('in a git project the output is committed on the meeting branch, which outl
   assert.equal(git('show', `${m.worktree!.branch}:docs/decision.md`), '# Redis');
   // Notes stay out of the commit.
   assert.equal(git('show', '--name-only', '--format=', m.worktree!.branch), 'docs/decision.md');
-  assert.equal(f.room.clear('Ada'), undefined);
+  assert.equal(f.room.clear('owner'), undefined);
   for (let i = 0; i < 50 && existsSync(path.join(f.dir, m.worktree!.path)); i++) await new Promise((r) => setTimeout(r, 20));
   assert.equal(f.workers.length, 0);
   assert.ok(!existsSync(path.join(f.dir, m.worktree!.path)));
@@ -337,4 +337,97 @@ test('a pattern with a set number of rounds says so, and names them; a range is 
   const f = fixture(); t.after(() => f.close());
   assert.equal(f.start({ pattern: 'lead', rounds: 5 }), undefined);
   assert.equal(f.room.state().current!.rounds, 3);
+});
+
+test('a finished meeting leaves a durable decision log that survives restart', (t) => {
+  const f = fixture(); t.after(() => f.close());
+  assert.equal(f.start({ rounds: 2, output: 'docs/decision.md', title: 'Pick a cache' }), undefined);
+  for (const i of [0, 1, 2]) f.take(i);
+  f.take(0, '# Use the shared cache');
+  const m = f.room.state().current!;
+  assert.equal(m.status, 'done');
+  assert.ok(m.decisionLog);
+  assert.equal(m.decisionLog!.decidedBy, 'seat-1');
+  assert.match(m.decisionLog!.decidedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(m.decisionLog!.decision, /shared cache/);
+  assert.deepEqual(m.decisionLog!.seats.map((s) => s.id), ['seat-1', 'seat-2', 'seat-3']);
+  assert.deepEqual(m.decisionLog!.seats.map((s) => s.bot), ['bot-a', 'bot-b', 'bot-c']);
+  // No personal names in the log.
+  const plain = formatDecisionLog(m.decisionLog!);
+  assert.match(plain, /Decision log/);
+  assert.doesNotMatch(plain, /Ada|@|\/Users\/|ghp_/i);
+  f.room.shutdown();
+
+  const again = new MeetingRoom(f.dir, path.join(f.dir, '.agent-office'), {
+    defaultProvider: 'claude',
+    list: () => [],
+    seat: () => 'closed',
+    prompt: () => undefined,
+    write() {},
+    async kill() { return {}; },
+  }, undefined, {
+    update() {},
+    toast() {},
+    hiringPaused: () => undefined,
+    postReview: async () => '',
+  });
+  t.after(() => again.shutdown());
+  const restored = again.state().current!;
+  assert.equal(restored.status, 'done');
+  assert.ok(restored.decisionLog);
+  assert.equal(restored.decisionLog!.decidedBy, 'seat-1');
+  assert.equal(restored.decisionLog!.decision, m.decisionLog!.decision);
+  assert.deepEqual(restored.decisionLog!.seats, m.decisionLog!.seats);
+  assert.equal(meetingRoomAlarms(again.state()), false);
+});
+
+test('a closed office shows no meeting-room alarm', (t) => {
+  const f = fixture(); t.after(() => f.close());
+  assert.equal(meetingRoomAlarms(f.room.state()), false);
+  assert.equal(f.start({ rounds: 2, output: 'decision.md' }), undefined);
+  assert.equal(meetingRoomAlarms(f.room.state()), true);
+  for (const i of [0, 1, 2]) f.take(i);
+  f.take(0, '# done');
+  assert.equal(f.room.state().current!.status, 'done');
+  assert.equal(meetingRoomAlarms(f.room.state()), false);
+  assert.equal(f.room.clear('owner'), undefined);
+  assert.equal(f.room.state().current, null);
+  assert.equal(meetingRoomAlarms(f.room.state()), false);
+  // Past archive keeps a redacted decision log.
+  const past = f.room.state().past[0];
+  assert.equal(past.calledBy, 'owner');
+  assert.ok(past.decisionLog);
+  assert.equal(past.decisionLog!.seats[0].bot, 'bot-a');
+});
+
+test('buildDecisionLog redacts stop reasons and uses owner when stopped', () => {
+  const log = buildDecisionLog({
+    id: 'abcd',
+    pattern: 'debate',
+    title: 't',
+    prompt: 'q',
+    output: 'out.md',
+    seats: [
+      { role: 'Chair', deskId: 'meeting-1', workerName: 'SecretName' },
+      { role: 'Skeptic', deskId: 'meeting-2', workerName: 'Other' },
+    ],
+    rounds: 2,
+    round: 1,
+    step: 1,
+    turns: [],
+    tokens: 0,
+    cost: 0,
+    costKnown: true,
+    status: 'stopped',
+    reason: 'the Skeptic (SecretName) was sent home',
+    calledBy: 'Nick',
+    startedAt: 1,
+    finishedAt: Date.parse('2026-10-07T01:00:00.000Z'),
+    notes: '.meeting',
+  });
+  assert.equal(log.decidedBy, 'owner');
+  assert.equal(log.decidedAt, '2026-10-07T01:00:00.000Z');
+  assert.equal(log.decision, 'Stopped: the Skeptic was sent home');
+  assert.doesNotMatch(log.decision, /SecretName|Nick/);
+  assert.deepEqual(log.seats.map((s) => s.bot), ['bot-a', 'bot-b']);
 });
