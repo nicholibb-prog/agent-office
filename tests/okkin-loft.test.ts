@@ -123,12 +123,12 @@ test('power: start, stop with freed MB, 0600 log, cooldown', async () => {
   const d = dir();
   let t = 1_000_000;
   const up = { v: false };
-  const on = await flipPower(d, 'start', 'nick', deps({ up, now: () => t }), okLoad);
+  const on = await flipPower(d, 'start', 'owner', deps({ up, now: () => t }), okLoad);
   assert.equal(on.status, 200);
   assert.equal(on.power, 'on');
-  assert.equal((await flipPower(d, 'stop', 'nick', deps({ up, now: () => t + 1000 }), okLoad)).status, 429);
+  assert.equal((await flipPower(d, 'stop', 'owner', deps({ up, now: () => t + 1000 }), okLoad)).status, 429);
   t += 61_000;
-  const off = await flipPower(d, 'stop', 'nick', deps({ up, now: () => t }), okLoad);
+  const off = await flipPower(d, 'stop', 'owner', deps({ up, now: () => t }), okLoad);
   assert.equal(off.power, 'off');
   assert.equal(off.freedMB, 5000);
   assert.equal(statSync(path.join(d, 'okkin-power.log')).mode & 0o777, 0o600);
