@@ -1,5 +1,6 @@
 /** Karen (the face-computer, whose screen shows Kavi's picture) and the Bridge title board. Both are fixtures on the office floor. */
 import type { Ctx } from '../../core/context';
+import { mountKaviSendPanel } from './send-panel';
 
 /** How often the Bridge feed repaints the title board, while the office world is running. */
 const FEED_EVERY = 5;
@@ -9,6 +10,7 @@ const FEED_EVERY = 5;
  * Karen's walking and her face (Kavi's picture, see picture.ts) stay on her fixture.
  */
 export function installKaviBoard(ctx: Ctx) {
+  mountKaviSendPanel();
   const board = ctx.office.kaviBoard;
   let feedAge = 0;
   ctx.ticks.add('world', ({ dt }) => {

@@ -103,12 +103,12 @@ const ALLOWED_ORIGINS = new Set([
   'http://localhost:5173',
 ]);
 
-function hostOk(req: http.IncomingMessage): boolean {
+export function hostOk(req: http.IncomingMessage): boolean {
   const host = (req.headers.host || '').toLowerCase();
   return ALLOWED_HOSTS.has(host);
 }
 
-function originOk(req: http.IncomingMessage): boolean {
+export function originOk(req: http.IncomingMessage): boolean {
   const origin = req.headers.origin;
   if (!origin) return true;
   return ALLOWED_ORIGINS.has(String(origin).toLowerCase());

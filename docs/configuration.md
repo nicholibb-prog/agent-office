@@ -146,6 +146,7 @@ See [Local HQ](hq.md). The floor's gitignored `.agent-office/hq-local.json` turn
 | `OKKIN_MODEL_ALLOW` | Comma-separated tags the desk may switch to. Intersected with the tags Ollama has installed. |
 
 `OLLAMA_URL` wins over `ollama.json`. `hq-local.json` does not set the URL. A request cannot set the URL or add a tag.
+
 ### Kavi's desk (bridge folder twin)
 
 `AGENT_OFFICE_KAVI_BRIDGE_DIR` points at a local copy of the bridge folder with `in/` and `out/`
@@ -153,3 +154,22 @@ subfolders. `GET /api/bridge/kavi-desk` (bridge token or office session, loopbac
 counts and newest timestamps only: `unconfigured`, `unreachable`, `quiet`, `waiting` (newest packet is
 inbound) or `answered`. It never reads packet text, returns file names, writes, or calls any service.
 `live` is always `false`: this is not a live call.
+
+### Writing to Kavi (to-kavi)
+
+The **Write to Kavi** panel drops a note or a file into `<AGENT_OFFICE_KAVI_BRIDGE_DIR>/to-kavi`, the
+Kavi-George Bridge folder that Google Drive for desktop syncs on this machine. Drive sync does the
+upload; the office holds no Google OAuth token, refresh token or service-account key.
+
+- `POST /api/kavi/message` (JSON `{ text }`, 4000 characters max) and `POST /api/kavi/file`
+  (`application/octet-stream`, name in `X-File-Name`, 10 MB max, types pdf png jpg jpeg gif webp txt md
+  csv json docx xlsx pptx) need a signed-in office session, a loopback Host and a same-origin request.
+  Any bridge, seat or shared token on the request is refused.
+- Files are created only (`wx`): an existing name gets ` (2)`, ` (3)` and so on. Nothing is overwritten,
+  deleted or listed. Names with separators, `..`, a leading dot or control characters are refused, and
+  `to-kavi` must be a real folder (not a symlink) directly inside the bridge folder.
+- The bridge root must hold a one-line `.bridge-folder-id` file. Sends are refused unless it reads back
+  `1PX8OuEqf8rYYUro7dR3aq0NN8RGg7I1Q`. `GET /api/kavi/bridge` and every send return only that id.
+  This is a local marker check, not a Drive API call.
+- Anything under `Documents\Major Files` is refused before it is read.
+- Not a live call: Kavi answers later through the Bridge. The panel never shows a made-up reply.
