@@ -177,3 +177,19 @@ test('tunnel parseArgs: password env vars are removed from the environment', asy
   assert.equal(process.env.AGENT_OFFICE_PASSWORD, undefined);
   assert.equal(process.env.AGENT_OFFICE_PASSWORD_FILE, undefined);
 });
+
+test('env: value is trimmed; a blank value is refused without echoing it', async () => {
+  assert.deepEqual(resolvePassword({ env: { AGENT_OFFICE_PASSWORD: `  ${SECRET}\n` } }), { password: SECRET, source: 'env' });
+  for (const blank of [' ', '\t\n ']) {
+    assert.throws(() => resolvePassword({ env: { AGENT_OFFICE_PASSWORD: blank }, argvPassword: SECRET }), (e: Error) => e instanceof PasswordSourceError && /blank/.test(e.message) && !e.message.includes(SECRET));
+  }
+  const { parseArgs } = await import('../src/server/tunnel/index.js');
+  assert.throws(() => parseArgs(['--password', SECRET], { AGENT_OFFICE_PASSWORD: '   ' }, () => {}), (e: Error) => /blank/.test(e.message) && !e.message.includes(SECRET));
+});
+
+test('loadConfig: blank AGENT_OFFICE_PASSWORD exits 2 without the value in output', (t) => {
+  const r = captureLoad(t, { AGENT_OFFICE_PASSWORD: '   ' }, ['--password', SECRET]);
+  assert.match(String(r.err), /exit 2/);
+  assert.match(r.out, /blank/);
+  assert.ok(!r.out.includes(SECRET));
+});

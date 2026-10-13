@@ -58,7 +58,11 @@ export function scrubPasswordEnv(env: NodeJS.ProcessEnv = process.env): void {
 
 export function resolvePassword(input: PasswordSourceInput = {}): { password: string; source: PasswordSource } {
   const env = input.env ?? process.env;
-  if (env.AGENT_OFFICE_PASSWORD) return { password: env.AGENT_OFFICE_PASSWORD, source: 'env' };
+  if (env.AGENT_OFFICE_PASSWORD) {
+    const value = env.AGENT_OFFICE_PASSWORD.trim();
+    if (!value) throw new PasswordSourceError('AGENT_OFFICE_PASSWORD: is blank');
+    return { password: value, source: 'env' };
+  }
   if (env.AGENT_OFFICE_PASSWORD_FILE)
     return { password: readPasswordFile(env.AGENT_OFFICE_PASSWORD_FILE, input.platform), source: 'file' };
   if (input.argvPassword) {
