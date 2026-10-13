@@ -12,7 +12,7 @@ set -euo pipefail
 umask 077
 MAX=$((400 * 1024))
 seat="${AO_LIVE_SEAT:-}"; disp="${AO_LIVE_DISPLAY:-}"
-[[ "$seat" =~ ^[a-z0-9][a-z0-9._-]{0,63}$ ]] || { echo "skip: bad seat" >&2; exit 3; }
+[[ "$seat" =~ ^(seat-[1-9]|okkin)$ ]] || { echo "skip: bad seat" >&2; exit 3; }
 [[ "$disp" =~ ^:[0-9]+$ ]] || { echo "skip: bad display" >&2; exit 3; }
 [[ "${AO_LIVE_WORKING:-0}" == "1" ]] || { echo "skip: not WORKING" >&2; exit 3; }
 command -v import >/dev/null && command -v convert >/dev/null || { echo "skip: ImageMagick missing" >&2; exit 3; }

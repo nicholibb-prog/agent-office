@@ -4,9 +4,10 @@
 import { closeSync, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { LIVE_MAX_BYTES } from './live-frames.js';
+import { isSeatId } from '../shared/hq.js';
+import { underMajorFiles } from './major-files.js';
 
 export const DRIVE_STALE_MS = 60_000;
-const SEAT = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
 export type DriveFrame = { mime: 'image/jpeg'; bytes: Buffer; at: number };
 
@@ -18,9 +19,12 @@ export function readDriveFrame(
   opts = { maxBytes: LIVE_MAX_BYTES, staleMs: DRIVE_STALE_MS },
 ): DriveFrame | undefined {
   const base = env.AO_BRIDGE_LOCAL_DIR;
-  if (!base || !SEAT.test(seat)) return undefined;
+  if (!base || !isSeatId(seat)) return undefined;
   try {
-    const root = realpathSync(path.join(realpathSync(base), 'live'));
+    const realBase = realpathSync(base);
+    if (underMajorFiles(base, realBase)) return undefined; // never read from Major Files
+    const root = realpathSync(path.join(realBase, 'live'));
+    if (underMajorFiles(root, root)) return undefined;
     const file = path.join(root, seat + '.jpg');
     const ls = lstatSync(file);
     if (ls.isSymbolicLink() || !ls.isFile()) return undefined;
