@@ -4,6 +4,9 @@
 import { closeSync, lstatSync, openSync, readFileSync, realpathSync, writeSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
+import { isMajorFiles } from './major-files.js';
+
+export { isMajorFiles };
 
 /** The Kavi-George Bridge folder in Drive. The local marker must read back exactly this. */
 export const KAVI_BRIDGE_FOLDER_ID = '1PX8OuEqf8rYYUro7dR3aq0NN8RGg7I1Q';
@@ -20,10 +23,6 @@ export class KaviSendError extends Error {
   }
 }
 
-/** True for anything under Documents\Major Files (either slash, any case). Checked on the string only. */
-export function isMajorFiles(p: string): boolean {
-  return /(^|[\\/])documents[\\/]+major files([\\/]|$)/i.test(String(p));
-}
 
 export interface BridgeReadBack {
   configured: boolean;
