@@ -72,7 +72,7 @@ agent-office tunnel [where] [options] [-- <ssh options>]
                           (default: the same as --office-port)
       --office-port <n>   With an SSH address: the office's port on its own machine (default 4600)
       --name <name>       Sign in with this account (env AGENT_OFFICE_NAME)
-      --password <pw>     The password, instead of being asked for it (env AGENT_OFFICE_PASSWORD)
+      --password <pw>     Deprecated (visible in process listings): use env AGENT_OFFICE_PASSWORD or AGENT_OFFICE_PASSWORD_FILE
       --no-open           With an SSH address: don't open the office in a browser
       --insecure          Accept a certificate nobody vouches for (an office started with --self-signed)
 ```
