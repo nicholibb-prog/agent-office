@@ -7,7 +7,7 @@ import { FLOOR } from './layout.js';
  */
 export const OKKIN_LOFT = { minX: 5, maxX: 6.2, minZ: 7, maxZ: 10, rackDepth: 0.8, rackHeight: 2.2 } as const;
 /** Where you stand to use the panel: in front of the racks, on open floor. */
-export const OKKIN_LOFT_SPOT = { x: 2.1, z: 8.5 } as const;
+export const OKKIN_LOFT_SPOT = { x: 1.6, z: 8.5 } as const;
 void FLOOR;
 /**
  * The physical controls: a console on a pedestal in front of the racks (between them and where you
@@ -42,4 +42,17 @@ export function modelShortName(tag: string): string {
   const size = /(?:^|[-_])(\d+(?:\.\d+)?[BM])(?=$|[-_])/i.exec(name)?.[1]?.toUpperCase() ?? '';
   const q = /^(Q\d+|IQ\d+|BF16|F16|FP16|F32)/i.exec(quant)?.[1]?.toUpperCase() ?? '';
   return [family, size, q].filter(Boolean).join(' ') || tag;
+}
+
+/**
+ * One spelling per model, so the dial, /api/tags, /api/ps and benchmarks all match: lower case,
+ * ':latest' when no tag is given, 'huggingface.co/' as 'hf.co/', and Ollama's own registry prefix
+ * ('registry.ollama.ai/library/') dropped. Display and matching only: the allowlist stays exact.
+ */
+export function normTag(tag: string): string {
+  let t = tag.trim().toLowerCase();
+  t = t.replace(/^https?:\/\//, '').replace(/^huggingface\.co\//, 'hf.co/').replace(/^registry\.ollama\.ai\/library\//, '');
+  const last = t.split('/').pop() ?? t;
+  if (!last.includes(':')) t += ':latest';
+  return t;
 }

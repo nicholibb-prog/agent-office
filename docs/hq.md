@@ -89,3 +89,56 @@ When a seat's chip is idle, the desk card is quiet, and you are not in its talk 
 A morning delta and a needsOwner strip are not here. They belong in a later change.
 
 After you edit `hq-local.json`, restart the office. A sync process of your own has to move `chat-outbox.jsonl` and `chat-inbox.jsonl`. Ollama has to be listening on loopback, with `OKKIN_MODEL` and `OKKIN_MODEL_ALLOW` set to tags you have already pulled.
+
+## Okkin's controls are owner-only
+
+Power on/off, the model switch and Ask to Okkin are checked on the server (`src/server/hq/okkin-owner.ts`).
+
+**Owner passphrase.** The owner proves it with a separate owner passphrase, not the office password.
+Set it once, on the office machine, in a terminal: `npm run owner:set`. It asks twice, with no echo,
+and takes no arguments; there is no other way to set it. Only a salted scrypt hash is stored (Node's
+built-in `crypto.scrypt`), in an owner-only file outside the repo: `%APPDATA%\agent-office\okkin-owner.json`
+on Windows, `~/.config/agent-office/okkin-owner.json` elsewhere (0600 in a 0700 folder), or the path in
+`AGENT_OFFICE_OWNER_FILE`. Its sha256 is noted beside it in `okkin-owner.json.sha256`. The plaintext
+never touches disk, argv, env or logs. Until it is set, the controls say
+"Owner not set up — run npm run owner:set on the ProArt", and everyone is refused.
+
+**Unlock owner.** In the Okkin panel, "Unlock owner" takes the passphrase and checks it in constant time.
+Five wrong tries per 15 minutes (per address) lock unlocking for 15 minutes; failures are logged without
+the input. Success sets a separate owner cookie (`ao_okkin_owner`: HttpOnly, SameSite=Strict, Path=/api/bridge,
+Secure on https), held in server memory only: 15 minutes idle, 1 hour at most; Lock, signing out of the
+office, or a restart ends it. Power on/off also needs an unlock in the last 5 minutes.
+
+**Who may unlock.** Anyone in an office session (the shared office password is enough; the owner does
+not need an account) who types the right owner passphrase. The approvers list (`work-pool-policy.json`)
+is deliberately not consulted: that check was dropped on purpose, so the passphrase is the one thing
+that makes the owner, and a session alone never is. Unlocking is rate-limited per address (5 failures per
+15 minutes) and globally (20 failures per 15 minutes across all addresses), each followed by a 15-minute
+lockout; the limiter prunes expired entries and holds at most 1,000 addresses. Lock (`POST
+/api/bridge/okkin/owner/lock`) has the same checks as the other controls (session, Host, Origin, JSON);
+bot credentials get 403. The panel's status polling does not extend the owner's idle timer.
+
+**Where the hash may live.** `AGENT_OFFICE_OWNER_FILE` is refused (nobody is the owner, and `owner:set`
+fails) if it points inside Major Files (checked on the path as given, then on its realpath) or inside the
+office's own repo; nothing at a refused path is read or written.
+
+**Nobody else.** Not the office password session, not any account, and never a request carrying a bot
+credential (the bridge token or a seat token in `x-bridge-token`, an `x-pool-caller` token, or any
+`Authorization` header), even with an owner cookie alongside it: 403 `owner only`. Bots must never be
+given the owner passphrase (or the office password). Refusals go to `.agent-office/okkin-refusals.log`
+(time, route, caller kind; never a token, cookie or input), rotated at 256 KB to `.1` (two files at most).
+
+**Integrity, and a known gap.** The office pins the owner file's sha256 when it starts and re-checks it
+every 60 seconds and on every owner request. If the file changes or disappears, it logs that, drops live
+owner sessions, and refuses unlocks until it is restarted (after a deliberate `npm run owner:set`, restart
+the office). This only makes a swap visible: any process running as the same OS user can overwrite files,
+including this one. The real fix is to run bots under a separate Windows account.
+
+**The office password.** The office still accepts any password, including `dev` (which local test setups
+use). Use a long one from `AGENT_OFFICE_PASSWORD_FILE`. Flagged for Dan: the server does not refuse a weak
+or default office password yet.
+
+TODO: a passkey (WebAuthn) for the owner, instead of or alongside the passphrase.
+
+A locked switch always says why in the panel, e.g. on Windows until the ACL is verified:
+"Power switch locked: operator must verify okkin-power.json ACL and set AO_OKKIN_POWER_WINDOWS_ACL_OK=1".

@@ -9,7 +9,7 @@ import { OKKIN_CONSOLE, OKKIN_LOFT, OKKIN_LOFT_SPOT, OKKIN_MODELS } from '../src
 import { DESKS, DESK_SIZE, STAIRS } from '../src/shared/layout.js';
 import { dialConfig, dialStops, loadLoftConfig } from '../src/server/hq/okkin-loft.js';
 import { loadPowerConfig } from '../src/server/hq/okkin-power.js';
-import { chosenIndex, stopsView, switchView, type LoftLike } from '../src/client/features/okkin-loft/model.js';
+import { benchText, chosenIndex, stopsView, switchView, type LoftLike } from '../src/client/features/okkin-loft/model.js';
 
 // textPlane draws on a canvas: a stand-in 2D context is enough to build the scene in node.
 const ctx2d = new Proxy({}, { get: (_t, k) => (k === 'measureText' ? () => ({ width: 40 }) : () => undefined), set: () => true });
@@ -32,17 +32,24 @@ test('the office floor plan builds the loft, and the loft has a power switch and
   assert.ok(sw && sw.visible, 'power switch in the scene');
   assert.ok(dial && dial.visible, 'model dial in the scene');
   for (const role of ['quick', 'default', 'chat', 'code', 'big']) assert.ok(view.group.getObjectByName(`okkin-dial-stop-${role}`), role);
-  // No config: it says so on the switch itself.
-  assert.equal(view.group.getObjectByName('okkin-power-not-set-up')?.visible, true);
+  // No config: a status light says so (amber), no printed plate; can't reach Okkin: red.
+  assert.equal(view.group.getObjectByName('okkin-power-not-set-up'), undefined);
+  const lamp = view.group.getObjectByName('okkin-status-light') as unknown as { userData: { light?: string }; material: { color: { getHexString(): string } } };
+  assert.equal(lamp.userData.light, 'setup');
+  view.setState({ power: 'off', busy: false, switchWorks: false, light: 'error' });
+  assert.equal(lamp.userData.light, 'error');
+  assert.equal(lamp.material.color.getHexString(), 'ff3b30');
   view.setState({ power: 'off', busy: false, switchWorks: true });
-  assert.equal(view.group.getObjectByName('okkin-power-not-set-up')?.visible, false);
+  assert.equal(lamp.userData.light, 'off');
 });
 
 test('with no config at all, the API dial lists all five, each marked not installed when /api/tags lacks it', () => {
   const dir = empty();
-  const stops = dialStops(dialConfig(loadLoftConfig(dir)), ['okkin:latest']);
+  const stops = dialStops(dialConfig(loadLoftConfig(dir)), ['okkin:latest'], []);
   assert.deepEqual(stops.map((s) => s.tag), TAGS);
   assert.deepEqual(stops.map((s) => s.installed), [false, true, false, false, false]);
+  // Okkin off (tags unreadable): unknown, never 'not installed'.
+  assert.ok(dialStops(dialConfig(loadLoftConfig(dir)), null).every((s) => s.installed === null));
   // The display list doesn't widen the allowlist: the file-only config stays empty.
   assert.equal(loadLoftConfig(dir).models.length, 0);
 });
@@ -62,6 +69,8 @@ test('panel: five stops, not installed shown (not hidden), and power says Not se
   assert.equal(stops[chosenIndex(noConfig, stops)]!.role, 'default');
   const sw = switchView(noConfig);
   assert.equal(sw.label, 'Not set up');
+  assert.match(sw.reason ?? '', /^Power switch locked: /, 'one line: what is locked and what to do');
+  assert.equal(sw.light, 'setup');
   assert.equal(sw.works, false);
   assert.equal(sw.icon, 'setup');
   assert.equal(loadPowerConfig(empty()).ok, false);
@@ -69,10 +78,12 @@ test('panel: five stops, not installed shown (not hidden), and power says Not se
 
 test('panel: even when the loft API fails, both controls still show (five stops, honest Not set up)', () => {
   assert.equal(stopsView(null).length, 5);
-  assert.ok(stopsView(null).every((s) => s.status === 'unknown' && !s.usable));
+  assert.ok(stopsView(null).every((s) => s.status === 'unknown' && !s.usable && s.note === "Can't reach Okkin"));
   const sw = switchView(null, 'The loft API refused (403: host not allowed).');
   assert.equal(sw.works, false);
-  assert.equal(sw.label, 'Not set up');
+  assert.equal(sw.label, "Can't reach Okkin");
+  assert.equal(sw.light, 'error');
+  assert.match(sw.tip, /^Can't reach Okkin/);
   assert.match(sw.reason ?? '', /403/);
 });
 
@@ -89,4 +100,36 @@ test('the console stands clear of the racks, desks, stairs and where you stand',
   assert.equal(ov(c, { minX: STAIRS.fromX - 1.6, maxX: STAIRS.toX, minZ: STAIRS.minZ - 1, maxZ: STAIRS.maxZ }), false);
   for (const d of DESKS) assert.equal(ov(c, { minX: d.x - DESK_SIZE.width / 2 - 0.2, maxX: d.x + DESK_SIZE.width / 2 + 0.2, minZ: d.z - DESK_SIZE.depth / 2 - 1, maxZ: d.z + DESK_SIZE.depth / 2 + 1 }), false);
   assert.ok(OKKIN_CONSOLE.x - OKKIN_CONSOLE.depth / 2 - OKKIN_LOFT_SPOT.x >= 1.5, 'room to stand in front of it');
+});
+
+test('honesty: tag spelling is normalised, so installed status and benchmarks agree', async () => {
+  const { normTag } = await import('../src/shared/okkin-loft.js');
+  assert.equal(normTag('Okkin'), 'okkin:latest');
+  assert.equal(normTag('okkin:latest'), 'okkin:latest');
+  assert.equal(normTag('registry.ollama.ai/library/qwen3.5:9b'), 'qwen3.5:9b');
+  assert.equal(normTag('huggingface.co/Ornith-AI/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'), 'hf.co/ornith-ai/ornith-1.5-35b-a3b-gguf:q4_k_m');
+  const stops = dialStops(dialConfig(loadLoftConfig(empty())), ['OKKIN', 'huggingface.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'], ['okkin:latest']);
+  assert.deepEqual(stops.map((s) => s.installed), [false, true, false, false, true]);
+  assert.deepEqual(stops.map((s) => s.allowed), [false, true, false, false, false]);
+  const { benchByTag, loadedSpeed } = await import('../src/server/hq/okkin-loft.js');
+  assert.deepEqual(Object.keys(benchByTag({ Okkin: { tokensPerSec: 41 } })), ['okkin:latest']);
+  assert.deepEqual(loadedSpeed([{ name: 'okkin' }], { 'okkin:latest': { tokensPerSec: 41 } }), { tokensPerSec: 41, model: 'okkin' });
+  assert.equal(loadedSpeed([], { 'okkin:latest': { tokensPerSec: 41 } }), null);
+});
+
+test('honesty: a not-installed model never shows a speed; Okkin off is "can\'t check"; mock numbers say mock', () => {
+  const d: LoftLike = { ...noConfig, bench: { 'okkin:latest': { tokensPerSec: 41 } } };
+  const stops = stopsView(d);
+  assert.equal(benchText(d, stops[1]!), 'not installed');
+  const off: LoftLike = { ...d, dial: d.dial.map((s) => ({ ...s, installed: null })) };
+  const offStops = stopsView(off);
+  assert.equal(offStops[1]!.note, "Okkin is off · can't check");
+  assert.equal(benchText(off, offStops[1]!), '41 tok/s · earlier this session');
+  const mock: LoftLike = { ...off, mock: true, dial: d.dial.map((s) => ({ ...s, installed: true })) };
+  assert.equal(benchText(mock, stopsView(mock)[1]!), '41 tok/s (mock)');
+});
+
+test('Load says why it is greyed: Turn power on first', () => {
+  const d: LoftLike = { ...noConfig, dial: noConfig.dial.map((s) => ({ ...s, installed: true, allowed: true })) };
+  assert.ok(stopsView(d).every((s) => !s.usable && s.note === 'Turn power on first'));
 });

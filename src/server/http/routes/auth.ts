@@ -1,5 +1,6 @@
 // Signing in and out: the office password, an account's own, an invite link, a claim link, and a
 // sign-in link printed in the office's terminal.
+import { cookieOf, endOwnerSession } from '../../hq/okkin-owner.js';
 import type http from 'node:http';
 import type { Ctx } from '../../office/context.js';
 import { str } from '../../office/input.js';
@@ -109,6 +110,7 @@ export const authRoutes = {
       return send(res, 200, { ok: true }, signedIn(ctx, req));
     },
   },
-  logout: { method: 'POST', path: '/api/logout', auth: 'public', handle: (ctx, { req, res }) => send(res, 200, { ok: true }, { 'set-cookie': ctx.auth.clearCookie(req) }) },
+  // Signing out also ends any Okkin owner unlock on this browser (the server forgets it).
+  logout: { method: 'POST', path: '/api/logout', auth: 'public', handle: (ctx, { req, res }) => (endOwnerSession(cookieOf(req)), send(res, 200, { ok: true }, { 'set-cookie': ctx.auth.clearCookie(req) })) },
   whoami: { path: '/api/whoami', auth: 'session', handle: (ctx, { res, session }) => send(res, 200, { ok: true, me: session.account ? ctx.meOf(session.account.id) : { admin: true } }) },
 } satisfies Record<string, Route>;

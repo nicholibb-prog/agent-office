@@ -113,6 +113,11 @@ let switching = false;
 let reachable = false;
 let configured = '';
 let options: string[] = [];
+/** Every tag /api/tags returned on the last probe (not just allowed ones); null when it couldn't be read. */
+let installedAll: string[] | null = null;
+export function okkinInstalled(): string[] | null {
+  return installedAll ? [...installedAll] : null;
+}
 let model: string | null = null;
 let state: PsState = 'unknown';
 let refused: string | null = null;
@@ -120,6 +125,11 @@ let testFetch: OllamaFetch | undefined;
 let loadedModels: { name: string; vramMB: number | null }[] = [];
 export function okkinLoaded() {
   return reachable ? loadedModels.map((m) => ({ ...m })) : [];
+}
+
+/** The test stand-in for Ollama's fetch, if one is set (the power path's pinned client uses it too). */
+export function okkinFetchOverride(): OllamaFetch | undefined {
+  return testFetch;
 }
 
 function fetchOf(given?: OllamaFetch) {
@@ -171,6 +181,7 @@ export async function probeOkkin(
   configured = settings.model;
   if ('refused' in settings.url) {
     refused = settings.url.refused || 'Ollama URL must be http on 127.0.0.1 or ::1';
+    installedAll = null;
     reachable = false;
     options = [];
     model = null;
@@ -186,6 +197,7 @@ export async function probeOkkin(
   }
   const tags = await made.client.tags();
   if (!tags.ok) {
+    installedAll = null;
     reachable = false;
     options = [];
     model = null;
@@ -193,7 +205,8 @@ export async function probeOkkin(
     return okkinSnapshot();
   }
   reachable = true;
-  options = modelChoices(settings.allow, tagNames(tags.body));
+  installedAll = tagNames(tags.body);
+  options = modelChoices(settings.allow, installedAll);
   const psRes = await made.client.ps();
   loadedModels = psModels(psRes);
   const view = psView(psRes);
@@ -353,6 +366,7 @@ export function resetOkkinForTests() {
   loadedModels = [];
   jobs.length = 0;
   lastSpeed = null;
+  installedAll = null;
 }
 
 export function isOkkinSeat(seat: string): seat is typeof OKKIN_SEAT {
