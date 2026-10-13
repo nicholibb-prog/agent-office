@@ -1,4 +1,4 @@
-// "Major Files" is Nick's private store: nothing in the office may read from it or point into it.
+// "Major Files" is the owner's private store: nothing in the office may read from it or point into it.
 import path from 'node:path';
 
 const SEGMENT = /^major[ _.-]?files$/i;

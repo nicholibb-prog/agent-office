@@ -5,9 +5,12 @@ import { closeSync, fstatSync, lstatSync, openSync, readSync, realpathSync } fro
 import path from 'node:path';
 import { LIVE_MAX_BYTES } from './live-frames.js';
 import { isSeatId } from '../shared/hq.js';
-import { underMajorFiles } from './major-files.js';
+import { isMajorFiles, underMajorFiles } from './major-files.js';
 
 export const DRIVE_STALE_MS = 60_000;
+
+/** The filesystem calls that resolve paths, kept on one object so a test can watch them. */
+export const driveFs = { realpathSync: (p: string) => realpathSync(p) };
 
 export type DriveFrame = { mime: 'image/jpeg'; bytes: Buffer; at: number };
 
@@ -20,15 +23,17 @@ export function readDriveFrame(
 ): DriveFrame | undefined {
   const base = env.AO_BRIDGE_LOCAL_DIR;
   if (!base || !isSeatId(seat)) return undefined;
+  // Before any filesystem call: a Major Files path is never touched, not even resolved.
+  if (isMajorFiles(base)) return undefined;
   try {
-    const realBase = realpathSync(base);
-    if (underMajorFiles(base, realBase)) return undefined; // never read from Major Files
-    const root = realpathSync(path.join(realBase, 'live'));
+    const realBase = driveFs.realpathSync(base);
+    if (underMajorFiles(base, realBase)) return undefined; // a symlink that leads into Major Files
+    const root = driveFs.realpathSync(path.join(realBase, 'live'));
     if (underMajorFiles(root, root)) return undefined;
     const file = path.join(root, seat + '.jpg');
     const ls = lstatSync(file);
     if (ls.isSymbolicLink() || !ls.isFile()) return undefined;
-    const real = realpathSync(file);
+    const real = driveFs.realpathSync(file);
     if (path.dirname(real) !== root) return undefined;
     if (ls.size === 0 || ls.size > opts.maxBytes) return undefined;
     if (now - ls.mtimeMs > opts.staleMs) return undefined;
