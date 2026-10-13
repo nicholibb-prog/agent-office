@@ -29,8 +29,9 @@ import { renderUsage } from '../../ui/usage';
 import { Worker } from '../../world/character';
 import { Drifters } from './adrift';
 import { Jail } from './jail';
-import { deskFace, screenLines } from './desktop';
+import { laptopPlaceholder, workerDesktop } from './desktop';
 import { Laptop } from './laptop';
+import { clearViewScreen, markViewScreen } from './screenhit';
 import { Arrivals, Departures } from './leaving';
 import { Sendoffs } from './sendhome';
 
@@ -169,11 +170,14 @@ export function installWorkerViews(ctx: Ctx, core: CoreState, parts: WorkerViews
       const deskDef = plan().byId.get(w.deskId);
       // Keys clack while it types, not while it reads, watches its tests or browses.
       if (deskDef) sound.setTyping(w.id, deskDef.x, deskDef.z, w.status === 'working' && (!w.action || w.action === 'edit'));
-      const again = w.kind === 'shell' ? 'restart' : 'resume';
-      v.laptop.setPlaceholder(w.lost ? `🌿 ${w.name}'s worktree was deleted — press E to fix it` : w.status === 'offline' ? `💤 ${w.name} is asleep — press R to ${again}` : w.status === 'exited' ? `${w.name} exited` : 'booting…');
+      v.laptop.setPlaceholder(laptopPlaceholder(w));
+      // The desk stays what E uses. A click on this laptop enlarges its desktop (see screenview.ts).
+      if (deskDef?.station) clearViewScreen(v.laptop.root);
+      else markViewScreen(v.laptop.root, w.id);
     }
     for (const [id, v] of workerViews) {
       if (store.workers.has(id)) continue;
+      clearViewScreen(v.laptop.root);
       arrivals.forget(v.model);
       const desk = world.desks.get(v.deskId);
       // Up and about in the castle: it sets off from where it's standing.
@@ -304,16 +308,9 @@ export function installWorkerViews(ctx: Ctx, core: CoreState, parts: WorkerViews
       v.model.update(dt, t);
       // A board agent's kiosk has no laptop to paint (see buildKiosk). The desktop follows status.
       if (!desk.station && w) {
-        const face = deskFace(w.status, w.lastInput?.at, Date.now());
         const screen = store.screens.get(id);
-        v.laptop.update(dt, screen, Math.hypot(desk.x - camPos.x, desk.z - camPos.z), {
-          ...face,
-          now,
-          name: w.name,
-          activity: w.activity,
-          lines: screenLines(screen),
-          still: ctx.reduceMotion.matches,
-        });
+        const wall = Date.now();
+        v.laptop.update(dt, screen, Math.hypot(desk.x - camPos.x, desk.z - camPos.z), workerDesktop(w, screen, now, wall, ctx.reduceMotion.matches));
       }
     }
     for (const a of parts.worlds.idleAgents()) if (a.view.vacancy.visible) a.model.update(dt, t);
