@@ -912,8 +912,8 @@ export class WorkerManager {
     else if (!busy && (s === 'working' || (s === 'needs_input' && !w.bootBlocked))) this.setStatus(w, 'done');
   }
 
-  applyCrewPresence(crew: Record<string, string>): { applied: string[] } {
-    return this.crew.apply(crew);
+  applyCrewPresence(crew: Record<string, string>, opts?: import('./crew.js').CrewApplyOpts): { applied: string[] } {
+    return this.crew.apply(crew, opts);
   }
 
   chatWorking(name: string, text?: string): void {

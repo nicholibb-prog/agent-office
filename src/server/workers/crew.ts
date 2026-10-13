@@ -1,7 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { SEAT_KEY } from '../../shared/hq-brief.js';
 import type { WorkerStatus } from '../../shared/protocol.js';
+import { botName, deskForPoolSeat, isPoolSeatId } from '../../shared/pool.js';
 import { clockWork } from './clock.js';
 import type { Worker } from './types.js';
 
@@ -59,32 +60,102 @@ export type CrewHost = {
   emitUpdate(w: Worker): void;
 };
 
-/** Apply a name→status map from the local bridge onto shell desks. Never overwrites needs_input. */
-export function applyCrewPresence(host: CrewHost, crew: Record<string, string>): { applied: string[] } {
-  const clean = (s: string) => s.replace(/\s*[^\w\s.-]+\s*$/u, '').trim().toLowerCase();
+export type CrewApplyOpts = {
+  now?: number;
+  /** Seat id → last real heartbeat (ms). WORKING without a fresh seen stays idle. */
+  seen?: Record<string, number>;
+  leaseMs?: number;
+};
+
+type CrewFile = { updatedAt: string; crew: Record<string, string>; seen: Record<string, number>; source: string };
+
+function crewFilePath(dataDir: string) {
+  return path.join(dataDir, 'crew-status.json');
+}
+
+export function readCrewFile(dataDir: string): CrewFile | null {
+  try {
+    const file = crewFilePath(dataDir);
+    if (!existsSync(file)) return null;
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<CrewFile>;
+    return {
+      updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : '',
+      crew: raw.crew && typeof raw.crew === 'object' ? (raw.crew as Record<string, string>) : {},
+      seen: raw.seen && typeof raw.seen === 'object' ? (raw.seen as Record<string, number>) : {},
+      source: typeof raw.source === 'string' ? raw.source : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Records a bridge push keyed by seat id only. Display names are dropped.
+ * `seen` is stamped from this push (a real adapter heartbeat), not a clock nudge elsewhere.
+ */
+export function writeCrewPush(dataDir: string, patch: Record<string, string>, source: string, now = Date.now()): CrewFile {
+  const prev = readCrewFile(dataDir);
+  const crew = { ...(prev?.crew ?? {}) };
+  const seen = { ...(prev?.seen ?? {}) };
+  for (const [key, value] of Object.entries(patch)) {
+    const seat = key.trim().toLowerCase();
+    if (!isPoolSeatId(seat)) continue;
+    const st = String(value).toLowerCase();
+    if (st !== 'working' && st !== 'idle' && st !== 'busy' && st !== 'active' && st !== 'asleep' && st !== 'roam' && st !== 'offline' && st !== 'done') continue;
+    crew[seat] = st === 'busy' || st === 'active' ? 'working' : st === 'asleep' || st === 'roam' || st === 'offline' || st === 'done' ? 'idle' : st;
+    seen[seat] = now;
+  }
+  const next: CrewFile = { updatedAt: new Date(now).toISOString(), crew, seen, source };
+  writeFileSync(crewFilePath(dataDir), JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });
+  return next;
+}
+
+/** Match a worker to a seat id via desk / crew id / literal seat name — never a free person label. */
+function seatMatch(w: Worker, seat: string): boolean {
+  if (w.info.id === seat || w.info.id === `crew-${seat}`) return true;
+  const desk = deskForPoolSeat(seat);
+  if (desk && w.info.deskId === desk) return true;
+  // Only when the worker's own name is the seat id (e.g. "seat-3"), not a person label.
+  return botName(w.info.name) === seat;
+}
+
+/**
+ * Apply a seatId→status map from the local bridge onto desks.
+ * Keys must be seat ids. Display labels alone never flip a desk.
+ * WORKING needs a fresh `seen` heartbeat; needs_input is left alone.
+ */
+export function applyCrewPresence(host: CrewHost, crew: Record<string, string>, opts: CrewApplyOpts = {}): { applied: string[] } {
+  const now = opts.now ?? Date.now();
+  const lease = opts.leaseMs ?? WORKING_LEASE_MS;
   const want = new Map<string, 'working' | 'idle'>();
   for (const [k, v] of Object.entries(crew || {})) {
-    const n = clean(k);
+    const seat = k.trim().toLowerCase();
+    if (!isPoolSeatId(seat)) continue;
     const st = String(v).toLowerCase();
-    if (!n) continue;
-    if (st === 'working' || st === 'busy' || st === 'active') want.set(n, 'working');
-    else if (st === 'idle' || st === 'asleep' || st === 'roam' || st === 'offline' || st === 'done') want.set(n, 'idle');
+    if (st === 'working' || st === 'busy' || st === 'active') want.set(seat, 'working');
+    else if (st === 'idle' || st === 'asleep' || st === 'roam' || st === 'offline' || st === 'done') want.set(seat, 'idle');
   }
   const applied: string[] = [];
-  for (const w of host.workers.values()) {
-    if (w.info.kind !== 'shell') continue;
-    const n = clean(w.info.name);
-    const next = want.get(n);
-    if (!next) continue;
-    if (w.info.status === 'needs_input') continue;
-    if (next === 'working') {
-      w.info.lastInput = { by: 'crew-status', at: Date.now() };
-      if (w.info.status !== 'working') host.setStatus(w, 'working');
-      else host.emitUpdate(w);
-      applied.push(w.info.name + '=working');
-    } else {
-      if (w.info.status === 'working' || w.info.status === 'starting') host.setStatus(w, 'idle');
-      applied.push(w.info.name + '=idle');
+  for (const [seat, next] of want) {
+    for (const w of host.workers.values()) {
+      if (!seatMatch(w, seat)) continue;
+      if (w.info.status === 'needs_input') continue;
+      if (next === 'working') {
+        const seenAt = opts.seen?.[seat];
+        const fresh = typeof seenAt === 'number' && Number.isFinite(seenAt) && now - seenAt < lease;
+        if (!fresh) {
+          if (w.info.status === 'working' || w.info.status === 'starting') host.setStatus(w, 'idle');
+          applied.push(w.info.name + '=idle');
+          continue;
+        }
+        w.info.lastInput = { by: 'crew-status', at: seenAt };
+        if (w.info.status !== 'working') host.setStatus(w, 'working');
+        else host.emitUpdate(w);
+        applied.push(w.info.name + '=working');
+      } else {
+        if (w.info.status === 'working' || w.info.status === 'starting') host.setStatus(w, 'idle');
+        applied.push(w.info.name + '=idle');
+      }
     }
   }
   return { applied };
@@ -97,10 +168,9 @@ export function chatWorking(_host: CrewHost, _name: string, _text?: string): voi
 
 export function tickCrewStatusFile(host: CrewHost, statePath: string): void {
   try {
-    const file = path.join(path.dirname(statePath), 'crew-status.json');
-    if (!existsSync(file)) return;
-    const raw = JSON.parse(readFileSync(file, 'utf8')) as { crew?: Record<string, string> };
-    if (raw?.crew) applyCrewPresence(host, raw.crew);
+    const dataDir = path.dirname(statePath);
+    const raw = readCrewFile(dataDir);
+    if (raw?.crew) applyCrewPresence(host, raw.crew, { seen: raw.seen });
   } catch {
     /* ignore bad/missing file */
   }
@@ -143,7 +213,7 @@ export function settleQuietShell(w: Worker, now = Date.now()): void {
 export type CrewWatch = {
   start(): void;
   stop(): void;
-  apply(crew: Record<string, string>): { applied: string[] };
+  apply(crew: Record<string, string>, opts?: CrewApplyOpts): { applied: string[] };
   chat(name: string, text?: string): void;
 };
 
@@ -169,7 +239,7 @@ export function createCrewWatch(
       shellIdleTick = undefined;
       crewStatusTick = undefined;
     },
-    apply: (crew) => applyCrewPresence(host, crew),
+    apply: (crew, opts) => applyCrewPresence(host, crew, opts),
     chat: (name, text) => chatWorking(host, name, text),
   };
 }
