@@ -135,15 +135,17 @@ export function installOkkinLoft(ctx: Ctx) {
   let note = '';
   const asked: { who: string; text: string }[] = [];
   const close = () => { panel.hidden = true; pill.focus(); };
-  panel.addEventListener('keydown', (e) => {
+  document.addEventListener('keydown', (e) => {
+    if (panel.hidden) return;
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
     if (e.key !== 'Tab') return;
     const f = [...panel.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]')].filter((x) => !x.hasAttribute('aria-hidden'));
     if (!f.length) return;
+    if (!panel.contains(document.activeElement)) { e.preventDefault(); f[0]!.focus(); return; }
     const first = f[0]!, last = f[f.length - 1]!;
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-  });
+  }, true);
   const paint = () =>
     renderPanel(panel, data, {
       power: (a) => void post('/api/bridge/okkin/power', { action: a }).then((r) => ((note = r.body.error ?? (a === 'start' ? 'On' : 'Off')), refresh())),
@@ -161,7 +163,9 @@ export function installOkkinLoft(ctx: Ctx) {
         });
       },
     }, note, asked);
+  let frozen = false;
   const refresh = async () => {
+    if (frozen) return;
     data = await load();
     view.setState({ power: data?.power ?? 'off', busy: data?.okkin.chip === 'working' });
     if (!panel.hidden) paint();
@@ -182,5 +186,5 @@ export function installOkkinLoft(ctx: Ctx) {
     age = 0;
     if (ctx.inOffice()) void refresh();
   });
-  (window as unknown as { __okkinLoft?: unknown }).__okkinLoft = { open: () => pill.click(), render: (d: Loft) => { data = d; panel.hidden = false; paint(); view.setState({ power: d.power, busy: d.okkin.chip === 'working' }); } };
+  (window as unknown as { __okkinLoft?: unknown }).__okkinLoft = { open: () => pill.click(), render: (d: Loft) => { frozen = true; data = d; panel.hidden = false; paint(); panel.querySelector<HTMLElement>('.okl-close')?.focus(); view.setState({ power: d.power, busy: d.okkin.chip === 'working' }); } };
 }
