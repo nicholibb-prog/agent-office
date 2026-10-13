@@ -12,7 +12,7 @@ export type WorkerStatus =
   | 'exited' // process ended (can be resumed if it had a session)
   | 'offline'; // restored from disk after a server restart; resumable
 
-export type WorkerKind = 'agent' | 'shell';
+export type WorkerKind = 'agent' | 'shell' | 'crew';
 
 /**
  * What a working agent's latest tool call looks like from across the room (see shared/actions.ts):
@@ -28,7 +28,7 @@ export interface WorkerTask {
 
 export interface WorkerInfo {
   id: string;
-  /** 'agent' runs the selected provider; 'shell' is a plain shared login shell. */
+  /** 'agent' runs the selected provider; 'shell' is a plain shared login shell; 'crew' is a seated bot with no CLI. */
   kind: WorkerKind;
   provider?: AgentProvider;
   /** Model requested for this worker, instead of the office's configured default: a Claude model alias, an OpenCode provider/model id, a Codex, Grok, Muse or Pi model id, or an opaque DeepSeek Harness catalog id. What its session says it runs on is `usage.model`. */
