@@ -101,7 +101,7 @@
 #waiting .key { margin: 0 0 0 auto; background: var(--ink); color: var(--paper); box-shadow: none; }
 
 /* The chat: lines float up and fade after a while; hover it or press T to read back. */
-.chat { position: absolute; left: 12px; bottom: 12px; width: 330px; max-width: calc(100vw - 24px); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.chat { position: absolute; left: 12px; bottom: 28px; width: 330px; max-width: calc(100vw - 24px); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 #hud > .chat { pointer-events: none; }
 #chat-log { list-style: none; margin: 0; padding: 0 0 3px; max-height: 190px; width: 100%; overflow: auto; font-size: 13px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; scrollbar-width: none; }
 #chat-log:empty { display: none; }
@@ -260,3 +260,10 @@ body.telescope-active #hud { visibility: hidden; }
 /* The arcade cabinet in the lounge (features/cabinet/ui.ts) plays on the keyboard, and says so over the game when a worker of yours needs input. */
 .arcade.cabinet canvas { cursor: default; }
 .cabinet-call { position: absolute; bottom: calc(100% + 10px); left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 10px; white-space: nowrap; padding: 6px 6px 6px 14px; background: var(--warn); border: 3px solid var(--ink); border-radius: 14px; box-shadow: 0 4px 0 var(--ink); font-weight: 900; font-size: 15px; animation: pop .18s ease-out; }
+
+/* Only you in the office: the People button has the count, so no duplicate box. */
+#people-panel.solo { display: none !important; }
+/* The board agents (Issues, PR, queue kiosks), folded into one row under the crew. */
+#workers .board-agents-row { display: block; padding: 0; background: none; border: 0; }
+#workers .board-agents summary { cursor: pointer; font-size: 12px; opacity: .75; padding: 4px 2px; }
+#workers .board-agents ul { list-style: none; margin: 0; padding: 0; }

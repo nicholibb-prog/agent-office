@@ -40,7 +40,10 @@ export function renderPeople(voice: Voice, onEditProfile: () => void, onWalkTo: 
     li.addEventListener('click', () => (you ? onEditProfile() : onWalkTo(p.id)));
     ul.append(li);
   });
-  $('people-count').textContent = String(peers.length);
+  // The People button in the dock already shows the count; with only you here the list says nothing
+  // more, so the box stays out of the way until someone else walks in.
+  $('people-count').textContent = '';
+  $('people-panel').classList.toggle('solo', peers.length <= 1);
   void voice;
 }
 

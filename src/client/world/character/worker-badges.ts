@@ -63,3 +63,6 @@ export function bubbleFor(status: WorkerStatus, bounce: boolean, task: WorkerTas
     },
   };
 }
+
+/** Name tag heights: just over the antenna when seated at a desk, a little higher on the move. */
+export const NAME_TAG_Y = { seated: 1.42, standing: 1.55 } as const;
