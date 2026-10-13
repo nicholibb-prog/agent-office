@@ -4,6 +4,7 @@ import type { Collider, Interactable } from '../../world/types';
 import type { Fixture } from '../../world/office/fixture';
 import { OKKIN_CONSOLE, OKKIN_LOFT, OKKIN_MODELS, OKKIN_PEDESTAL, OKKIN_SCROLL, OKKIN_SIGN } from '../../../shared/okkin-loft';
 import { buildPedestal, buildScroll, buildSign } from './regalia';
+import { TOWER, buildHero } from './hero';
 
 export type LoftState = {
   power: 'on' | 'off';
@@ -15,6 +16,12 @@ export type LoftState = {
   light?: 'on' | 'off' | 'setup' | 'error';
   dial?: { role: string; status: 'installed' | 'not installed' | 'unknown' }[];
   dialIndex?: number;
+  /** The dial's chosen role, for the blades' accent colour. */
+  dialRole?: string;
+  /** A model loading or switching (counts as working). */
+  loading?: boolean;
+  /** The hologram's real data: live tokens/sec and the loaded model; null when there's none. */
+  holo?: { tps: number | null; model: string | null; mock: boolean } | null;
 };
 
 export const LIGHT = { on: '#34c759', off: '#8e8e93', setup: '#ff9f0a', error: '#ff3b30' } as const;
@@ -30,6 +37,8 @@ export interface OkkinLoftView {
   colliders: Collider[];
   /** Real state only: off = dark; busy = only while Okkin has a request in flight. */
   setState(s: LoftState): void;
+  /** Close by (within ~16 m, in the office): the halo, hologram and fans run. Far: they don't. */
+  setNear(v: boolean): void;
 }
 
 export function buildOkkinLoft(): OkkinLoftView {
@@ -41,38 +50,18 @@ export function buildOkkinLoft(): OkkinLoftView {
   // The stone pedestal everything stands on, with the engraving cut into its front.
   const PH = OKKIN_PEDESTAL.height;
   group.add(buildPedestal().group);
-  const rackMat = toon('#2b2f36');
-  const glassMat = toon('#9fb4c7', { transparent: true, opacity: 0.35 });
-  const rackX = L.maxX - L.rackDepth / 2 - 0.05;
-  const leds: THREE.MeshBasicMaterial[] = [];
-  const racks = 4;
-  const rw = len / racks - 0.08;
-  for (let i = 0; i < racks; i++) {
-    const z = L.minZ + (i + 0.5) * (len / racks);
-    group.add(mesh(roundedBox(L.rackDepth, L.rackHeight, rw, 0.03), rackMat, rackX, L.rackHeight / 2 + PH, z));
-    group.add(mesh(new THREE.BoxGeometry(0.01, L.rackHeight - 0.2, rw - 0.1), glassMat, rackX - L.rackDepth / 2 - 0.01, L.rackHeight / 2 + PH, z, false));
-    for (let r = 0; r < 9; r++) {
-      const m = new THREE.MeshBasicMaterial({ color: '#2a3b2a' });
-      leds.push(m);
-      const led = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.03, 0.05), m);
-      led.position.set(rackX - L.rackDepth / 2 - 0.02, PH + 0.3 + r * 0.2, z - rw / 3);
-      group.add(led);
-    }
-  }
-  // Cooling glow along the floor at the rack fronts.
-  const glowMat = new THREE.MeshBasicMaterial({ color: '#66d9ff', transparent: true, opacity: 0.0 });
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.5, len - 0.2), glowMat);
-  glow.rotation.x = -Math.PI / 2;
-  glow.position.set(rackX - L.rackDepth / 2 - 0.25, PH + 0.01, cz);
-  group.add(glow);
+  // The supercomputer: two glass-and-metal towers with lit blades (see hero.ts).
+  const hero = buildHero();
+  group.add(hero.group);
+  const heroFront = L.maxX - TOWER.depth - 0.08;
   // The OKKIN sign above it all, facing the floor; the 日光 scroll on its stand at the north end.
   const sign = buildSign();
-  sign.position.set(rackX - L.rackDepth / 2, OKKIN_SIGN.y, cz);
+  sign.position.set(heroFront, OKKIN_SIGN.y, cz);
   sign.rotation.y = -Math.PI / 2;
   group.add(sign);
   for (const sx of [-1, 1]) {
     const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 6.8 - OKKIN_SIGN.y - OKKIN_SIGN.height / 2, 6), toon('#c9a227'));
-    chain.position.set(rackX - L.rackDepth / 2, (6.8 + OKKIN_SIGN.y + OKKIN_SIGN.height / 2) / 2, cz + sx * (OKKIN_SIGN.width / 2 - 0.15));
+    chain.position.set(heroFront, (6.8 + OKKIN_SIGN.y + OKKIN_SIGN.height / 2) / 2, cz + sx * (OKKIN_SIGN.width / 2 - 0.15));
     group.add(chain);
   }
   const scroll = buildScroll();
@@ -160,18 +149,11 @@ export function buildOkkinLoft(): OkkinLoftView {
       const st = state.dial?.[i]?.status ?? 'unknown';
       t.mat.color.set(i === (state.dialIndex ?? 1) ? '#0071e3' : st === 'installed' ? '#34c759' : '#a1a1a6');
     });
-    glowMat.opacity = on ? 0.35 : 0;
-    leds.forEach((m, i) => {
-      if (!on) return m.color.set('#1f2a1f');
-      // Idle: a slow, regular breathe. Busy (real in-flight request only): quick, scattered.
-      const lit = state.busy ? Math.sin(t * 9 + i * 1.7) > 0.2 : Math.sin(t * 1.2 + (i % 3)) > 0.6;
-      m.color.set(lit ? (state.busy ? '#ffb340' : '#34c759') : '#1f3a24');
-    });
   };
   paint();
   const colliders: Collider[] = [
     { minX: OKKIN_PEDESTAL.minX, maxX: OKKIN_PEDESTAL.maxX, minZ: OKKIN_PEDESTAL.minZ, maxZ: OKKIN_PEDESTAL.maxZ, top: OKKIN_PEDESTAL.height },
-    { minX: L.maxX - L.rackDepth - 0.1, maxX: L.maxX, minZ: L.minZ, maxZ: L.maxZ, top: L.rackHeight + OKKIN_PEDESTAL.height },
+    { minX: heroFront, maxX: L.maxX - 0.08, minZ: L.minZ + 0.1, maxZ: L.maxZ - 0.1, top: OKKIN_PEDESTAL.height + TOWER.height },
     { minX: OKKIN_SCROLL.x - 0.25, maxX: OKKIN_SCROLL.x + 0.25, minZ: OKKIN_SCROLL.z - OKKIN_SCROLL.width / 2, maxZ: OKKIN_SCROLL.z + OKKIN_SCROLL.width / 2, top: OKKIN_SCROLL.bottom + OKKIN_SCROLL.height + 0.25 },
     { minX: C.x - C.depth / 2, maxX: C.x + C.depth / 2, minZ: C.z - C.width / 2, maxZ: C.z + C.width / 2, top: C.height },
   ];
@@ -182,17 +164,23 @@ export function buildOkkinLoft(): OkkinLoftView {
   ];
   power.userData.interact = interactables[0];
   dial.userData.interact = interactables[1];
-  const view: OkkinLoftView & { tick(dt: number): void } = {
+  const view: OkkinLoftView & { tick(dt: number): void; hero: typeof hero } = {
+    hero,
     group,
     colliders,
     interactables,
     setState(s) {
       state = s;
       paint();
+      const role = s.dial ? OKKIN_MODELS[s.dialIndex ?? 1]?.role : undefined;
+      hero.setState({ power: s.power, busy: s.busy, loading: s.loading, role: s.dialRole ?? role, holo: s.holo ?? null });
+    },
+    setNear(v) {
+      hero.setNear(v);
     },
     tick(dt) {
       t += dt;
-      paint();
+      hero.tick(dt);
     },
   };
   return view;

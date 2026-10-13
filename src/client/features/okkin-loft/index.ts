@@ -28,7 +28,7 @@ type Loft = {
   ownerState?: 'not-set-up' | 'locked' | 'unlocked' | 'changed';
 };
 
-const NEAR = 3;
+const NEAR = 3.8;
 
 /** Ask Okkin: a chat box only. Text nodes only (escaped), 500-char cap, memory only on the server. */
 function askBox(on: boolean, owner: boolean, lines: { who: string; text: string }[], ask?: (text: string) => void, say?: (text: string) => void): HTMLElement {
@@ -160,7 +160,7 @@ export function renderPanel(root: HTMLElement, d: Loft | null, act: { unlock?(pa
   close.addEventListener('click', act.close);
   const parts: (HTMLElement | null)[] = [
     h('header.okl-head', {}, h('div', {}, h('h2', {}, 'Okkin'), h('p.okl-muted', {}, d ? (on ? `On · ${d.okkin.chip}` : 'Off') : sw.label)), d?.mock ? h('span.okl-mock', {}, 'mock') : null, close),
-    h('section.okl-center', {}, h('h3', {}, 'Power'), power, sw.reason ? h('p.okl-muted.okl-power-reason', { 'data-locked': sw.works ? 'no' : 'yes' }, sw.reason) : null, sw.signIn ? h('a.okl-btn.okl-signin', { href: '/' }, 'Sign in again') : null),
+    h('section.okl-center', {}, h('h3', {}, 'Power'), power, sw.reason ? h('p.okl-muted.okl-power-reason', { 'data-locked': sw.works ? 'no' : 'yes', ...(sw.detail ? { tabindex: '0', title: sw.detail } : {}) }, sw.reason, ...(sw.detail ? [h('span.okl-raw', {}, ` (${sw.detail})`)] : [])) : null, sw.signIn ? h('a.okl-btn.okl-signin', { href: '/' }, 'Sign in again') : null),
     ownerBox(d, act),
     h('section', {}, h('h3', {}, `Model switch · ${stops.length} models`), dial),
     h('section.okl-stats', {},
@@ -181,7 +181,9 @@ export function renderPanel(root: HTMLElement, d: Loft | null, act: { unlock?(pa
 function sceneState(d: Loft | null) {
   const stops = stopsView(d);
   const sw = switchView(d, loadError, loadStatus);
-  return { power: d?.power ?? 'off', busy: d?.okkin.chip === 'working', switchWorks: sw.works, switchLabel: sw.label, light: sw.light, dial: stops.map((s) => ({ role: s.role, status: s.status })), dialIndex: chosenIndex(d, stops) } as const;
+  const idx = chosenIndex(d, stops);
+  const holo = d ? { tps: d.speed?.tokensPerSec ?? null, model: d.loaded[0]?.name ?? null, mock: !!d.mock } : null;
+  return { power: d?.power ?? 'off', busy: d?.okkin.chip === 'working', loading: d?.okkin.chip === 'switching', switchWorks: sw.works, switchLabel: sw.label, light: sw.light, dial: stops.map((s) => ({ role: s.role, status: s.status })), dialIndex: idx, dialRole: stops[idx]?.role, holo } as const;
 }
 
 export function installOkkinLoft(ctx: Ctx) {
@@ -291,6 +293,7 @@ export function installOkkinLoft(ctx: Ctx) {
     const p = ctx.player.pos;
     const near = ctx.inOffice() && !ctx.upTop() && Math.hypot(p.x - OKKIN_LOFT_SPOT.x, p.z - OKKIN_LOFT_SPOT.z) < NEAR;
     pill.hidden = !near;
+    view.setNear(ctx.inOffice() && Math.hypot(p.x - OKKIN_LOFT_SPOT.x, p.z - OKKIN_LOFT_SPOT.z) < 16);
     age += dt;
     if (age < 5) return;
     age = 0;
