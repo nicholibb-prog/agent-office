@@ -108,7 +108,7 @@ test('power config: no shell, no elevation, owner + mode checks, Windows fails c
   for (const bad of [['sh', '-c', 'x'], ['sudo', 'x'], ['runas', 'x'], ['sc', 'stop', 'x'], ['/bin/x', 'a;b'], ['/bin/x', '$(id)'], ['powershell', '-Command', 'x'], ['powershell', '-NoProfile', '-File', 'C:\\x\\okkin-off-v2.ps1'], ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\\x\\other.ps1'], ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\\x\\okkin-off-v2.ps1', '-Command']]) {
     assert.equal(loadPowerConfig('/x', { fs: fsOf({ start: good.start, stop: bad }), uid: 1, platform: 'linux' }).ok, false, bad.join(' '));
   }
-  assert.equal(loadPowerConfig('/x', { fs: fsOf({ start: good.start, stop: ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\\ops\\okkin-off-v2.ps1', '-WhatIf'] }), uid: 1, platform: 'linux' }).ok, true);
+  assert.equal(loadPowerConfig('/x', { fs: fsOf({ start: good.start, stop: ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\\ops\\okkin-off-v2.ps1', '-WhatIf'], scriptPath: 'C:\\ops\\okkin-off-v2.ps1', scriptSha256: '7'.repeat(64) }), uid: 1, platform: 'linux' }).ok, true);
 });
 
 function deps(over: Partial<PowerDeps> & { up?: { v: boolean } } = {}): PowerDeps {
@@ -160,7 +160,7 @@ test('stop script: sha256 pin mismatch refuses; freed lines parsed', async () =>
   const up = { v: true };
   const base = deps({ up });
   let ran = 0;
-  const load = { ok: true as const, config: { start: ['/bin/start'], stop: ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\\ops\\okkin-off-v2.ps1'], tuning: {}, scriptSha256: '7'.repeat(64) } };
+  const load = { ok: true as const, config: { start: ['/bin/start'], stop: ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\\ops\\okkin-off-v2.ps1'], tuning: {}, scriptSha256: '7'.repeat(64), scriptPath: 'C:\\ops\\okkin-off-v2.ps1' } };
   const r = await flipPower(d, 'stop', 'n', { ...base, runner: { ...base.runner, hash: () => '0'.repeat(64), run: async () => (ran++, { ok: true, code: 0, stderr: '' }) } }, load);
   assert.equal(r.status, 503);
   assert.equal(ran, 0);
@@ -169,4 +169,23 @@ test('stop script: sha256 pin mismatch refuses; freed lines parsed', async () =>
   assert.deepEqual(ok.script, { vramMiB: 5120, ramMiB: 812.5 });
   assert.deepEqual(parseFreed('nothing'), { vramMiB: null, ramMiB: null });
   rmSync(d, { recursive: true, force: true });
+});
+
+test('exposure is an allowlist: only 127.0.0.1 / [::1] on :11434 pass (Windows netstat + ss)', () => {
+  const nl = (addr: string) => `  TCP    ${addr}        0.0.0.0:0              LISTENING       4242`;
+  assert.equal(exposedOnAllInterfaces(nl('192.168.1.5:11434')), true);
+  assert.equal(exposedOnAllInterfaces(nl('[::]:11434')), true);
+  assert.equal(exposedOnAllInterfaces(nl('0.0.0.0:11434')), true);
+  assert.equal(exposedOnAllInterfaces(nl('127.0.0.1:11434')), false);
+  assert.equal(exposedOnAllInterfaces(nl('[::1]:11434')), false);
+  assert.equal(exposedOnAllInterfaces(nl('0.0.0.0:445')), false);
+  assert.equal(exposedOnAllInterfaces('LISTEN 0 511 10.0.0.2:11434 0.0.0.0:*'), true);
+});
+
+test('a PowerShell stop without the exact pinned path is refused at load', () => {
+  const fsOf = (obj: unknown) => ({ exists: () => true, stat: () => ({ uid: 1, mode: 0o100600 }), read: () => JSON.stringify(obj) });
+  const stop = ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\\ops\\okkin-off-v2.ps1'];
+  assert.equal(loadPowerConfig('/x', { fs: fsOf({ start: ['/bin/s'], stop, scriptSha256: '7'.repeat(64) }), uid: 1, platform: 'linux' }).ok, false);
+  assert.equal(loadPowerConfig('/x', { fs: fsOf({ start: ['/bin/s'], stop, scriptSha256: '7'.repeat(64), scriptPath: 'C:\\other\\okkin-off-v2.ps1' }), uid: 1, platform: 'linux' }).ok, false);
+  assert.equal(loadPowerConfig('/x', { fs: fsOf({ start: ['/bin/s'], stop, scriptSha256: '7'.repeat(64), scriptPath: stop[5] }), uid: 1, platform: 'linux' }).ok, true);
 });
