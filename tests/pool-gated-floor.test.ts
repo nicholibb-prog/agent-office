@@ -118,3 +118,40 @@ test('#28 split words and base64 stay low when the text is benign', () => {
     assert.ok(enforcedLevel(1, t) <= 3, t + ' -> ' + enforcedLevel(1, t));
   }
 });
+
+// Pool follow-up: short base64 (4+ chars before padding), power/wipe words, 3+ part splits, encoded splits.
+const B64: Record<string, string> = { token: 'dG9rZW4=', merge: 'bWVyZ2U=', push: 'cHVzaA==', sudo: 'c3Vkbw==', ssh: 'c3No', pay: 'cGF5' };
+for (const [word, enc] of Object.entries(B64)) {
+  test(`base64 of ${word} (${enc}) floors at 6+`, () => {
+    assert.equal(Buffer.from(enc, 'base64').toString(), word);
+    assert.ok(enforcedLevel(1, enc) >= 6, enc + ' -> ' + enforcedLevel(1, enc));
+    assert.ok(enforcedLevel(1, `please run ${enc} now`) >= 6, enc);
+  });
+}
+test('base64 of pay scores 7', () => {
+  assert.equal(enforcedLevel(1, 'cGF5'), 7);
+});
+
+for (const t of ['reboot', 'halt', 'poweroff', 'truncate table', 'git clean -fdx', 'Reboot the box', 'TRUNCATE TABLE users', 'git clean -fdx && build']) {
+  test(`power and wipe words floor at 6+: ${JSON.stringify(t)}`, () => {
+    assert.ok(enforcedLevel(1, t) >= 6, t + ' -> ' + enforcedLevel(1, t));
+  });
+}
+
+for (const t of ['sh ip it', 'p a s s w o r d', 'pa ss wo rd', 'de p lo y', 'to k e n', 'pass w o rd']) {
+  test(`splits of 3+ parts rejoin and floor at 6+: ${JSON.stringify(t)}`, () => {
+    assert.ok(enforcedLevel(1, t) >= 6, t + ' -> ' + enforcedLevel(1, t));
+  });
+}
+
+for (const t of ['pass\tword', 'dep\tloy', 'pass%77ord', 'p%61ssword', 'to%20ken', 'pass&#119;ord', 'pass&nbsp;word', 'dep&#32;loy']) {
+  test(`tab, percent-encoded, and HTML-entity splits floor at 6+: ${JSON.stringify(t)}`, () => {
+    assert.ok(enforcedLevel(1, t) >= 6, t + ' -> ' + enforcedLevel(1, t));
+  });
+}
+
+test('benign text stays at 3 or below with short base64 and multi-part joins', () => {
+  for (const t of ['water the plants', 'a cat sat on a mat', 'have a nice day', 'test the idea', 'read a book', 'call mom', 'aGVsbG8gd29ybGQ=', 'is this a good idea']) {
+    assert.ok(enforcedLevel(1, t) <= 3, t + ' -> ' + enforcedLevel(1, t));
+  }
+});
