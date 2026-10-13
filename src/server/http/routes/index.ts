@@ -11,6 +11,7 @@ import { searchRoutes } from './search.js';
 import { serviceRoutes } from './services.js';
 import { bridgeRoutes } from './bridge.js';
 import { hqBriefRoutes } from './hq-brief.js';
+import { officeRoutes } from './office.js';
 
 export const routes: readonly Route[] = [
   // Anyone.
@@ -43,6 +44,10 @@ export const routes: readonly Route[] = [
   // Signed in. The unblock answer is a person at the office, never a bridge token.
   hqBriefRoutes.answer,
   authRoutes.whoami,
+  officeRoutes.state,
+  officeRoutes.sinceClose,
+  officeRoutes.dismiss,
+  officeRoutes.close,
   agentRoutes.models,
   fileRoutes.image,
   fileRoutes.whiteboardFile,

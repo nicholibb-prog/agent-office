@@ -23,6 +23,7 @@ import type { Themes } from '../theme.js';
 import type { Maps } from '../maps.js';
 import type { OfficePrompts } from '../prompts.js';
 import type { LeaveOnMerge } from '../leave-on-merge.js';
+import type { OfficeState } from '../office-state.js';
 import type { ChatLog } from '../history.js';
 import type { Arcade, HighScores } from '../cabinet.js';
 import type { AgentProvider, FloorInfo, Me, ServerMsg, ServiceInfo, ServicesState, SignInKind } from '../../shared/protocol.js';
@@ -61,6 +62,8 @@ export interface BuildingServices {
   maps: Maps;
   prompts: OfficePrompts;
   leaveOnMerge: LeaveOnMerge;
+  /** Office open/closed, apart from seats (see office-state.ts). */
+  officeState: OfficeState;
   ledger: Ledger;
   signins: SignIns;
   /** The office's own Claude plan limits. */
