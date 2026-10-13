@@ -11,6 +11,8 @@ const SEVEN = [
   'order', 'mail', 'forward', 'money', 'charge', 'donate', 'bitcoin', 'iban', 'erase', 'destroy', 'whatsapp', 'telegram',
   // Dan's written gate, money and sends: edge cases that used to score 1.
   'refund', 'payout', 'wallet', 'fund', 'crypto', 'stripe', 'paypal', 'notify', 'publish', 'invite', 'share',
+  // Dan's #12 FIX: money and account actions that used to score 1.
+  'reimburs', 'unsubscrib', 'giftcard',
 ];
 /** Code, secrets, shell, and network. */
 const SIX = [
@@ -20,6 +22,8 @@ const SIX = [
   'account', 'apikey', 'oauth', 'cookie', 'session', 'private', 'passphrase', 'passwd', 'sudo', 'chmod', 'chown',
   'powershell', 'shell', 'script', 'terminal', 'npm', 'pip', 'install', 'repo', 'github', 'pull', 'patch',
   'refactor', 'webhook', 'proxy', 'tunnel', 'dns', 'vpn', 'download', 'api', 'cron', 'docker', 'firewall',
+  // Dan's #12 FIX: secrets and release words that used to score 1.
+  'creds', 'pwd', 'releas',
 ];
 /** Sign-in and a destructive shell word. Code filenames are scored separately. */
 const FOUR = ['rm', 'login', 'signin'];
@@ -28,6 +32,36 @@ const PHRASES: readonly [string, number][] = [
   ['seed phrase', 7],
   ['drop table', 6],
   ['major files', 6],
+  // Dan's #12 FIX: destructive, approval, money, and account phrases that used to score 1.
+  ['rm rf', 6],
+  ['rm -rf', 6],
+  ['rm -fr', 6],
+  ['format disk', 6],
+  ['format the disk', 6],
+  ['format drive', 6],
+  ['format the drive', 6],
+  ['approve the pr', 6],
+  ['approve pr', 6],
+  ['approve the pull', 6],
+  ['ship it', 6],
+  ['move to trash', 7],
+  ['move it to trash', 7],
+  ['move to the trash', 7],
+  ['gift card', 7],
+  ['cancel subscription', 7],
+  ['cancel the subscription', 7],
+  ['cancel my subscription', 7],
+  ['call the bank', 7],
+  ['call my bank', 7],
+  ['book a flight', 7],
+  ['book the flight', 7],
+  ['book flight', 7],
+  ['apply for loan', 7],
+  ['apply for a loan', 7],
+  ['apply for the loan', 7],
+  ['sign the contract', 7],
+  ['sign contract', 7],
+  ['sign a contract', 7],
 ];
 
 const EXTS = new Set(['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'py', 'pyw', 'sh', 'bash', 'ps1', 'json', 'env', 'yml', 'yaml', 'rb', 'go', 'rs', 'php', 'sql', 'toml', 'ini', 'xml', 'html', 'htm', 'css', 'vue', 'svelte']);

@@ -79,7 +79,7 @@ test('split, suffixed, and mixed-script wording raises the pool level', () => {
   assert.equal(enforcedLevel(1, 'the url'), 6);
   assert.equal(enforcedLevel(1, 'ssh'), 6);
   assert.equal(enforcedLevel(1, 'scp'), 6);
-  assert.equal(enforcedLevel(1, 'rm -rf'), 4);
+  assert.equal(enforcedLevel(1, 'rm -rf'), 6); // Dan #12 FIX: destructive shell floors at 6.
   assert.equal(enforcedLevel(1, 'DM'), 7);
   assert.equal(enforcedLevel(1, 'a text'), 7);
   assert.equal(enforcedLevel(1, 'an sms'), 7);
