@@ -4,7 +4,7 @@
 const SEATS_MS = 3000;
 const FRAME_MS = 500;
 
-export type LiveImage = { img: CanvasImageSource; w: number; h: number; at: number };
+export type LiveImage = { img: CanvasImageSource; w: number; h: number; at: number; near?: boolean };
 
 const enabled = new Set<string>();
 const frames = new Map<string, LiveImage>();
@@ -37,7 +37,7 @@ async function pull(seat: string) {
     }
     const at = Number(r.headers.get('x-frame-at')) || Date.now();
     const bmp = await createImageBitmap(await r.blob());
-    frames.set(seat, { img: bmp, w: bmp.width, h: bmp.height, at });
+    frames.set(seat, { img: bmp, w: bmp.width, h: bmp.height, at, near: r.headers.get('x-frame-source') === 'drive' });
   } catch {
     frames.delete(seat);
   } finally {
@@ -69,6 +69,6 @@ export function liveFor(name: string, working: boolean, now = Date.now(), id?: s
   const seat = id?.startsWith('crew-') ? id.slice(5) : seatOf(name);
   wanted.add(seat);
   const f = frames.get(seat);
-  if (!f || now - f.at > 10_000) return 'none';
+  if (!f || now - f.at > (f.near ? 60_000 : 10_000)) return 'none';
   return f;
 }

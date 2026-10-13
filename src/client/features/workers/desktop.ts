@@ -159,9 +159,10 @@ export function paintLiveFrame(ctx: CanvasRenderingContext2D, w: number, h: numb
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   ctx.font = `800 ${Math.round(h / 30)}px ${FONT}`;
-  const tag = `● LIVE  ${face.name.slice(0, 18)}`;
+  const ago = Math.max(0, Math.round((Date.now() - f.at) / 1000));
+  const tag = f.near ? `near-live · updated ${ago}s ago  ${face.name.slice(0, 14)}` : `● LIVE  ${face.name.slice(0, 18)}`;
   const tw = tag.length * Math.round(h / 50) + 20;
-  ctx.fillStyle = 'rgba(200,30,50,0.92)';
+  ctx.fillStyle = f.near ? 'rgba(40,90,170,0.92)' : 'rgba(200,30,50,0.92)';
   ctx.fillRect(10, 10, tw, 30);
   ctx.fillStyle = '#fff';
   ctx.fillText(tag, 20, 16);
