@@ -160,3 +160,26 @@ test('caps: stop reading at about 2 MB in total', () => {
   assert.equal(Date.parse(t.items.at(-1)!.at), T + 14_000, 'the newest are the ones kept');
   rmSync(r, { recursive: true, force: true });
 });
+
+test('no seeding path: production code never writes replies, and the screen never shows the raw folder id', () => {
+  for (const f of ['src/server/kavi-thread.ts', 'src/client/features/kavi-board/send-panel.ts', 'src/client/features/kavi-board/index.ts']) {
+    const src = readFileSync(path.join(process.cwd(), f), 'utf8');
+    assert.doesNotMatch(src, /writeFile|appendFile|openSync|mock|seed|fake/i, f);
+  }
+  const ui = readFileSync(path.join(process.cwd(), 'src/client/features/kavi-board/send-panel.ts'), 'utf8');
+  assert.match(ui, /Sent to Kavi's Bridge folder\./);
+  assert.match(ui, /No replies yet\./);
+  assert.doesNotMatch(ui, /folder \$\{j\.folderId\}|textContent = [^;]*folderId/);
+  // aria-modal only while open, so main's hide-under-modal rules for the toast and slow banner apply.
+  assert.match(ui, /setAttribute\('aria-modal', 'true'\)/);
+  assert.match(ui, /removeAttribute\('aria-modal'\)/);
+  assert.match(ui, /back\.hidden = true;/);
+});
+
+test('a thread with only owner notes has no reply items (the screen says No replies yet)', () => {
+  const r = bridge();
+  sendMessage(r, 'only me');
+  const t = readThread(r);
+  assert.deepEqual(t.items.map((i) => i.from), ['owner']);
+  rmSync(r, { recursive: true, force: true });
+});

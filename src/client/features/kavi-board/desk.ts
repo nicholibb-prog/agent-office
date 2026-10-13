@@ -58,6 +58,30 @@ export function buildKaviDesk(): KaviDeskView {
   computer.add(mesh(roundedBox(0.42, 0.02, 0.14, 0.01), toon('#e9ecef'), 0, 0.01, 0.3));
   group.add(computer);
 
+  // A small "Kavi" nametag on the front edge of the desk, facing the room.
+  const tagCanvas = document.createElement('canvas');
+  tagCanvas.width = 256;
+  tagCanvas.height = 72;
+  const tg = tagCanvas.getContext('2d')!;
+  tg.fillStyle = '#1d3557';
+  tg.beginPath();
+  tg.roundRect(2, 2, 252, 68, 14);
+  tg.fill();
+  tg.fillStyle = '#ffffff';
+  tg.font = '700 42px Nunito, ui-rounded, system-ui, sans-serif';
+  tg.textAlign = 'center';
+  tg.textBaseline = 'middle';
+  tg.fillText('Kavi', 128, 38);
+  const tagTex = new THREE.CanvasTexture(tagCanvas);
+  tagTex.colorSpace = THREE.SRGBColorSpace;
+  const tagGeo = new THREE.PlaneGeometry(0.32, 0.09);
+  const tagMat = new THREE.MeshBasicMaterial({ map: tagTex, toneMapped: false });
+  const nametag = new THREE.Mesh(tagGeo, tagMat);
+  nametag.name = 'kavi-nametag';
+  nametag.position.set(0.42, height + 0.05, depth / 2 - 0.06);
+  nametag.rotation.x = -0.35;
+  group.add(nametag);
+
   const colliders: Collider[] = [{ ...KAVI_DESK_BOX }];
   const dispose = () => {
     picture.onload = null;
@@ -65,6 +89,9 @@ export function buildKaviDesk(): KaviDeskView {
     texture.dispose();
     screenMat.dispose();
     screenGeo.dispose();
+    tagTex.dispose();
+    tagMat.dispose();
+    tagGeo.dispose();
   };
   return { group, computer, colliders, dispose };
 }

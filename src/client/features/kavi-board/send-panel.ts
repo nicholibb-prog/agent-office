@@ -30,8 +30,8 @@ export function timeLabel(iso: string, now = new Date()): string {
 
 const CSS = `
 .kavi-open{position:fixed;left:14px;bottom:62px;z-index:1000;padding:8px 12px;border-radius:10px;border:0;background:#2f6f6a;color:#fff;font:600 13px system-ui;cursor:pointer}
-.kavi-pc-back{position:fixed;inset:0;z-index:1100;background:#0009;display:none;align-items:center;justify-content:center}
-.kavi-pc-back.open{display:flex}
+.kavi-pc-back{position:fixed;inset:0;z-index:1100;background:#0009;display:flex;align-items:center;justify-content:center}
+.kavi-pc-back[hidden]{display:none}
 .kavi-pc{width:min(720px,94vw);height:min(560px,90vh);display:flex;flex-direction:column;border-radius:22px;background:#20262b;border:10px solid #3a4148;box-shadow:0 18px 60px #000a;color:#eef;font:14px system-ui;overflow:hidden}
 .kavi-pc-top{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#181d21}
 .kavi-pc-top img{width:40px;height:40px;border-radius:50%;object-fit:cover;background:#334}
@@ -42,10 +42,12 @@ const CSS = `
 .kavi-msg.owner{align-self:flex-end;background:#2f7cf6}.kavi-msg.kavi{align-self:flex-start;background:#3a4148}
 .kavi-msg .at{display:block;font-size:11px;opacity:.7;margin-top:3px}
 .kavi-empty{color:#9ab;text-align:center;margin:auto}
+.kavi-noreply{margin:6px auto 0;font-size:12px}
 .kavi-status{padding:6px 14px;font-size:12px;color:#bcd;min-height:16px;word-break:break-all}.kavi-status a{color:#9fe3c9}
 .kavi-status.err{color:#ff9b8f}
 .kavi-compose{display:flex;gap:8px;padding:10px 14px;background:#181d21;align-items:center}
-.kavi-compose textarea{flex:1;height:44px;resize:none;border-radius:12px;border:1px solid #445;background:#11161a;color:#eef;padding:8px}
+.kavi-compose textarea{flex:1;height:44px;resize:none;border-radius:12px;border:1px solid #445;background:#11161a;color:#eef;padding:8px;font:14px system-ui,sans-serif}
+.kavi-compose textarea::placeholder{font-family:system-ui,sans-serif;color:#8a97a3}
 .kavi-compose button{padding:8px 12px;border-radius:12px;border:0;background:#2f6f6a;color:#fff;cursor:pointer}
 .kavi-compose input[type=file]{display:none}`;
 
@@ -61,9 +63,9 @@ export function mountKaviSendPanel(): KaviPc {
 
   const opener = el('button', 'kavi-open', "Kavi's screen");
   const back = el('div', 'kavi-pc-back');
+  back.hidden = true;
   const pc = el('div', 'kavi-pc');
   pc.setAttribute('role', 'dialog');
-  pc.setAttribute('aria-modal', 'true');
   pc.setAttribute('aria-label', "Kavi's desk computer");
   const top = el('div', 'kavi-pc-top');
   const face = el('img', '');
@@ -118,6 +120,7 @@ export function mountKaviSendPanel(): KaviPc {
       m.append(el('span', 'at', `${it.from === 'kavi' ? 'Kavi' : 'You'} · ${timeLabel(it.at)}`));
       thread.append(m);
     }
+    if (all.length && !items.some((i) => i.from === 'kavi')) thread.append(el('div', 'kavi-empty kavi-noreply', 'No replies yet.'));
     thread.scrollTop = thread.scrollHeight;
   };
   const load = () =>
@@ -134,7 +137,7 @@ export function mountKaviSendPanel(): KaviPc {
     r.json().then((j: { name?: string; folderId?: string; error?: string }) => {
       if (r.ok && j.folderId) {
         link = `https://drive.google.com/drive/folders/${encodeURIComponent(j.folderId)}`;
-        setStatus(`Sent and confirmed in to-kavi (folder ${j.folderId}).`, false, true);
+        setStatus("Sent to Kavi's Bridge folder.", false, true);
         return true;
       }
       setStatus(`Not sent: ${j.error || r.status}`, true);
@@ -143,7 +146,7 @@ export function mountKaviSendPanel(): KaviPc {
 
   const focusables = () => [...pc.querySelectorAll<HTMLElement>('button, textarea, a[href]')].filter((e) => e.offsetParent !== null);
   const onKey = (e: KeyboardEvent) => {
-    if (!back.classList.contains('open')) return;
+    if (back.hidden) return;
     e.stopPropagation();
     if (e.key === 'Escape') return close();
     if (e.key === 'Tab') {
@@ -156,23 +159,25 @@ export function mountKaviSendPanel(): KaviPc {
     }
   };
   function open() {
-    if (back.classList.contains('open')) return;
+    if (!back.hidden) return;
     lastFocus = document.activeElement;
     if (document.pointerLockElement) document.exitPointerLock();
-    back.classList.add('open');
+    back.hidden = false;
+    pc.setAttribute('aria-modal', 'true');
     setStatus('');
     void load();
     timer = setInterval(() => void load(), POLL_MS);
     text.focus();
   }
   function close() {
-    back.classList.remove('open');
+    back.hidden = true;
+    pc.removeAttribute('aria-modal');
     if (timer) clearInterval(timer);
     timer = undefined;
     (lastFocus as HTMLElement | null)?.focus?.();
   }
   document.addEventListener('keydown', onKey, true);
-  document.addEventListener('keyup', (e) => back.classList.contains('open') && e.stopPropagation(), true);
+  document.addEventListener('keyup', (e) => !back.hidden && e.stopPropagation(), true);
   back.addEventListener('mousedown', (e) => e.target === back && close());
   opener.onclick = open;
   x.onclick = close;
