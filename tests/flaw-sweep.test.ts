@@ -25,10 +25,10 @@ describe('AUD-7b arms idle', () => {
     assert.equal(armsHideStep(1, false, 0.1, true), 0);
   });
 });
-import { ELEVATOR, ELEVATOR_CAR, arrivalFacing } from '../src/shared/layout';
+import { arrivalFacing } from '../src/shared/layout';
 describe('AUD-15 elevator arrival', () => {
-  it('turns toward the desks but still out through the doors', () => {
-    const r = arrivalFacing(ELEVATOR.x, (ELEVATOR_CAR.minZ + ELEVATOR_CAR.maxZ) / 2);
-    assert.ok(r <= -0.2 && r >= -0.25, String(r));
+  it('turns 20-30° left of straight out, onto the open floor', () => {
+    const deg = (arrivalFacing() * 180) / Math.PI;
+    assert.ok(deg >= 20 && deg <= 30, String(deg));
   });
 });

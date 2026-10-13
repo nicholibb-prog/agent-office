@@ -3,3 +3,10 @@
 .lite-offer p { margin: 0 0 12px; font-weight: 800; font-size: 15px; line-height: 1.35; }
 .lite-offer-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .lite-offer-btns .btn { flex: 1; justify-content: center; min-height: 44px; text-decoration: none; }
+/* The slow-3D note: small, in the corner, out of the way (it tucks itself away after SLOW_NOTE_MS). */
+.lite-offer { position: fixed; }
+.lite-offer-x { position: absolute; top: 4px; right: 6px; border: 0; background: none; font-size: 18px; line-height: 1; cursor: pointer; padding: 4px 6px; color: inherit; }
+.lite-offer.lite-offer-corner { left: auto; right: 12px; bottom: 12px; margin: 0; max-width: 300px; padding: 10px 28px 10px 12px; }
+.lite-offer.lite-offer-corner p { font-size: 12.5px; margin-bottom: 8px; }
+.lite-offer.lite-offer-corner .btn { min-height: 30px; font-size: 12px; padding: 4px 8px; }
+.lite-offer.lite-offer-corner.under-modal { display: none; }

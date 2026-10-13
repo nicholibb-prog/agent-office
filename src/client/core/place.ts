@@ -19,7 +19,7 @@ export function installPlace(ctx: Ctx, core: CoreState, parts: Pick<Parts, 'worl
   function placeInCar(at?: { x: number; z: number }, garage = false) {
     if (!inOffice()) return placeAtSpawn();
     const spot = at && inElevator(at.x, at.z) ? at : { x: ELEVATOR.x, z: (ELEVATOR_CAR.minZ + ELEVATOR_CAR.maxZ) / 2 };
-    placeAt({ x: spot.x, y: garage ? player.street : 0, z: spot.z, rotY: garage ? 0 : arrivalFacing(spot.x, spot.z) });
+    placeAt({ x: spot.x, y: garage ? player.street : 0, z: spot.z, rotY: garage ? 0 : arrivalFacing() });
   }
 
   /** Down in the garage (or out on the street) under the floor you're on. */

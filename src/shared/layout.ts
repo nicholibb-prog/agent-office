@@ -282,11 +282,6 @@ export function facing(x: number, z: number, tx: number, tz: number): number {
 /** The middle of the desks. */
 export const DESKS_MID = { x: DESKS.reduce((a, d) => a + d.x, 0) / DESKS.length, z: DESKS.reduce((a, d) => a + d.z, 0) / DESKS.length };
 /** Arriving in the elevator car: turned toward the desks (AUD-15), but no more than still looks out through its doors. */
-/** The most the car turns you off straight out (rad): more and its side wall fills the view, not the doorway. */
-export const ARRIVAL_TURN = 0.25;
-export function arrivalFacing(x: number, z: number): number {
-  return Math.max(-ARRIVAL_TURN, Math.min(ARRIVAL_TURN, facing(x, z, DESKS_MID.x, DESKS_MID.z)));
-}
 /** Where you stand on coming in, facing the desks (AUD-15), not the old board spot. */
 export const SPAWN = { x: 8, z: 7, rotY: facing(8, 7, DESKS_MID.x, DESKS_MID.z) } as const;
 
@@ -597,3 +592,9 @@ export const POLES: readonly PoleSpot[] = [
 ];
 /** A pole's hole in the floor, the railing round it, and how far from the pole you hang on. */
 export const POLE = { hole: 0.68, rail: 0.9, grip: 0.4, radius: 0.055 } as const;
+
+export const ARRIVAL_YAW = 0.35;
+/** Arriving (AUD-15): out through the doors, 20° left of straight, onto the open floor and away from the car wall and the whiteboard's edge. */
+export function arrivalFacing(): number {
+  return ARRIVAL_YAW;
+}
