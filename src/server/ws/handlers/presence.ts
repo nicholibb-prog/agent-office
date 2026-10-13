@@ -8,6 +8,7 @@ import { ROOF, isDrink } from '../../../shared/rooftop.js';
 import { isBarGame } from '../../../shared/bargames.js';
 import { throttle } from '../../office/client.js';
 import { COLOR_RE, issueNumber, num, str } from '../../office/input.js';
+import { notePlayerChat } from '../../hq/relay.js';
 import type { HandlerMap } from './types.js';
 
 export const presenceHandlers = {
@@ -110,7 +111,13 @@ export const presenceHandlers = {
     const line: ChatLine = { from: c.id, name: who, color: c.peer.color, text, at: Date.now(), ...(c.accountId ? { account: true } : {}) };
     ctx.chat.add(line);
     ctx.broadcast({ t: 'chat', ...line });
-    // Chat may mark a matching hired desk WORKING (local HQ presence).
+    if (throttle(c, 'hq-outbox', 1000)) {
+      try {
+        notePlayerChat(ctx.cfg.dataDir, { text, at: line.at, role: c.admin ? 'player' : 'guest', by: c.accountId });
+      } catch {
+        /* the chat line already went out */
+      }
+    }
     ctx.floorOf(c)?.workers.chatWorking(who, text);
   },
   doing(ctx, c, msg) {

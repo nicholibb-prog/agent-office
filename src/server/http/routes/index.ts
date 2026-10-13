@@ -12,6 +12,7 @@ import { serviceRoutes } from './services.js';
 import { bridgeRoutes } from './bridge.js';
 import { hqBriefRoutes } from './hq-brief.js';
 import { officeRoutes } from './office.js';
+import { hqRoutes } from './hq.js';
 
 export const routes: readonly Route[] = [
   // Anyone.
@@ -25,9 +26,17 @@ export const routes: readonly Route[] = [
   pageRoutes.health,
   bridgeRoutes.chatRecent,
   bridgeRoutes.say,
+  bridgeRoutes.inbox,
   bridgeRoutes.crewStatus,
   bridgeRoutes.crewStatusGet,
   bridgeRoutes.status,
+  hqRoutes.roster,
+  hqRoutes.talk,
+  hqRoutes.talkGet,
+  hqRoutes.desk,
+  hqRoutes.deskGet,
+  hqRoutes.okkinModel,
+  hqRoutes.status,
   bridgeRoutes.kaviFeed,
   bridgeRoutes.kaviFeedGet,
   bridgeRoutes.kaviOutbox,

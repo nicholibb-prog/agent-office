@@ -4,7 +4,7 @@
 import { SLICES } from './slices';
 import { Store } from './store';
 
-export { AVATAR_COLORS, HUD_DEFAULTS, NEEDS_YOU_SOUNDS, lastFloor, lastSpot, loadProfile, loadSettings, rememberSpot, saveProfile, saveSettings } from './persist';
+export { AVATAR_COLORS, HUD_DEFAULTS, NEEDS_YOU_SOUNDS, hasSavedCharacter, lastFloor, lastSpot, loadProfile, loadSettings, profileStorageKey, rememberSpot, saveProfile, saveSettings } from './persist';
 export type { HudPanel, NeedsYouSound, Profile, Settings, Spot, ViewMode } from './persist';
 export { workerForPull } from './store';
 export type { ScreenState, Slice, Store, Topic, Topics } from './store';

@@ -13,7 +13,7 @@ const SHARED = 'c'.repeat(64);
 
 function setup(session = false) {
   const dir = path.join(tmpdir(), 'ao-seat-' + process.pid + '-' + Math.random().toString(36).slice(2));
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(path.join(dir, '.agent-office'), { recursive: true });
   writeFileSync(path.join(dir, 'bridge-token'), SHARED);
   const chat: { name: string; account?: boolean }[] = [];
   const applied: Record<string, string>[] = [];
@@ -22,7 +22,7 @@ function setup(session = false) {
     auth: { fromRequest: () => (session ? { id: 'fake' } : undefined), fromAnyCookie: () => session },
     chat: { add: (l: { name: string; account?: boolean }) => chat.push(l), recent: () => [] },
     broadcast: () => {},
-    floors: new Map([['f', { id: 'f', workers: { chatWorking() {}, applyCrewPresence: (c: Record<string, string>) => (applied.push(c), { applied: Object.keys(c) }) } }]]),
+    floors: new Map([['f', { id: 'f', dir, workers: { chatWorking() {}, applyCrewPresence: (c: Record<string, string>) => (applied.push(c), { applied: Object.keys(c) }) } }]]),
   } as never;
   return { dir, ctx, chat, applied };
 }
@@ -97,13 +97,13 @@ test('say stamps account only from the token seat and rejects a body claiming an
 
 test('seat A cannot set seat B status', async () => {
   const { dir, ctx, applied } = setup();
-  const a = issueSeatToken(dir, 'seat-a');
-  issueSeatToken(dir, 'seat-b');
-  assert.equal((await call(bridgeRoutes.status, ctx, req('POST', a, { name: 'seat-b', status: 'working' }))).status, 403);
-  assert.equal((await call(bridgeRoutes.crewStatus, ctx, req('POST', a, { crew: { 'seat-b': 'working' } }))).status, 403);
+  const a = issueSeatToken(dir, 'seat-1');
+  issueSeatToken(dir, 'seat-2');
+  assert.equal((await call(bridgeRoutes.status, ctx, req('POST', a, { name: 'seat-2', status: 'working' }))).status, 403);
+  assert.equal((await call(bridgeRoutes.crewStatus, ctx, req('POST', a, { crew: { 'seat-2': 'working' } }))).status, 403);
   assert.equal(applied.length, 0);
   assert.equal((await call(bridgeRoutes.status, ctx, req('POST', a, { status: 'idle' }))).status, 200);
-  assert.deepEqual(applied.at(-1), { 'seat-a': 'idle' });
+  assert.deepEqual(applied.at(-1), { 'seat-1': 'idle' });
   rmSync(dir, { recursive: true, force: true });
 });
 

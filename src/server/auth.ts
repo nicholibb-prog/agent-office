@@ -119,14 +119,27 @@ export class Auth {
   }
 
   /**
+   * The verified session from this host's office cookie, including one issued on another port.
+   * A cookie whose name is not an office session cookie does not count. Undefined when none verify.
+   */
+  sessionFromAnyCookie(req: IncomingMessage): Session | undefined {
+    const cookies = parseCookies(req.headers.cookie);
+    const named = this.verify(cookies[cookieName(req)]);
+    if (named) return named;
+    for (const [name, value] of Object.entries(cookies)) {
+      if (!OFFICE_COOKIE.test(name)) continue;
+      const session = this.verify(value);
+      if (session) return session;
+    }
+    return undefined;
+  }
+
+  /**
    * Signed in to this office on any port of this host. A service tunnel (localhost:5173) carries
    * the cookie you got on the office's own tunnel (localhost:4600), since cookies ignore ports.
    */
   fromAnyCookie(req: IncomingMessage): boolean {
-    for (const [name, value] of Object.entries(parseCookies(req.headers.cookie))) {
-      if (OFFICE_COOKIE.test(name) && this.verify(value)) return true;
-    }
-    return false;
+    return !!this.sessionFromAnyCookie(req);
   }
 
   cookie(req: IncomingMessage, token: string, secure: boolean): string {

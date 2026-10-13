@@ -12,7 +12,7 @@ Already have a checkout? Pick its repository anyway: a checkout of it that's alr
 
 The unblock strip and **Since last visit** read four files in the office data directory (the floor’s `.agent-office/` when the office was started in a project, otherwise `~/agent-office/.agent-office/`). All four are gitignored. They hold titles, seats, and states. A record with a `body`, `essay`, `text`, `note`, or `markdown` field is ignored.
 
-`hq-local.json` maps desks to generic seat keys. Leave a name out of the repo; put it only in this file, on the machine.
+`hq-local.json` maps desks to generic seat keys. Leave a name out of the repo; put it only in this file, on the machine. In the same `seats` object, a key that is a crew seat id (`seat-1` … `seat-9`, or `okkin`) maps that crew seat to a desk instead (see Local crew below) and is not a seat key here.
 
 ```json
 {
@@ -110,7 +110,7 @@ agent-office tunnel [office@address | url] [--port <n>] [--office-port <n>] [--n
 
 ## Local model for the huddle
 
-The meeting room and the three front desks can ask a model on this machine. `OLLAMA_URL` defaults to `http://127.0.0.1:11434`. `OKKIN_MODEL` is unset until you set it (a doc example is `qwen3.5:9b`). The host has to be `http://127.0.0.1`, `http://localhost`, or `http://[::1]`. `https` is refused. `localhost` is rewritten to `127.0.0.1` before any request, so the office does not ask the system resolver for it. Any other host is refused and the seat stays **offline**. The same two fields can live in `.agent-office/ollama.json`; the environment wins. The office only calls `GET /api/tags`, `POST /api/chat`, and `POST /api/generate` on that origin. It does not install a CLI, take a key, or open a route that proxies the model. The browser is told the configured model name and `ready` or `offline`, never the raw response. When the probe succeeds and a model is set, those seats use it. Otherwise they queue on the bridge outbox for a real crew bot. If that outbox directory cannot be written either, the seat says **no provider — needs owner**. A bridge route that fails answers `Bridge failed`, not the exception text.
+The meeting room and the three front desks can ask a model on this machine. `OLLAMA_URL` defaults to `http://127.0.0.1:11434`. `OKKIN_MODEL` is unset until you set it (a doc example is `qwen3.5:9b`). The host has to be `http://127.0.0.1`, `http://localhost`, or `http://[::1]`. `https` is refused. `localhost` is rewritten to `127.0.0.1` before any request, so the office does not ask the system resolver for it. Any other host is refused and the seat stays **offline**. The same two fields can live in `.agent-office/ollama.json`; the environment wins. The office only calls `GET /api/tags`, `POST /api/chat`, and `POST /api/generate` on that origin, plus `GET /api/ps` for Okkin's model switch (see Local crew below). It does not install a CLI, take a key, or open a route that proxies the model. The browser is told the configured model name and `ready` or `offline`, never the raw response. When the probe succeeds and a model is set, those seats use it. Otherwise they queue on the bridge outbox for a real crew bot. If that outbox directory cannot be written either, the seat says **no provider — needs owner**. A bridge route that fails answers `The office could not complete that`, not the exception text.
 
 ### Seat tokens (bridge identity)
 
@@ -134,3 +134,15 @@ is 401.
 **Migration:** the shared `bridge-token` is now read-only. It still works for `GET` bridge routes,
 and any `POST` with it is 403. `say`, `status` and `crew-status` need a seat token (an office
 session gets 403 there too). Other bridge POSTs accept a seat token or an office session.
+
+## Local crew
+
+See [Local HQ](hq.md). The floor's gitignored `.agent-office/hq-local.json` turns desks into crew seats. `seats` maps a crew seat id (`seat-1` … `seat-9`, `okkin`) to a desk; its other keys are the unblock strip's desk-to-seat-key map above. `names` maps a seat to a display name on this machine; without it the roster says `seat-1` … `seat-9`. The office data directory also holds `bridge-token` (created if it is missing, mode 0600), `ollama.json` (optional loopback `url` and `model`), `crew-status.json`, `chat-outbox.jsonl`, `chat-inbox.jsonl`, `talk-threads.json`, `desk-cards.json`, `kavi-feed.json`, and `kavi-outbox.json` (the last two mode 0600; the outbox keeps 200 items). Bot lines for a generic seat are posted to `POST /api/bridge/inbox`. `POST /api/bridge/talk` and the model switch need a verified office session; a bridge token is refused. A member is a guest. JSON bodies over 16 KB are refused with the connection closed.
+
+| Variable | Meaning |
+| --- | --- |
+| `OLLAMA_URL` | Loopback Ollama origin, `http` only. Unset uses `url` in `.agent-office/ollama.json`, then `http://127.0.0.1:11434`. `localhost` is rewritten to `127.0.0.1`. `https` and any other host are refused. |
+| `OKKIN_MODEL` | The tag Okkin talks with. Not set in source. |
+| `OKKIN_MODEL_ALLOW` | Comma-separated tags the desk may switch to. Intersected with the tags Ollama has installed. |
+
+`OLLAMA_URL` wins over `ollama.json`. `hq-local.json` does not set the URL. A request cannot set the URL or add a tag.
