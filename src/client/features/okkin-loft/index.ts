@@ -25,6 +25,7 @@ type Loft = {
   pickMeasured?: boolean | null;
   mock?: boolean;
   owner?: boolean;
+  ownerState?: 'not-set-up' | 'locked' | 'unlocked' | 'changed';
 };
 
 const NEAR = 3;
@@ -37,6 +38,20 @@ function askBox(on: boolean, owner: boolean, lines: { who: string; text: string 
   const form = h('form.okl-ask', {}, input, h('button.okl-btn', { type: 'submit', 'aria-disabled': on && owner ? 'false' : 'true', 'data-off': on ? 'no' : 'yes' }, 'Ask'));
   form.addEventListener('submit', (e) => { e.preventDefault(); if (!owner) { say?.(`Ask: ${OWNER_ONLY}`); return; } if (!on) { say?.(`Ask: ${POWER_ON_FIRST}`); return; } const t = input.value.trim().slice(0, 500); if (t && ask) { input.value = ''; ask(t); } });
   return h('section', {}, h('h3', {}, 'Ask'), log, form);
+}
+
+/** Unlock owner: the owner passphrase (never stored in the page), or Lock when unlocked. */
+function ownerBox(d: Loft | null, act: { unlock?(p: string): void; lock?(): void }): HTMLElement | null {
+  if (!d?.ownerState || d.ownerState === 'not-set-up' || d.ownerState === 'changed') return null;
+  if (d.ownerState === 'unlocked') {
+    const lock = h('button.okl-btn.okl-lock', { type: 'button' }, 'Lock');
+    lock.addEventListener('click', () => act.lock?.());
+    return h('section.okl-owner', {}, h('p.okl-muted', {}, 'Owner unlocked on this browser.'), lock);
+  }
+  const input = h('input.okl-input.okl-pass', { type: 'password', autocomplete: 'off', 'aria-label': 'Owner passphrase', placeholder: 'Owner passphrase', maxlength: 1024 }) as HTMLInputElement;
+  const form = h('form.okl-ask.okl-unlock', {}, input, h('button.okl-btn', { type: 'submit' }, 'Unlock owner'));
+  form.addEventListener('submit', (e) => { e.preventDefault(); const p = input.value; input.value = ''; if (p) act.unlock?.(p); });
+  return h('section.okl-owner', {}, h('h3', {}, 'Owner'), form);
 }
 
 /** Why the last load failed (shown under the switch), or null. */
@@ -125,12 +140,12 @@ export function buildDial(stops: StopView[], start: number, on: boolean, pick: (
   return wrap;
 }
 
-export function renderPanel(root: HTMLElement, d: Loft | null, act: { toggle(): void; power(a: 'start' | 'stop'): void; pick(tag: string): void; best(job: string): void; close(): void; ask?(text: string): void; say?(text: string): void }, note = '', asked: { who: string; text: string }[] = []) {
+export function renderPanel(root: HTMLElement, d: Loft | null, act: { unlock?(passphrase: string): void; lock?(): void; toggle(): void; power(a: 'start' | 'stop'): void; pick(tag: string): void; best(job: string): void; close(): void; ask?(text: string): void; say?(text: string): void }, note = '', asked: { who: string; text: string }[] = []) {
   const on = d?.power === 'on';
   // The power switch is always there; it only works once the real power config passed. Static icons, never a spinner.
   const sw = switchView(d, loadError, loadStatus);
   // Always focusable and clickable. Locked, a press says why (the reason is also shown under it).
-  const power = h('button.okl-power', { type: 'button', 'data-works': sw.works ? 'yes' : 'no', 'aria-pressed': on ? 'true' : 'false', 'aria-disabled': sw.works ? 'false' : 'true', 'aria-label': `Power switch, Okkin ${sw.power}. ${sw.label}${sw.reason ? `. ${sw.reason}` : ''}` }, h('span.okl-power-ring', { 'data-icon': sw.icon, 'aria-hidden': 'true' }, sw.icon === 'setup' ? '🔧' : '⏻'), h('span.okl-power-label', {}, h('span.okl-light', { 'data-light': sw.light, title: sw.tip, 'aria-hidden': 'true' }), sw.label));
+  const power = h('button.okl-power', { type: 'button', 'data-works': sw.works ? 'yes' : 'no', 'data-locked': sw.locked ? 'yes' : 'no', 'aria-pressed': on ? 'true' : 'false', 'aria-disabled': sw.works ? 'false' : 'true', 'aria-label': `Power switch, Okkin ${sw.power}. ${sw.label}${sw.reason ? `. ${sw.reason}` : ''}` }, h('span.okl-power-ring', { 'data-icon': sw.icon, 'aria-hidden': 'true' }, sw.icon === 'setup' ? '🔧' : '⏻'), h('span.okl-power-label', {}, h('span.okl-light', { 'data-light': sw.light, title: sw.tip, 'aria-hidden': 'true' }), sw.label));
   power.title = sw.tip;
   power.addEventListener('click', () => act.toggle());
   const stops = stopsView(d);
@@ -146,6 +161,7 @@ export function renderPanel(root: HTMLElement, d: Loft | null, act: { toggle(): 
   const parts: (HTMLElement | null)[] = [
     h('header.okl-head', {}, h('div', {}, h('h2', {}, 'Okkin'), h('p.okl-muted', {}, d ? (on ? `On · ${d.okkin.chip}` : 'Off') : sw.label)), d?.mock ? h('span.okl-mock', {}, 'mock') : null, close),
     h('section.okl-center', {}, h('h3', {}, 'Power'), power, sw.reason ? h('p.okl-muted.okl-power-reason', { 'data-locked': sw.works ? 'no' : 'yes' }, sw.reason) : null, sw.signIn ? h('a.okl-btn.okl-signin', { href: '/' }, 'Sign in again') : null),
+    ownerBox(d, act),
     h('section', {}, h('h3', {}, `Model switch · ${stops.length} models`), dial),
     h('section.okl-stats', {},
       stat('Queue', d ? String(d.queue) : '—'),
@@ -193,8 +209,15 @@ export function installOkkinLoft(ctx: Ctx) {
   const power = (a: 'start' | 'stop') => {
     note = a === 'start' ? 'Turning on…' : 'Turning off…';
     if (!panel.hidden) paint();
-    return post('/api/bridge/okkin/power', { action: a }).then((r) => { note = r.body.error ? `Power: ${r.body.error}` : a === 'start' ? 'On' : 'Off'; return refresh(); });
+    return post('/api/bridge/okkin/power', { action: a }).then((r) => {
+      // Power needs an unlock from the last 5 minutes: show the unlock form again.
+      if (r.body.error === 'unlock again') { note = 'Unlock again to switch the power (needs an unlock in the last 5 minutes).'; return post('/api/bridge/okkin/owner/lock', {}).then(() => refresh()); }
+      note = r.body.error ? `Power: ${r.body.error}` : a === 'start' ? 'On' : 'Off';
+      return refresh();
+    });
   };
+  const unlock = (passphrase: string) => void post('/api/bridge/okkin/owner/unlock', { passphrase }).then((r) => { note = r.status === 200 ? 'Owner unlocked' : `Unlock: ${r.body.error ?? 'refused'}`; return refresh(); });
+  const lock = () => void post('/api/bridge/okkin/owner/lock', {}).then(() => { note = 'Owner locked'; return refresh(); });
   const toggle = () => {
     const sw = switchView(data, loadError, loadStatus);
     if (!sw.works) {
@@ -209,6 +232,8 @@ export function installOkkinLoft(ctx: Ctx) {
     // A repaint replaces the panel's DOM: keep keyboard focus on the same control.
     const was = document.activeElement instanceof HTMLElement && panel.contains(document.activeElement) ? document.activeElement.className.split(' ')[0] : null;
     renderPanel(panel, data, {
+      unlock,
+      lock,
       toggle,
       power: (a) => void power(a),
       pick: (tag) => void post('/api/bridge/okkin/model', { model: tag }).then((r) => ((note = r.body.error ?? `Switched to ${tag}`), refresh())),

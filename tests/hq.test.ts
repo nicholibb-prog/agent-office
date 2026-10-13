@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createServer, request as httpRequest } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
+import { testOwner } from './support/okkin-owner.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -48,8 +49,6 @@ function fakeWorker(info: Partial<Worker['info']> & Pick<Worker['info'], 'id' | 
 function ctxOf(dataDir: string, who?: { id: string; role: 'admin' | 'member' } | 'shared') {
   const token = 'e'.repeat(64);
   writeFileSync(path.join(dataDir, 'bridge-token'), token);
-  // Okkin's controls are owner-only (see okkin-owner.test.ts): the account here is the owner.
-  if (who && who !== 'shared') writeFileSync(path.join(dataDir, 'work-pool-policy.json'), JSON.stringify({ approvers: [who.id] }), { mode: 0o600 });
   const session = who === 'shared' ? {} : who ? { account: { id: who.id, role: who.role } } : undefined;
   return {
     token,
@@ -82,10 +81,13 @@ function resOf() {
   return { res, get status() { return status; }, get body() { return body; } };
 }
 
+// Okkin's controls are owner-only (see okkin-owner.test.ts): requests here carry a live owner cookie
+// unless they bring a bot credential or a cookie of their own.
+const owner = await testOwner();
 function reqOf(method: string, headers: Record<string, string>, raw = '') {
   const req = Readable.from([Buffer.from(raw)]) as unknown as IncomingMessage;
   req.method = method;
-  req.headers = headers;
+  req.headers = headers['x-bridge-token'] || headers.authorization || headers.cookie ? headers : { ...headers, cookie: owner.cookie() };
   return req;
 }
 

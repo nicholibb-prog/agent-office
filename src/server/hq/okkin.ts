@@ -127,6 +127,11 @@ export function okkinLoaded() {
   return reachable ? loadedModels.map((m) => ({ ...m })) : [];
 }
 
+/** The test stand-in for Ollama's fetch, if one is set (the power path's pinned client uses it too). */
+export function okkinFetchOverride(): OllamaFetch | undefined {
+  return testFetch;
+}
+
 function fetchOf(given?: OllamaFetch) {
   return given ?? testFetch;
 }

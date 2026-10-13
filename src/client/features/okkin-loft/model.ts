@@ -11,6 +11,8 @@ export type LoftLike = {
   dial: LoftStop[];
   /** False: the viewer isn't the owner; the server refuses their changes (403), so the controls say so. */
   owner?: boolean;
+  /** The owner passphrase: not set up yet, locked (unlock in the panel), unlocked, or its file changed (restart). */
+  ownerState?: 'not-set-up' | 'locked' | 'unlocked' | 'changed';
   bench?: Record<string, { tokensPerSec: number }>;
   mock?: boolean;
 };
@@ -29,6 +31,8 @@ export type SwitchView = {
   label: string;
   icon: 'on' | 'off' | 'setup';
   reason: string | null;
+  /** Locked for this viewer (not the owner): shown grey. */
+  locked?: boolean;
   /** The loft API said 401/403-session: the fix is to sign in again. */
   signIn?: boolean;
 };
@@ -44,6 +48,8 @@ export function powerReasonText(reason: string | null | undefined): string {
 /** Said on the dial and the Ask box while the power is off. */
 export const POWER_ON_FIRST = 'Turn power on first';
 export const OWNER_ONLY = 'Owner only';
+export const OWNER_NOT_SET_UP = 'Owner not set up — run npm run owner:set on the ProArt';
+export const OWNER_FILE_CHANGED = 'Owner file changed — restart the office after a deliberate owner:set';
 
 /** Every dial stop, never hidden: the API's list, or the five built-ins (status unknown) when it didn't answer. */
 export function stopsView(d: LoftLike | null): StopView[] {
@@ -55,7 +61,7 @@ export function stopsView(d: LoftLike | null): StopView[] {
     const allowed = s.allowed !== false;
     const usable = owner && on && status === 'installed' && allowed && s.ramOk;
     const note =
-      !owner && d ? OWNER_ONLY
+      !owner && d ? (d.ownerState === 'not-set-up' ? 'Owner not set up' : OWNER_ONLY)
       : status === 'not installed' ? 'Not installed'
       : status === 'unknown' ? (d ? 'Okkin is off · can\'t check' : 'Can\'t reach Okkin')
       : !allowed ? 'Installed · not on the allowlist'
@@ -80,13 +86,17 @@ export function switchView(d: LoftLike | null, apiError: string | null = null, a
     return { power: 'unknown', works: false, label: "Can't reach Okkin", icon: 'setup', light: 'error', tip: `Can't reach Okkin${apiError ? `: ${apiError}` : ''}`, reason: apiError ?? 'The loft did not answer.' };
   }
   const on = d.power === 'on';
-  if (d.owner === false) return { power: d.power, works: false, label: OWNER_ONLY, icon: on ? 'on' : 'off', light: on ? 'on' : 'off', tip: OWNER_ONLY, reason: 'Owner only: you can watch Okkin; only the owner can switch it.' };
+  // Not the owner: a locked switch, grey (never green), whatever the power is.
+  if (d.ownerState === 'not-set-up') return { power: d.power, works: false, locked: true, label: 'Owner not set up', icon: on ? 'on' : 'off', light: on ? 'on' : 'off', tip: OWNER_NOT_SET_UP, reason: OWNER_NOT_SET_UP };
+  if (d.ownerState === 'changed') return { power: d.power, works: false, locked: true, label: OWNER_ONLY, icon: on ? 'on' : 'off', light: on ? 'on' : 'off', tip: OWNER_FILE_CHANGED, reason: OWNER_FILE_CHANGED };
+  if (d.owner === false) return { power: d.power, works: false, locked: true, label: OWNER_ONLY, icon: on ? 'on' : 'off', light: on ? 'on' : 'off', tip: OWNER_ONLY, reason: 'Owner only: unlock with the owner passphrase below to switch Okkin.' };
   const c = d.powerControl;
   if (c === 'ready') return { power: d.power, works: true, label: on ? 'Turn off' : 'Turn on', icon: on ? 'on' : 'off', light: on ? 'on' : 'off', tip: on ? 'Okkin is on' : 'Okkin is off', reason: null };
   if (c === 'cooling') return { power: d.power, works: false, label: 'Cooling down…', icon: on ? 'on' : 'off', light: on ? 'on' : 'off', tip: 'Cooling down', reason: 'Wait a minute: the switch cools down between flips.' };
-  if (c === 'no-rights') return { power: d.power, works: false, label: 'Power control needs rights', icon: 'setup', light: 'setup', tip: 'Power control needs rights', reason: powerReasonText(d.powerReason) };
+  if (c === 'no-rights') return { power: d.power, works: false, label: 'Power control needs rights', icon: 'setup', light: on ? 'on' : 'setup', tip: 'Power control needs rights', reason: powerReasonText(d.powerReason) };
   // One line under the switch: what's locked and what the operator does about it.
-  return { power: d.power, works: false, label: 'Not set up', icon: 'setup', light: 'setup', tip: 'Power switch locked', reason: powerReasonText(d.powerReason) };
+  // While Okkin is on the light stays green: amber only means 'off and the switch can't turn it on'.
+  return { power: d.power, works: false, label: 'Not set up', icon: 'setup', light: on ? 'on' : 'setup', tip: 'Power switch locked', reason: powerReasonText(d.powerReason) };
 }
 
 /** A model's benchmark, matched by normalised tag; mock data says so. Not installed: no number. */

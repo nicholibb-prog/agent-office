@@ -8,7 +8,8 @@ import { send } from '../util.js';
 import { BodyTooLarge, closeTooLarge, readJsonBody } from '../read-body.js';
 import type { Route } from '../router.js';
 import { bridgeGate, pushCrew, sessionOnly } from './bridge.js';
-import { logOkkinRefusal, okkinCaller } from '../../hq/okkin-owner.js';
+import { botCredential, pinOwnerIntegrity, checkOwnerPassphrase, clearOwnerCookieHeader, cookieOf, endOwnerSession, logOkkinRefusal, noteUnlockFailure, okkinCaller, ownerCookieHeader, ownerFile, ownerState, startOwnerSession, unlockLocked } from '../../hq/okkin-owner.js';
+import { clientIp, isSecure } from '../util.js';
 import { activeSeatMap, CREW_SEATS, ageLabel, isSeatId, liveDesk, offlineQueuedNotice, rosterChip, seatDisplayName, type BridgeBeat, type SeatId } from '../../../shared/hq.js';
 import { loadHqLocal, readCrewFile } from '../../workers/crew.js';
 import { cardFor, ingestInbox, notePlayerChat, readThread, appendThread, writeCard } from '../../hq/relay.js';
@@ -18,7 +19,7 @@ import { okkinInstalled, okkinJobs, okkinLoaded, okkinQueueDepth } from '../../h
 import { flipPower, loadPowerConfig, recheckExposure, parseAction, powerCooling, powerRightsBlocked, realRunner } from '../../hq/okkin-power.js';
 import { benchByTag, bestModelPick, loadedSpeed, dialConfig, dialStops, loadLoftConfig, ramAllows } from '../../hq/okkin-loft.js';
 import { createOllama, psModels } from '../../ollama.js';
-import { OKKIN_OLLAMA_ORIGINS } from '../../hq/okkin.js';
+import { OKKIN_OLLAMA_ORIGINS, okkinFetchOverride } from '../../hq/okkin.js';
 
 /** Real per-model speeds seen this session; 'not measured yet' is the client's word for a missing one. */
 function benchmarks() {
@@ -28,7 +29,7 @@ function benchmarks() {
 }
 
 function pinnedClient() {
-  const made = createOllama(OKKIN_OLLAMA_ORIGINS[0]);
+  const made = createOllama(OKKIN_OLLAMA_ORIGINS[0], okkinFetchOverride());
   if ('refused' in made) throw new Error('unreachable');
   return made.client;
 }
@@ -56,22 +57,25 @@ async function readJson<T extends object>(req: http.IncomingMessage, res: http.S
 }
 
 /**
- * Owner only, on the server: power, the model switch and Ask to Okkin. A token (bridge, seat, Bearer)
- * or a non-owner session gets 403 'owner only', logged. Sends the response and returns false when refused.
+ * Owner only, on the server: power, the model switch and Ask to Okkin. Needs the office session AND a
+ * live owner cookie from 'Unlock owner' (see hq/okkin-owner.ts); power also needs a fresh unlock. A bot
+ * credential is refused even alongside an owner cookie. Refusals are 403 and logged.
  */
-function okkinOwnerOnly(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse, route: string): boolean {
-  const early = okkinCaller(req, null, ctx.cfg.dataDir);
-  if (early.kind === 'bridge-token' || early.kind === 'bearer') {
-    logOkkinRefusal(ctx.cfg.dataDir, { route, caller: early.kind });
+function okkinOwnerOnly(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse, route: string, opts: { fresh?: boolean } = {}): boolean {
+  const bot = botCredential(req);
+  if (bot) {
+    logOkkinRefusal(ctx.cfg.dataDir, { route, caller: bot });
     send(res, 403, { error: 'owner only' });
     return false;
   }
   if (!sessionOnly(ctx, req, res)) return false;
-  const caller = okkinCaller(req, ctx.auth.sessionFromAnyCookie(req), ctx.cfg.dataDir);
-  if (caller.kind === 'owner') return true;
-  logOkkinRefusal(ctx.cfg.dataDir, { route, caller: caller.kind });
-  if (caller.kind === 'no-session') send(res, 401, { error: 'office session required' });
-  else send(res, 403, { error: 'owner only' });
+  pinOwnerIntegrity(ctx.cfg.dataDir);
+  const caller = okkinCaller(req);
+  if (caller.kind === 'owner' && (!opts.fresh || caller.fresh)) return true;
+  const why = caller.kind === 'owner' ? 'unlock-stale' : caller.kind;
+  logOkkinRefusal(ctx.cfg.dataDir, { route, caller: why });
+  const error = why === 'not-set-up' ? 'owner not set up' : why === 'owner-file-changed' ? 'owner file changed; restart the office' : why === 'unlock-stale' ? 'unlock again' : 'owner only';
+  send(res, 403, { error });
   return false;
 }
 
@@ -158,7 +162,7 @@ export const hqRoutes = {
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
       // A token can't talk here at all (any seat, Okkin's included; sessionOnly sends the 403). Logged.
-      const tok = okkinCaller(req, null, ctx.cfg.dataDir).kind;
+      const tok = botCredential(req);
       if (tok === 'bridge-token' || tok === 'bearer') logOkkinRefusal(ctx.cfg.dataDir, { route: 'POST /api/bridge/talk', caller: tok });
       if (!sessionOnly(ctx, req, res)) return;
       const body = await readJson<{ seat?: string; text?: string }>(req, res);
@@ -293,7 +297,8 @@ export const hqRoutes = {
         powerControl: power.ok ? (powerRightsBlocked() ? 'no-rights' : powerCooling() ? 'cooling' : 'ready') : 'not-set-up',
         powerReason: power.ok ? null : power.reason,
         // Read-only for everyone else: the panel shows 'Owner only' on the controls.
-        owner: okkinCaller(req, ctx.auth.sessionFromAnyCookie(req), ctx.cfg.dataDir).kind === 'owner',
+        owner: !botCredential(req) && okkinCaller(req).kind === 'owner',
+        ownerState: botCredential(req) ? 'locked' : (pinOwnerIntegrity(ctx.cfg.dataDir), ownerState(req)),
         dial: stops.map((m) => ({ tag: m.tag, role: m.role, bestFor: m.bestFor, installed: m.installed, allowed: m.allowed, ramOk: ramAllows(m), minFreeRamGB: m.minFreeRamGB ?? null })),
         loaded: loadedNow,
         queue: okkinQueueDepth(),
@@ -315,7 +320,7 @@ export const hqRoutes = {
     path: '/api/bridge/okkin/power',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!okkinOwnerOnly(ctx, req, res, 'POST /api/bridge/okkin/power')) return;
+      if (!okkinOwnerOnly(ctx, req, res, 'POST /api/bridge/okkin/power', { fresh: true })) return;
       const body = await readJson<{ action?: unknown }>(req, res);
       if (!body) return;
       const action = parseAction(body.action);
@@ -323,6 +328,52 @@ export const hqRoutes = {
       const who = speaker(ctx, req);
       const result = await runPower(ctx.cfg.dataDir, action, who.by ?? who.key);
       return send(res, result.status, result);
+    },
+  },
+  okkinOwnerUnlock: {
+    method: 'POST' as const,
+    path: '/api/bridge/okkin/owner/unlock',
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      const bot = botCredential(req);
+      if (bot) {
+        logOkkinRefusal(ctx.cfg.dataDir, { route: 'POST /api/bridge/okkin/owner/unlock', caller: bot });
+        return send(res, 403, { error: 'owner only' });
+      }
+      if (!sessionOnly(ctx, req, res)) return;
+      const file = ownerFile();
+      pinOwnerIntegrity(ctx.cfg.dataDir, file);
+      const st = ownerState(req, file);
+      if (st === 'changed') {
+        logOkkinRefusal(ctx.cfg.dataDir, { route: 'POST /api/bridge/okkin/owner/unlock', caller: 'owner-file-changed' });
+        return send(res, 403, { error: 'owner file changed; restart the office' });
+      }
+      if (st === 'not-set-up') return send(res, 403, { error: 'owner not set up' });
+      const addr = clientIp(req, !!(ctx.cfg as { trustProxy?: boolean }).trustProxy);
+      if (unlockLocked(addr)) {
+        logOkkinRefusal(ctx.cfg.dataDir, { route: 'POST /api/bridge/okkin/owner/unlock', caller: 'unlock-locked-out' });
+        return send(res, 429, { error: 'too many tries; wait 15 minutes' });
+      }
+      const body = await readJson<{ passphrase?: unknown }>(req, res);
+      if (!body) return;
+      const ok = typeof body.passphrase === 'string' && (await checkOwnerPassphrase(file, body.passphrase));
+      if (!ok) {
+        noteUnlockFailure(addr);
+        // The input is never logged.
+        logOkkinRefusal(ctx.cfg.dataDir, { route: 'POST /api/bridge/okkin/owner/unlock', caller: 'wrong-passphrase' });
+        return send(res, 403, { error: 'wrong passphrase' });
+      }
+      endOwnerSession(cookieOf(req));
+      return send(res, 200, { ok: true, ownerState: 'unlocked' }, { 'set-cookie': ownerCookieHeader(startOwnerSession(), isSecure(req, ctx.cfg as never)) });
+    },
+  },
+  okkinOwnerLock: {
+    method: 'POST' as const,
+    path: '/api/bridge/okkin/owner/lock',
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      endOwnerSession(cookieOf(req));
+      return send(res, 200, { ok: true, ownerState: 'locked' }, { 'set-cookie': clearOwnerCookieHeader(isSecure(req, ctx.cfg as never)) });
     },
   },
 } satisfies Record<string, Route>;
