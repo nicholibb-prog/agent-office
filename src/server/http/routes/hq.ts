@@ -15,7 +15,7 @@ import { isOkkinSeat, okkinClient, okkinThread, probeOkkin, switchOkkinModel, ta
 import { markSwitch, switchCooling, talkLimited } from '../../hq/limits.js';
 import { okkinJobs, okkinLastSpeed, okkinLoaded, okkinQueueDepth } from '../../hq/okkin.js';
 import { flipPower, loadPowerConfig, recheckExposure, parseAction, powerCooling, powerRightsBlocked, realRunner } from '../../hq/okkin-power.js';
-import { bestModelPick, dialStops, loadLoftConfig, ramAllows } from '../../hq/okkin-loft.js';
+import { bestModelPick, dialConfig, dialStops, loadLoftConfig, ramAllows } from '../../hq/okkin-loft.js';
 import { createOllama, psModels } from '../../ollama.js';
 import { OKKIN_OLLAMA_ORIGINS } from '../../hq/okkin.js';
 
@@ -253,20 +253,20 @@ export const hqRoutes = {
       const snap = okkinClient(await probeOkkin(envOf(process.env), hq, undefined, { dataDir: ctx.cfg.dataDir }));
       startOkkinIdleSleep(ctx.cfg.dataDir);
       const loft = loadLoftConfig(ctx.cfg.dataDir);
-      const stops = dialStops(loft, snap.options);
+      const stops = dialStops(dialConfig(loft), snap.options);
       const power = loadPowerConfig(ctx.cfg.dataDir);
       const exposed = snap.chip !== 'offline' ? await recheckExposure(ctx.cfg.dataDir, realRunner, power) : false;
       const gpu = (await realRunner.gpuStats?.()) ?? null;
       const job = String(url.searchParams.get('job') || '').slice(0, 24);
       const bench = benchmarks();
-      const best = job ? bestModelPick(job, stops, bench, ramAllows) : null;
+      const best = job ? bestModelPick(job, stops.filter((m) => m.installed), bench, ramAllows) : null;
       if (snap.chip === 'working' || snap.chip === 'switching') idleSince = Date.now();
       return send(res, 200, {
         okkin: snap,
         power: snap.chip === 'offline' ? 'off' : 'on',
         powerControl: power.ok ? (powerRightsBlocked() ? 'no-rights' : powerCooling() ? 'cooling' : 'ready') : 'not-set-up',
         powerReason: power.ok ? null : power.reason,
-        dial: stops.map((m) => ({ tag: m.tag, role: m.role, bestFor: m.bestFor, ramOk: ramAllows(m), minFreeRamGB: m.minFreeRamGB ?? null })),
+        dial: stops.map((m) => ({ tag: m.tag, role: m.role, bestFor: m.bestFor, installed: m.installed, ramOk: ramAllows(m), minFreeRamGB: m.minFreeRamGB ?? null })),
         loaded: okkinLoaded(),
         queue: okkinQueueDepth(),
         speed: okkinLastSpeed(),
