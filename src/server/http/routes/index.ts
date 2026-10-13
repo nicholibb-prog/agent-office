@@ -52,6 +52,7 @@ export const routes: readonly Route[] = [
   liveRoutes.frame,
   bridgeRoutes.kaviDesk,
   kaviSendRoutes.bridge,
+  kaviSendRoutes.thread,
   kaviSendRoutes.message,
   kaviSendRoutes.file,
   hqBriefRoutes.brief,

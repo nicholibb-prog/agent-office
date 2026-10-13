@@ -15,6 +15,7 @@ import { cabinet } from '../../features/cabinet/world';
 import { jevBoard } from '../../features/jev/world';
 import { kaviKaren } from '../../features/kavi-board/karen';
 import { kaviBoard } from '../../features/kavi-board/world';
+import { kaviDesk } from '../../features/kavi-board/desk';
 import { poolBoard, poolPoster } from '../../features/work-pool/world';
 import { okkinLoft } from '../../features/okkin-loft/world';
 import { whiteboard } from '../../features/whiteboard/world';
@@ -80,6 +81,7 @@ function floorPlan() {
     whiteboard,
     jevBoard,
     kaviBoard,
+    kaviDesk,
     kaviKaren,
     poolBoard,
     poolPoster,

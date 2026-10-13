@@ -173,3 +173,12 @@ upload; the office holds no Google OAuth token, refresh token or service-account
   This is a local marker check, not a Drive API call.
 - Anything under `Documents\Major Files` is refused before it is read.
 - Not a live call: Kavi answers later through the Bridge. The panel never shows a made-up reply.
+
+### Kavi's desk computer (conversation)
+
+Clicking Kavi's desk computer, or the **Kavi's screen** button, opens her screen as a modal. Notes go
+through `POST /api/kavi/message` (above). `GET /api/kavi/thread` (office session, loopback Host) merges
+the owner's notes from `to-kavi/owner-to-kavi-*.md` with Kavi's replies from
+`<AGENT_OFFICE_KAVI_BRIDGE_DIR>/to-george/*.md|*.txt`, oldest first, each with its file time. The path
+is checked for Major Files before any filesystem call. The screen polls every 20 seconds while open.
+It is not a live call and never shows a typing indicator. Escape closes it and focus stays inside while open.

@@ -6,7 +6,7 @@ import type { Fixture } from '../../world/office/fixture';
 import { stepToward, type Body } from '../../player/collide';
 import { FACE_PX, FACE_SRC, paintFace } from './picture';
 
-/** Face-computer NPC. No desk. Patrols the office. */
+/** Face-computer NPC. Patrols the office; her desk and computer are a separate fixture (desk.ts). */
 const HOME = KAVI_HOME;
 const PATROL = KAVI_PATROL;
 
@@ -118,7 +118,7 @@ declare module '../../world/types' {
   }
 }
 
-/** NPC fixture — no desk; collide+wander; face shows Kavi's picture (not a live call). */
+/** NPC fixture — collide+wander (her desk is desk.ts); face shows Kavi's picture (not a live call). */
 export const kaviKaren: Fixture<'kaviKaren'> = (site) => {
   const built = buildKaviKaren(site.colliders);
   return {

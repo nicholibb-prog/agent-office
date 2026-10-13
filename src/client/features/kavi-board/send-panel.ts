@@ -1,86 +1,207 @@
 /**
- * "Write to Kavi": a small panel that drops a note or a file into the Bridge folder's to-kavi path.
- * Not a live call: Kavi answers later through the Bridge. Nothing here invents a reply.
+ * Kavi's desk PC: a modal styled like her screen (a FaceTime-like frame with a "Kavi" tag). The
+ * owner writes here; each note becomes a packet in the Bridge to-kavi folder, and Kavi's replies
+ * come back from to-george into the same thread. Not a live call: there is no typing indicator,
+ * and nothing is shown that has not arrived as a file.
  */
+import { FACE_SRC } from './picture';
+
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const POLL_MS = 20_000;
 export const NOT_LIVE_NOTE = 'Not a live call. Kavi reads the Bridge folder and answers later.';
 
-type ReadBack = { configured: boolean; folderId: string | null; verified: boolean };
+type Item = { from: 'owner' | 'kavi'; text: string; at: string };
+type Thread = { state: string; items: Item[]; driveLink: string };
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
-  e.className = cls;
+  if (cls) e.className = cls;
   if (text) e.textContent = text;
   return e;
 }
 
-export function mountKaviSendPanel() {
-  const style = el('style', '');
-  style.textContent = `
+/** "3:41 PM" today, otherwise "Oct 12, 3:41 PM". */
+export function timeLabel(iso: string, now = new Date()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return d.toDateString() === now.toDateString() ? t : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${t}`;
+}
+
+const CSS = `
 .kavi-open{position:fixed;left:14px;bottom:62px;z-index:1000;padding:8px 12px;border-radius:10px;border:0;background:#2f6f6a;color:#fff;font:600 13px system-ui;cursor:pointer}
-.kavi-panel{position:fixed;left:14px;bottom:104px;z-index:1001;width:320px;padding:12px;border-radius:12px;background:#1d2326;color:#eef;font:13px system-ui;box-shadow:0 6px 24px #0008;display:none}
-.kavi-panel.open{display:block}.kavi-panel h3{margin:0 0 6px;font-size:14px}
-.kavi-note{color:#f3d58a;margin:0 0 8px}.kavi-panel textarea{width:100%;height:80px;box-sizing:border-box;border-radius:8px;border:1px solid #445;background:#11161a;color:#eef;padding:6px}
-.kavi-row{display:flex;gap:6px;margin-top:6px;align-items:center}.kavi-row button{padding:6px 10px;border-radius:8px;border:0;background:#2f6f6a;color:#fff;cursor:pointer}
-.kavi-status{margin-top:8px;color:#bcd;word-break:break-all}.kavi-id{font-family:ui-monospace,monospace;color:#9fe3c9}`;
+.kavi-pc-back{position:fixed;inset:0;z-index:1100;background:#0009;display:none;align-items:center;justify-content:center}
+.kavi-pc-back.open{display:flex}
+.kavi-pc{width:min(720px,94vw);height:min(560px,90vh);display:flex;flex-direction:column;border-radius:22px;background:#20262b;border:10px solid #3a4148;box-shadow:0 18px 60px #000a;color:#eef;font:14px system-ui;overflow:hidden}
+.kavi-pc-top{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#181d21}
+.kavi-pc-top img{width:40px;height:40px;border-radius:50%;object-fit:cover;background:#334}
+.kavi-tag{font-weight:700;font-size:15px}.kavi-note{color:#f3d58a;font-size:12px}
+.kavi-pc-top .x{margin-left:auto;background:#3a4148;border:0;color:#fff;border-radius:50%;width:30px;height:30px;cursor:pointer}
+.kavi-thread{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:8px}
+.kavi-msg{max-width:75%;padding:8px 12px;border-radius:16px;white-space:pre-wrap;word-break:break-word}
+.kavi-msg.owner{align-self:flex-end;background:#2f7cf6}.kavi-msg.kavi{align-self:flex-start;background:#3a4148}
+.kavi-msg .at{display:block;font-size:11px;opacity:.7;margin-top:3px}
+.kavi-empty{color:#9ab;text-align:center;margin:auto}
+.kavi-status{padding:6px 14px;font-size:12px;color:#bcd;min-height:16px;word-break:break-all}.kavi-status a{color:#9fe3c9}
+.kavi-status.err{color:#ff9b8f}
+.kavi-compose{display:flex;gap:8px;padding:10px 14px;background:#181d21;align-items:center}
+.kavi-compose textarea{flex:1;height:44px;resize:none;border-radius:12px;border:1px solid #445;background:#11161a;color:#eef;padding:8px}
+.kavi-compose button{padding:8px 12px;border-radius:12px;border:0;background:#2f6f6a;color:#fff;cursor:pointer}
+.kavi-compose input[type=file]{display:none}`;
+
+export interface KaviPc {
+  open(): void;
+  close(): void;
+}
+
+export function mountKaviSendPanel(): KaviPc {
+  const style = el('style', '');
+  style.textContent = CSS;
   document.head.appendChild(style);
-  const open = el('button', 'kavi-open', 'Write to Kavi');
-  const panel = el('div', 'kavi-panel');
-  panel.append(el('h3', '', 'Kavi — Bridge folder'), el('p', 'kavi-note', NOT_LIVE_NOTE));
+
+  const opener = el('button', 'kavi-open', "Kavi's screen");
+  const back = el('div', 'kavi-pc-back');
+  const pc = el('div', 'kavi-pc');
+  pc.setAttribute('role', 'dialog');
+  pc.setAttribute('aria-modal', 'true');
+  pc.setAttribute('aria-label', "Kavi's desk computer");
+  const top = el('div', 'kavi-pc-top');
+  const face = el('img', '');
+  face.src = FACE_SRC;
+  face.alt = '';
+  const who = el('div', '');
+  who.append(el('div', 'kavi-tag', 'Kavi'), el('div', 'kavi-note', NOT_LIVE_NOTE));
+  const x = el('button', 'x', '×');
+  x.setAttribute('aria-label', 'Close');
+  top.append(face, who, x);
+  const thread = el('div', 'kavi-thread');
+  thread.setAttribute('aria-live', 'polite');
+  const status = el('div', 'kavi-status');
+  const compose = el('div', 'kavi-compose');
   const text = el('textarea', '');
   text.maxLength = 4000;
-  text.placeholder = 'Message for Kavi';
-  const sendText = el('button', '', 'Send note');
+  text.placeholder = 'Write to Kavi';
+  text.setAttribute('aria-label', 'Message for Kavi');
   const file = el('input', '') as HTMLInputElement;
   file.type = 'file';
   file.accept = '.pdf,.png,.jpg,.jpeg,.gif,.webp,.txt,.md,.csv,.json,.docx,.xlsx,.pptx';
-  const sendFileBtn = el('button', '', 'Send file');
-  const status = el('div', 'kavi-status');
-  const row1 = el('div', 'kavi-row');
-  row1.append(sendText);
-  const row2 = el('div', 'kavi-row');
-  row2.append(file, sendFileBtn);
-  panel.append(text, row1, row2, status);
-  document.body.append(open, panel);
+  const attach = el('button', '', 'Send file');
+  const sendBtn = el('button', '', 'Send');
+  compose.append(text, file, attach, sendBtn);
+  pc.append(top, thread, status, compose);
+  back.append(pc);
+  document.body.append(opener, back);
 
-  const show = (msg: string, id?: string | null) => {
+  let link = '';
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let lastFocus: Element | null = null;
+  const localFiles: Item[] = [];
+
+  const setStatus = (msg: string, err = false, withLink = false) => {
+    status.className = 'kavi-status' + (err ? ' err' : '');
     status.textContent = msg;
-    if (id) {
-      status.append(document.createElement('br'), 'Parent folder id: ');
-      status.append(el('span', 'kavi-id', id));
+    if (withLink && link) {
+      status.append(' ');
+      const a = el('a', '', 'Open in Drive');
+      a.href = link;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      status.append(a);
     }
   };
-  const refresh = () =>
-    fetch('/api/kavi/bridge', { credentials: 'same-origin' })
-      .then((r) => (r.ok ? (r.json() as Promise<ReadBack>) : null))
-      .then((b) => {
-        if (!b) return show('Bridge status unavailable.');
-        if (!b.configured) return show('Bridge folder not set up on this machine yet.');
-        if (!b.verified) return show('Bridge folder id did not read back. Sending is off.');
-        show('Bridge ready.', b.folderId);
+  const paint = (items: Item[]) => {
+    const all = [...items, ...localFiles].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+    thread.replaceChildren();
+    if (!all.length) thread.append(el('div', 'kavi-empty', 'No messages yet.'));
+    for (const it of all) {
+      const m = el('div', `kavi-msg ${it.from}`, it.text);
+      m.append(el('span', 'at', `${it.from === 'kavi' ? 'Kavi' : 'You'} · ${timeLabel(it.at)}`));
+      thread.append(m);
+    }
+    thread.scrollTop = thread.scrollHeight;
+  };
+  const load = () =>
+    fetch('/api/kavi/thread', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? (r.json() as Promise<Thread>) : Promise.reject(new Error(String(r.status)))))
+      .then((t) => {
+        link = t.driveLink || link;
+        if (t.state === 'unconfigured') setStatus('The Bridge folder is not set up on this machine yet.', true);
+        else if (t.state === 'unreachable') setStatus('The Bridge folder is unreachable.', true);
+        paint(t.items || []);
       })
-      .catch(() => show('Bridge status unavailable.'));
+      .catch(() => setStatus('Could not load the thread.', true));
   const done = (r: Response) =>
-    r.json().then((j: { name?: string; folderId?: string; error?: string }) =>
-      r.ok ? show(`Sent to to-kavi as ${j.name}. ${NOT_LIVE_NOTE}`, j.folderId) : show(`Not sent: ${j.error || r.status}`),
-    );
-  open.onclick = () => {
-    panel.classList.toggle('open');
-    if (panel.classList.contains('open')) void refresh();
+    r.json().then((j: { name?: string; folderId?: string; error?: string }) => {
+      if (r.ok && j.folderId) {
+        link = `https://drive.google.com/drive/folders/${encodeURIComponent(j.folderId)}`;
+        setStatus(`Sent and confirmed in to-kavi (folder ${j.folderId}).`, false, true);
+        return true;
+      }
+      setStatus(`Not sent: ${j.error || r.status}`, true);
+      return false;
+    });
+
+  const focusables = () => [...pc.querySelectorAll<HTMLElement>('button, textarea, a[href]')].filter((e) => e.offsetParent !== null);
+  const onKey = (e: KeyboardEvent) => {
+    if (!back.classList.contains('open')) return;
+    e.stopPropagation();
+    if (e.key === 'Escape') return close();
+    if (e.key === 'Tab') {
+      const f = focusables();
+      if (!f.length) return;
+      const first = f[0]!;
+      const last = f[f.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) (e.preventDefault(), last.focus());
+      else if (!e.shiftKey && document.activeElement === last) (e.preventDefault(), first.focus());
+    }
   };
-  sendText.onclick = () => {
-    if (!text.value.trim()) return;
-    void fetch('/api/kavi/message', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.value }) })
+  function open() {
+    if (back.classList.contains('open')) return;
+    lastFocus = document.activeElement;
+    if (document.pointerLockElement) document.exitPointerLock();
+    back.classList.add('open');
+    setStatus('');
+    void load();
+    timer = setInterval(() => void load(), POLL_MS);
+    text.focus();
+  }
+  function close() {
+    back.classList.remove('open');
+    if (timer) clearInterval(timer);
+    timer = undefined;
+    (lastFocus as HTMLElement | null)?.focus?.();
+  }
+  document.addEventListener('keydown', onKey, true);
+  document.addEventListener('keyup', (e) => back.classList.contains('open') && e.stopPropagation(), true);
+  back.addEventListener('mousedown', (e) => e.target === back && close());
+  opener.onclick = open;
+  x.onclick = close;
+  sendBtn.onclick = () => {
+    const body = text.value.trim();
+    if (!body) return;
+    sendBtn.disabled = true;
+    void fetch('/api/kavi/message', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: body }) })
       .then(done)
-      .then(() => (text.value = ''))
-      .catch(() => show('Not sent: the office did not answer.'));
+      .then((ok) => {
+        if (ok) text.value = '';
+        return load();
+      })
+      .catch(() => setStatus('Not sent: the office did not answer.', true))
+      .finally(() => (sendBtn.disabled = false));
   };
-  sendFileBtn.onclick = () => {
+  attach.onclick = () => file.click();
+  file.onchange = () => {
     const f = file.files?.[0];
+    file.value = '';
     if (!f) return;
-    if (f.size > MAX_FILE_BYTES) return show('Not sent: file is over 10 MB.');
+    if (f.size > MAX_FILE_BYTES) return setStatus('Not sent: the file is over 10 MB.', true);
     void fetch('/api/kavi/file', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/octet-stream', 'x-file-name': encodeURIComponent(f.name) }, body: f })
-      .then(done)
-      .catch(() => show('Not sent: the office did not answer.'));
+      .then((r) => r.clone().json().then((j: { name?: string }) => done(r).then((ok) => {
+          if (!ok) return;
+          localFiles.push({ from: 'owner', text: `Sent a file: ${j.name}`, at: new Date().toISOString() });
+          return load();
+        })))
+      .catch(() => setStatus('Not sent: the office did not answer.', true));
   };
+  return { open, close };
 }
