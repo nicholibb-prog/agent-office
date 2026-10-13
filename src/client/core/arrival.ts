@@ -6,7 +6,7 @@
  * sign-ins a newcomer is greeted with.
  */
 import { OFFICE_PLAN } from '../../shared/maps';
-import { SLAB, inElevator } from '../../shared/layout';
+import { ARRIVAL_OUT, SLAB, arrivalFacing, inElevator } from '../../shared/layout';
 import { ROOF, ROOF_NAME } from '../../shared/rooftop';
 import { renderTitle } from '../shared/title';
 import { lastFloor, lastSpot, store, type Spot } from '../state';
@@ -90,8 +90,11 @@ export function installArrival(ctx: Ctx, core: CoreState, parts: ArrivalParts) {
         travel.arrive('back');
       } else {
         // The car you were in (or nearest): the garage's, if you were down there.
-        placeInCar(mine, !core.upTop && mine.y < -SLAB - 1);
+        const garage = !core.upTop && mine.y < -SLAB - 1;
+        placeInCar(mine, garage);
         travel.arrive();
+        // AUD-15: on the floor itself, step out of the doors facing the floor and the desks, not the car's wall.
+        if (!garage && !core.upTop && inOffice()) placeAt({ ...ARRIVAL_OUT, y: 0, rotY: arrivalFacing() });
       }
       floorWentWhileAway(wasOn);
     } else if (store.floor && store.floor !== wasOn) {

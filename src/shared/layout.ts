@@ -593,8 +593,8 @@ export const POLES: readonly PoleSpot[] = [
 /** A pole's hole in the floor, the railing round it, and how far from the pole you hang on. */
 export const POLE = { hole: 0.68, rail: 0.9, grip: 0.4, radius: 0.055 } as const;
 
-export const ARRIVAL_YAW = 0.35;
-/** Arriving (AUD-15): out through the doors, 20° left of straight, onto the open floor and away from the car wall and the whiteboard's edge. */
+/** Arriving on a floor (AUD-15): stepped just out of the car's doors, facing the open floor and the desks. */
+export const ARRIVAL_OUT = { x: ELEVATOR.x - 0.6, z: ELEVATOR_CAR.maxZ + 1.2 };
 export function arrivalFacing(): number {
-  return ARRIVAL_YAW;
+  return facing(ARRIVAL_OUT.x, ARRIVAL_OUT.z, DESKS_MID.x, DESKS_MID.z) - 0.3; // a touch right, past the whiteboard
 }

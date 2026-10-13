@@ -2,7 +2,7 @@
  * Where you are, and putting you somewhere: in the elevator car, on your feet at a spot, where a map
  * has you come in, up on its throne; and where you're standing, to come back to.
  */
-import { ELEVATOR, ELEVATOR_CAR, FLOOR, POLE, SLAB, STOREY, WALL_HEIGHT, arrivalFacing, inElevator, inWing } from '../../shared/layout';
+import { ELEVATOR, ELEVATOR_CAR, FLOOR, POLE, SLAB, STOREY, WALL_HEIGHT, inElevator, inWing } from '../../shared/layout';
 import { ROOF, ROOF_NAME } from '../../shared/rooftop';
 import type { Arrival } from '../features/climbing/controller';
 import { rememberSpot, store, type Spot } from '../state';
@@ -19,7 +19,7 @@ export function installPlace(ctx: Ctx, core: CoreState, parts: Pick<Parts, 'worl
   function placeInCar(at?: { x: number; z: number }, garage = false) {
     if (!inOffice()) return placeAtSpawn();
     const spot = at && inElevator(at.x, at.z) ? at : { x: ELEVATOR.x, z: (ELEVATOR_CAR.minZ + ELEVATOR_CAR.maxZ) / 2 };
-    placeAt({ x: spot.x, y: garage ? player.street : 0, z: spot.z, rotY: garage ? 0 : arrivalFacing() });
+    placeAt({ x: spot.x, y: garage ? player.street : 0, z: spot.z, rotY: 0 });
   }
 
   /** Down in the garage (or out on the street) under the floor you're on. */
