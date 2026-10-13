@@ -220,3 +220,9 @@ test('the panel: not set up says how; a locked viewer sees Owner only, grey; amb
   assert.equal(switchView({ ...d, owner: true, ownerState: 'unlocked' }).light, 'on', 'power on, switch not set up: still green');
   assert.equal(switchView({ ...d, owner: true, ownerState: 'unlocked', power: 'off' }).light, 'setup');
 });
+
+test('Unlock owner and Lock are served (registered with the office routes)', async () => {
+  const { routes } = await import('../src/server/http/routes/index.js');
+  const list = routes as unknown as unknown[];
+  assert.ok(list.includes(hqRoutes.okkinOwnerUnlock) && list.includes(hqRoutes.okkinOwnerLock));
+});
