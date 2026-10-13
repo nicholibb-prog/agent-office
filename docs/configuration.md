@@ -146,3 +146,10 @@ See [Local HQ](hq.md). The floor's gitignored `.agent-office/hq-local.json` turn
 | `OKKIN_MODEL_ALLOW` | Comma-separated tags the desk may switch to. Intersected with the tags Ollama has installed. |
 
 `OLLAMA_URL` wins over `ollama.json`. `hq-local.json` does not set the URL. A request cannot set the URL or add a tag.
+### Kavi's desk (bridge folder twin)
+
+`AGENT_OFFICE_KAVI_BRIDGE_DIR` points at a local copy of the bridge folder with `in/` and `out/`
+subfolders. `GET /api/bridge/kavi-desk` (bridge token or office session, loopback Host only) returns
+counts and newest timestamps only: `unconfigured`, `unreachable`, `quiet`, `waiting` (newest packet is
+inbound) or `answered`. It never reads packet text, returns file names, writes, or calls any service.
+`live` is always `false`: this is not a live call.

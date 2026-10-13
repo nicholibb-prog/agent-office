@@ -47,6 +47,7 @@ export const routes: readonly Route[] = [
   liveRoutes.seats,
   liveRoutes.toggle,
   liveRoutes.frame,
+  bridgeRoutes.kaviDesk,
   hqBriefRoutes.brief,
   hqBriefRoutes.seen,
   hqBriefRoutes.needs,
