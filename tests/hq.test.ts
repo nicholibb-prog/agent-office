@@ -20,6 +20,7 @@ import { hqRoutes } from '../src/server/http/routes/hq.js';
 import { bridgeRoutes, refusesOkkinName } from '../src/server/http/routes/bridge.js';
 import { resetHqLimitsForTests, talkLimited } from '../src/server/hq/limits.js';
 import { writePrivate } from '../src/server/private-file.js';
+import { issueSeatToken } from '../src/server/seat-tokens.js';
 import { presenceHandlers } from '../src/server/ws/handlers/presence.ts';
 import { hasSavedCharacter, profileStorageKey, saveProfile } from '../src/client/state/persist.ts';
 import type { Worker } from '../src/server/workers/types.js';
@@ -185,7 +186,8 @@ test('bridge routes reject a missing token and refuse to speak as Okkin', async 
   await hqRoutes.roster.handle(ctx, { req: reqOf('GET', { host: '127.0.0.1:4600' }), res: denied.res, url: new URL('http://127.0.0.1:4600/api/bridge/roster') });
   assert.equal(denied.status, 401);
   const said = resOf();
-  const { token } = ctxOf(dataDir);
+  // Even Okkin's own seat token cannot speak as Okkin on the bridge.
+  const token = issueSeatToken(dataDir, 'okkin');
   await bridgeRoutes.say.handle(ctx, {
     req: reqOf('POST', { host: '127.0.0.1:4600', 'content-type': 'application/json', 'x-bridge-token': token }, JSON.stringify({ name: 'Okkin', text: 'hello' })),
     res: said.res,
@@ -504,30 +506,46 @@ test('public labels stay seat-N, and a gitignored names map supplies a local dis
 test('a bot line is the text posted to the authenticated inbox route', async () => {
   const dataDir = dir('inbox');
   const { ctx, token } = ctxOf(dataDir);
-  const posted = resOf();
-  await bridgeRoutes.inbox.handle(ctx, {
-    req: reqOf('POST', { host: '127.0.0.1:4600', 'content-type': 'application/json', 'x-bridge-token': token }, JSON.stringify({ seat: 'seat-1', text: 'At the desk.' })),
-    res: posted.res,
-  });
+  const seat1 = issueSeatToken(dataDir, 'seat-1');
+  const post = async (tok: string | undefined, body: unknown) => {
+    const r = resOf();
+    const headers: Record<string, string> = { host: '127.0.0.1:4600', 'content-type': 'application/json' };
+    if (tok) headers['x-bridge-token'] = tok;
+    await bridgeRoutes.inbox.handle(ctx, { req: reqOf('POST', headers, JSON.stringify(body)), res: r.res });
+    return r;
+  };
+  const talk = async (seat: string) => {
+    const got = resOf();
+    await hqRoutes.talkGet.handle(ctx, {
+      req: reqOf('GET', { host: '127.0.0.1:4600', 'x-bridge-token': token }),
+      res: got.res,
+      url: new URL('http://127.0.0.1:4600/api/bridge/talk?seat=' + seat),
+    });
+    return JSON.parse(got.body) as { chip: string; name: string; messages: { role: string; text: string }[] };
+  };
+  // The seat comes from the token; no body seat is needed.
+  const posted = await post(seat1, { text: 'At the desk.' });
   assert.equal(posted.status, 200);
-  const got = resOf();
-  await hqRoutes.talkGet.handle(ctx, {
-    req: reqOf('GET', { host: '127.0.0.1:4600', 'x-bridge-token': token }),
-    res: got.res,
-    url: new URL('http://127.0.0.1:4600/api/bridge/talk?seat=seat-1'),
-  });
-  const body = JSON.parse(got.body) as { chip: string; name: string; messages: { role: string; text: string }[] };
+  assert.equal((JSON.parse(posted.body) as { seat: string }).seat, 'seat-1');
+  const body = await talk('seat-1');
   assert.equal(body.chip, 'offline');
   assert.equal(body.name, 'seat-1');
   assert.equal(body.messages.filter((m) => m.role === 'bot').length, 1);
   assert.equal(body.messages.find((m) => m.role === 'bot')?.text, 'At the desk.');
   assert.equal(existsSync(path.join(dataDir, 'crew-status.json')), false);
-  const refused = resOf();
-  await bridgeRoutes.inbox.handle(ctx, {
-    req: reqOf('POST', { host: '127.0.0.1:4600', 'content-type': 'application/json', 'x-bridge-token': token }, JSON.stringify({ seat: 'okkin', text: 'nope' })),
-    res: refused.res,
-  });
-  assert.equal(refused.status, 400);
+  // A matching body seat is fine.
+  assert.equal((await post(seat1, { seat: 'seat-1', text: 'Still here.' })).status, 200);
+  // A spoofed body seat cannot write another seat's inbox.
+  assert.equal((await post(seat1, { seat: 'seat-2', text: 'spoof' })).status, 403);
+  assert.equal((await talk('seat-2')).messages.filter((m) => m.role === 'bot').length, 0);
+  // No token, an unknown token, and the read-only shared token are refused.
+  assert.equal((await post(undefined, { seat: 'seat-1', text: 'anon' })).status, 401);
+  assert.equal((await post('f'.repeat(64), { seat: 'seat-1', text: 'bad' })).status, 401);
+  assert.equal((await post(token, { seat: 'seat-1', text: 'shared' })).status, 403);
+  assert.equal((await talk('seat-1')).messages.filter((m) => m.role === 'bot').length, 2);
+  // Okkin has no inbox, even with its own seat token.
+  const okkin = issueSeatToken(dataDir, 'okkin');
+  assert.equal((await post(okkin, { text: 'nope' })).status, 400);
   rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -682,7 +700,8 @@ test('talk is limited to one line per 3 seconds and 20 per minute', async () => 
 test('a bridge body over 16 KB is rejected', async () => {
   const dataDir = dir('big');
   resetHqLimitsForTests();
-  const { ctx, token } = ctxOf(dataDir, { id: 'talk-big', role: 'admin' });
+  const { ctx } = ctxOf(dataDir, { id: 'talk-big', role: 'admin' });
+  const token = issueSeatToken(dataDir, 'seat-1');
   const raw = JSON.stringify({ seat: 'seat-1', text: 'x'.repeat(20 * 1024) });
   const talk = resOf();
   await hqRoutes.talk.handle(ctx, {
@@ -731,8 +750,9 @@ test('Okkin look-alike names are rejected, including digits that fold to okkin',
   const lookalikes = ['Okk\u0456n', 'O-k-k-i-n', 'okkin2', 'Okkin\u200b', 'Okk\u00EFn', 'Okk\u00EDn', '\u039F\u039A\u039A\u0399\u039D', '\u1D0F\u1D0B\u1D0B\u026A\u0274', '0kk1n', 'okk\u0131n', '0kkin', 'O\u0138\u0138in', 'Okk\u00A1n', 'o\u0138\u0138\u00A1n'];
   for (const name of lookalikes) assert.equal(refusesOkkinName(name), true, name);
   const dataDir = dir('look');
-  const { ctx, token } = ctxOf(dataDir);
-  const headers = { host: '127.0.0.1:4600', 'content-type': 'application/json', 'x-bridge-token': token };
+  const { ctx } = ctxOf(dataDir);
+  // The bridge name is the token's seat now, so a look-alike body name is refused before the fold check.
+  const headers = { host: '127.0.0.1:4600', 'content-type': 'application/json', 'x-bridge-token': issueSeatToken(dataDir, 'ada') };
   const allowed = resOf();
   await bridgeRoutes.say.handle(ctx, {
     req: reqOf('POST', headers, JSON.stringify({ name: 'Ada', text: 'hi' })),
@@ -745,7 +765,7 @@ test('Okkin look-alike names are rejected, including digits that fold to okkin',
       req: reqOf('POST', headers, JSON.stringify({ name, text: 'hi' })),
       res: denied.res,
     });
-    assert.equal(denied.status, 400, name);
+    assert.ok(denied.status === 400 || denied.status === 403, name);
   }
   rmSync(dataDir, { recursive: true, force: true });
 });
@@ -959,7 +979,8 @@ test('a member cookie from another port logs guest, and an unknown cookie is ref
 
 test('a chunked body over the cap is answered 413 and the connection is closed', async () => {
   const dataDir = dir('chunk');
-  const { ctx, token } = ctxOf(dataDir);
+  const { ctx } = ctxOf(dataDir);
+  const token = issueSeatToken(dataDir, 'ada');
   const server = createServer((req, res) => {
     void bridgeRoutes.say.handle(ctx, { req, res });
   });
@@ -1044,7 +1065,8 @@ test('a failed model switch starts the cooldown so a retry does not unload again
 
 test('the kavi outbox keeps the last 200 items at mode 0600', async () => {
   const dataDir = dir('kavi');
-  const { ctx, token } = ctxOf(dataDir);
+  const { ctx } = ctxOf(dataDir);
+  const token = issueSeatToken(dataDir, 'kavi');
   const headers = { host: '127.0.0.1:4600', 'content-type': 'application/json', 'x-bridge-token': token };
   for (let i = 0; i < 201; i++) {
     const posted = resOf();
@@ -1074,7 +1096,8 @@ test('a non-string crew value is skipped', async () => {
   assert.equal(bridgeBeat(1), null);
   assert.equal(bridgeBeat(null), null);
   const dataDir = dir('crew-num');
-  const { ctx, token } = ctxOf(dataDir);
+  const { ctx } = ctxOf(dataDir);
+  const token = issueSeatToken(dataDir, 'seat-1');
   const posted = resOf();
   await hqRoutes.status.handle(ctx, {
     req: reqOf(

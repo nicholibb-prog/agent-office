@@ -249,7 +249,7 @@ export interface DeskWorker {
   name: string;
   activity?: string;
   lastInput?: { at: number };
-  kind?: 'agent' | 'shell';
+  kind?: 'agent' | 'shell' | 'crew';
   lost?: unknown;
 }
 

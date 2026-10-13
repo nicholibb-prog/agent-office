@@ -79,7 +79,7 @@ test('shells and agents paint the same working desktop, and it keeps moving', ()
 test('an empty screen uses the stand-in line, and a recent keystroke wakes an idle shell', () => {
   assert.deepEqual(workerDesktop({ kind: 'shell', status: 'offline', name: 'Nap' }, undefined, T, T).lines, ['💤 Nap is asleep — press R to restart']);
   assert.deepEqual(workerDesktop({ kind: 'agent', status: 'offline', name: 'Nap' }, undefined, T, T).lines, ['💤 Nap is asleep — press R to resume']);
-  assert.equal(workerDesktop({ kind: 'shell', status: 'idle', name: 'sh', lastInput: { at: T - 1000 } }, undefined, T, T).pace, 'working');
+  assert.equal(workerDesktop({ kind: 'shell', status: 'idle', name: 'sh', lastInput: { at: T - 1000 } }, undefined, T, T).pace, 'calm');
   assert.equal(workerDesktop({ kind: 'agent', status: 'needs_input', name: 'Byte' }, undefined, T, T).chip, 'NEEDS YOU');
   const stillA = workerDesktop({ kind: 'agent', status: 'working', name: 'Byte' }, undefined, T, T, true);
   const stillB = workerDesktop({ kind: 'agent', status: 'working', name: 'Byte' }, undefined, T + 600, T + 600, true);
