@@ -17,8 +17,8 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text = '
 export function mountKaviSendPanel() {
   const style = el('style', '');
   style.textContent = `
-.kavi-open{position:fixed;left:14px;bottom:14px;z-index:30;padding:8px 12px;border-radius:10px;border:0;background:#2f6f6a;color:#fff;font:600 13px system-ui;cursor:pointer}
-.kavi-panel{position:fixed;left:14px;bottom:56px;z-index:31;width:320px;padding:12px;border-radius:12px;background:#1d2326;color:#eef;font:13px system-ui;box-shadow:0 6px 24px #0008;display:none}
+.kavi-open{position:fixed;left:14px;bottom:62px;z-index:1000;padding:8px 12px;border-radius:10px;border:0;background:#2f6f6a;color:#fff;font:600 13px system-ui;cursor:pointer}
+.kavi-panel{position:fixed;left:14px;bottom:104px;z-index:1001;width:320px;padding:12px;border-radius:12px;background:#1d2326;color:#eef;font:13px system-ui;box-shadow:0 6px 24px #0008;display:none}
 .kavi-panel.open{display:block}.kavi-panel h3{margin:0 0 6px;font-size:14px}
 .kavi-note{color:#f3d58a;margin:0 0 8px}.kavi-panel textarea{width:100%;height:80px;box-sizing:border-box;border-radius:8px;border:1px solid #445;background:#11161a;color:#eef;padding:6px}
 .kavi-row{display:flex;gap:6px;margin-top:6px;align-items:center}.kavi-row button{padding:6px 10px;border-radius:8px;border:0;background:#2f6f6a;color:#fff;cursor:pointer}
