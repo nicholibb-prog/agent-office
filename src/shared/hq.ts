@@ -285,3 +285,9 @@ export function modelChoices(allow: readonly string[], installed: readonly strin
 export function modelTagOk(name: string): boolean {
   return name.length > 0 && name.length <= 80 && !/[\r\n\0]/.test(name) && !name.includes('..') && !/^[a-zA-Z]:[\\/]/.test(name);
 }
+
+/** Pool tiers. Only `open` work may ever be routed to Okkin; code, money, sends and security are gated. */
+export const GATED_TIERS = ['code', 'money', 'sends', 'security'] as const;
+export function okkinMayTake(job: { tier?: unknown } | null | undefined): boolean {
+  return !!job && job.tier === 'open';
+}
