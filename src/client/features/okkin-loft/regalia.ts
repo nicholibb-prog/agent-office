@@ -232,16 +232,19 @@ export function buildPedestal(): { group: THREE.Group; inscription: string } {
   const stoneTex = canvasTex(1024, 180, (c, cw, ch) => {
     marble(c, cw, ch, LOFT_PALETTE.stone);
     // Chiselled: each letter cut as a dark V-groove with a lit lower lip, right to left.
-    c.font = `96px "OKL Phoenician", "Noto Sans Phoenician", serif`;
+    c.font = `76px "OKL Phoenician", "Noto Sans Phoenician", serif`;
     c.direction = 'rtl';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
+    // Whole word group on the open end of the face (left of the console as you face it), never clipped.
+    const tw = typeof c.measureText === 'function' ? c.measureText(inscription).width || 460 : 460;
+    const x = 28 + tw / 2;
     c.fillStyle = 'rgba(255,255,255,.55)';
-    c.fillText(inscription, cw * 0.21 + 2, ch / 2 + 3);
+    c.fillText(inscription, x + 2, ch / 2 + 3);
     c.fillStyle = 'rgba(40,34,26,.85)';
-    c.fillText(inscription, cw * 0.21, ch / 2);
+    c.fillText(inscription, x, ch / 2);
     c.fillStyle = 'rgba(201,162,39,.35)';
-    c.fillText(inscription, cw * 0.21 - 1, ch / 2 - 1);
+    c.fillText(inscription, x - 1, ch / 2 - 1);
   });
   stoneTex.wrapS = THREE.ClampToEdgeWrapping;
   const stone = new THREE.MeshLambertMaterial({ color: LOFT_PALETTE.stone });

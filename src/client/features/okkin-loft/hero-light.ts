@@ -23,7 +23,7 @@ export function bladeLevel(mode: HeroMode, t: number, row: number, rows = BLADE_
 }
 
 /** Seconds between rows in the power sequence. */
-export const SEQ_STEP = 0.07;
+export const SEQ_STEP = 0.12;
 export const seqDuration = (rows = BLADE_ROWS) => rows * SEQ_STEP + 0.15;
 
 /**

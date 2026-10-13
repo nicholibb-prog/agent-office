@@ -299,7 +299,7 @@ export function installOkkinLoft(ctx: Ctx) {
     age = 0;
     if (ctx.inOffice()) void refresh();
   });
-  (window as unknown as { __okkinLoft?: unknown }).__okkinLoft = { open: () => pill.click(), toggle, render: (d: Loft) => { frozen = true; data = d; panel.hidden = false; paint(); panel.querySelector<HTMLElement>('.okl-close')?.focus(); view.setState(sceneState(d)); } };
+  (window as unknown as { __okkinLoft?: unknown }).__okkinLoft = { open: () => pill.click(), toggle, render: (d: Loft) => { frozen = true; data = d; { const sw = switchView(d, null, 200); pillLight.dataset.light = sw.light; pill.title = sw.tip; } panel.hidden = false; paint(); panel.querySelector<HTMLElement>('.okl-close')?.focus(); view.setState(sceneState(d)); } };
 }
 
 declare module '../../world/types' {
