@@ -15,7 +15,7 @@
   ],
   "scripts": {
     "test": "node --import tsx --import=#tests/css --test tests/*.test.ts",
-    "dev": "concurrently -k \"vite\" \"tsx watch src/server/cli.ts --port 4600 --password dev --no-open\"",
+    "dev": "concurrently -k \"vite\" \"node scripts/dev-server.mjs\"",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.server.json",

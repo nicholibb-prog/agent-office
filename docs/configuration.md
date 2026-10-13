@@ -63,7 +63,9 @@ agent-office [dir] [options]
   -p, --port <n>          Port (default 4600, env PORT)
   -H, --host <addr>       Bind address (default 127.0.0.1; 0.0.0.0 lets your network in).
                           HOST in the environment is ignored. See FORGEL-BIND.md.
-      --password <pw>     Office password (env AGENT_OFFICE_PASSWORD)
+      --password <pw>     Deprecated (visible in process listings). Use env
+                          AGENT_OFFICE_PASSWORD, or AGENT_OFFICE_PASSWORD_FILE
+                          (an owner-only file holding the password).
       --no-open           Don't open the office in your browser when it starts
       --agent <cmd>       Default agent command (default "claude")
       --agent-args <str>  Extra args for the configured agent, e.g. "--model opus"
@@ -100,7 +102,7 @@ agent-office accounts [list | invite [name] [--admin] | revoke <name> | role <na
   Invite, list and revoke people's own accounts, and switch the shared password
   off or on. Works while the office runs.
 
-agent-office tunnel [office@address | url] [--port <n>] [--office-port <n>] [--name <name>] [--password <pw>] [--no-open] [--insecure] [-- <ssh options>]
+agent-office tunnel [office@address | url] [--port <n>] [--office-port <n>] [--name <name>] [--no-open] [--insecure] [-- <ssh options>]
 
   On your own computer, for an office that runs somewhere else: every web server
   a worker starts there opens on the same port here, by itself, and closes when
@@ -184,3 +186,28 @@ the owner's notes from `to-kavi/owner-to-kavi-*.md` with Kavi's replies from
 `<AGENT_OFFICE_KAVI_BRIDGE_DIR>/to-george/*.md|*.txt`, oldest first, each with its file time. The path
 is checked for Major Files before any filesystem call. The screen polls every 20 seconds while open.
 It is not a live call and never shows a typing indicator. Escape closes it and focus stays inside while open.
+
+## Office password without the command line
+
+`--password` on the command line shows up in any process listing, so it is deprecated.
+The server reads the password in this order: `AGENT_OFFICE_PASSWORD`, then
+`AGENT_OFFICE_PASSWORD_FILE` (a path to an owner-only file; one trailing newline is
+trimmed), then `--password` with a one-line warning. The value is never printed.
+
+```sh
+# environment variable
+AGENT_OFFICE_PASSWORD='<office-password>' agent-office
+
+# owner-only file (POSIX: group/world-readable files are refused)
+umask 077; printf '%s\n' '<office-password>' > ~/.config/agent-office/password
+AGENT_OFFICE_PASSWORD_FILE="$HOME/.config/agent-office/password" agent-office
+```
+
+```bat
+rem Windows: keep the file in %LOCALAPPDATA%\agent-office, readable by your account only
+set "AGENT_OFFICE_PASSWORD_FILE=%LOCALAPPDATA%\agent-office\password.txt"
+agent-office
+```
+
+A file under Documents\Major Files is always refused. See [launcher-password.md](launcher-password.md)
+for a `start-office.cmd` example.
