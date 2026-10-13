@@ -9,6 +9,7 @@ import { activeSeatMap, isSeatId } from '../../../shared/hq.js';
 import { send } from '../util.js';
 import { seatForToken } from '../../seat-tokens.js';
 import { BodyTooLarge, closeTooLarge, readJsonBody } from '../read-body.js';
+import { readKaviDesk } from '../../kavi-desk.js';
 import type { Route } from '../router.js';
 import { appendInbox, ingestInbox } from '../../hq/relay.js';
 import { loadHqLocal, writeCrewPush } from '../../workers/crew.js';
@@ -102,12 +103,12 @@ const ALLOWED_ORIGINS = new Set([
   'http://localhost:5173',
 ]);
 
-function hostOk(req: http.IncomingMessage): boolean {
+export function hostOk(req: http.IncomingMessage): boolean {
   const host = (req.headers.host || '').toLowerCase();
   return ALLOWED_HOSTS.has(host);
 }
 
-function originOk(req: http.IncomingMessage): boolean {
+export function originOk(req: http.IncomingMessage): boolean {
   const origin = req.headers.origin;
   if (!origin) return true;
   return ALLOWED_ORIGINS.has(String(origin).toLowerCase());
@@ -463,6 +464,16 @@ export const bridgeRoutes = {
       } catch {
         return send(res, 500, { error: OFFICE_ERROR });
       }
+    },
+  },
+  kaviDesk: {
+    method: 'GET' as const,
+    path: '/api/bridge/kavi-desk',
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!bridgeGate(ctx, req, res)) return;
+      // Read-only folder twin. Path comes from the local env only, never from the request.
+      return send(res, 200, readKaviDesk(process.env.AGENT_OFFICE_KAVI_BRIDGE_DIR || undefined));
     },
   },
 } satisfies Record<string, Route>;

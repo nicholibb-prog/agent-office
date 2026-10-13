@@ -10,6 +10,7 @@ import { pageRoutes } from './pages.js';
 import { searchRoutes } from './search.js';
 import { serviceRoutes } from './services.js';
 import { bridgeRoutes } from './bridge.js';
+import { kaviSendRoutes } from './kavi-send.js';
 import { hqBriefRoutes } from './hq-brief.js';
 import { officeRoutes } from './office.js';
 import { hqRoutes } from './hq.js';
@@ -47,6 +48,10 @@ export const routes: readonly Route[] = [
   liveRoutes.seats,
   liveRoutes.toggle,
   liveRoutes.frame,
+  bridgeRoutes.kaviDesk,
+  kaviSendRoutes.bridge,
+  kaviSendRoutes.message,
+  kaviSendRoutes.file,
   hqBriefRoutes.brief,
   hqBriefRoutes.seen,
   hqBriefRoutes.needs,
