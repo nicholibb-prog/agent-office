@@ -95,3 +95,22 @@ test('Major Files is never listed: checked on the path and on its realpath', () 
   assert.equal(viaLink.inCount, 0);
   rmSync(base, { recursive: true, force: true });
 });
+
+test('a Major Files path returns before realpath is ever called', async () => {
+  const { kaviDeskFs } = await import('../src/server/kavi-desk.js');
+  const orig = kaviDeskFs.realpathSync;
+  const calls: string[] = [];
+  kaviDeskFs.realpathSync = (p: string) => (calls.push(p), orig(p));
+  try {
+    assert.equal(readKaviDesk('C:\\Users\\owner\\Documents\\Major Files\\Bridge').state, 'unreachable');
+    assert.equal(readKaviDesk('/home/owner/major_files/bridge').state, 'unreachable');
+    assert.equal(readKaviDesk('/home/owner/Major-Files').state, 'unreachable');
+    assert.deepEqual(calls, [], 'no realpath on a Major Files path');
+    const r = fixture();
+    assert.equal(readKaviDesk(r).state, 'quiet');
+    assert.ok(calls.length > 0, 'the spy does see normal paths');
+    rmSync(r, { recursive: true, force: true });
+  } finally {
+    kaviDeskFs.realpathSync = orig;
+  }
+});
