@@ -41,7 +41,7 @@ export function buildKaviBridgeBoard(): KaviBridgeBoard {
   group.add(board);
 
   for (const sx of [-1, 1] as const) {
-    group.add(mesh(roundedBox(0.06, mid - 0.05, 0.06, 0.02), leg, sx * (width / 2 - 0.1), (mid - 0.05) / 2, 0.02));
+    group.add(mesh(roundedBox(0.06, mid - 0.05, 0.06, 0.02), leg, sx * (width / 2 - 0.1), (mid - 0.05) / 2, -0.07));
   }
 
   const canvas = document.createElement('canvas');

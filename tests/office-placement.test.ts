@@ -1,7 +1,7 @@
 // Freestanding boards and Kavi's robot never stand in a desk, its chairs or the walkway round it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DESKS, DESK_SIZE, FLOOR, EXIT_DOOR } from '../src/shared/layout.js';
+import { BALCONY_DOOR, DESKS, DESK_SIZE, FLOOR, EXIT_DOOR, STAIRS, WINDOWS } from '../src/shared/layout.js';
 import { KAVI_BOARD, KAVI_HOME, KAVI_PATROL } from '../src/shared/kavi-office.js';
 import { JEV_BOARD } from '../src/shared/jev.js';
 
@@ -47,4 +47,12 @@ test("Kavi's robot rests, and walks, clear of every desk zone and both boards", 
       for (const zone of [...deskZones, ...Object.values(boards)]) assert.equal(overlaps(me, zone), false, `patrol leg ${i} at (${x.toFixed(1)}, ${z.toFixed(1)})`);
     }
   }
+});
+
+test('the Jev board on the south wall clears the balcony door, the windows and the loft stairs', () => {
+  const j = boards.jev;
+  const clear = (a: number, b: number) => j.maxX <= a || j.minX >= b;
+  assert.ok(clear(BALCONY_DOOR.u - BALCONY_DOOR.width / 2, BALCONY_DOOR.u + BALCONY_DOOR.width / 2), 'balcony door');
+  for (const w of WINDOWS.filter((w) => w.wall === 'south' && w.y0 < 3)) assert.ok(clear(w.u - w.width / 2, w.u + w.width / 2), `window at ${w.u}`);
+  assert.ok(clear(STAIRS.fromX, STAIRS.toX), 'stairs');
 });
