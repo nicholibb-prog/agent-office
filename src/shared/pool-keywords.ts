@@ -9,11 +9,17 @@ const SEVEN = [
   'merge', 'email', 'message', 'post', 'reply', 'slack', 'send', 'pay', 'paid', 'invoice', 'transfer', 'wire',
   'purchase', 'buy', 'spend', 'delet', 'remove', 'wipe', 'dm', 'sms', 'tweet', 'text', 'venmo', 'zelle', 'cashapp',
   'order', 'mail', 'forward', 'money', 'charge', 'donate', 'bitcoin', 'iban', 'erase', 'destroy', 'whatsapp', 'telegram',
+  // Dan's written gate, money and sends: edge cases that used to score 1.
+  'refund', 'payout', 'wallet', 'fund', 'crypto', 'stripe', 'paypal', 'notify', 'publish', 'invite', 'share',
 ];
 /** Code, secrets, shell, and network. */
 const SIX = [
   'deploy', 'push', 'commit', 'code', 'token', 'password', 'credential', 'auth', 'secret', 'key', 'security', 'network',
   'curl', 'wget', 'http', 'url', 'ssh', 'scp', 'upload', 'exec', 'bash', 'nc', 'ftp',
+  // Dan's written gate, accounts, secrets, shell, code, and network: edge cases that used to score 1.
+  'account', 'apikey', 'oauth', 'cookie', 'session', 'private', 'passphrase', 'passwd', 'sudo', 'chmod', 'chown',
+  'powershell', 'shell', 'script', 'terminal', 'npm', 'pip', 'install', 'repo', 'github', 'pull', 'patch',
+  'refactor', 'webhook', 'proxy', 'tunnel', 'dns', 'vpn', 'download', 'api', 'cron', 'docker', 'firewall',
 ];
 /** Sign-in and a destructive shell word. Code filenames are scored separately. */
 const FOUR = ['rm', 'login', 'signin'];
