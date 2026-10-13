@@ -1,6 +1,7 @@
 /** The board agents: what each is for, and the ones waiting by their boards before anyone has asked them anything. */
 import { STATION_AGENT, type StationKind } from '../../shared/layout';
 import { Worker } from '../world/character';
+import type { StatuslessTask } from '../world/character/worker-badges';
 import type { DeskView } from '../world/types';
 import type { World } from '../world/world';
 import { noOutline } from './outline';
@@ -25,7 +26,8 @@ export function idleAgentsIn(w: World): IdleAgent[] {
     const agent = STATION_AGENT[kind];
     const model = new Worker(agent.name, agent.color);
     model.setStatus('idle', false);
-    model.setTask({ name: STATION_INFO[kind].offer, summary: STATION_INFO[kind].does });
+    // No status of its own: nothing's running for it, so its card has no READY (or any) pill.
+    model.setTask({ name: STATION_INFO[kind].offer, summary: STATION_INFO[kind].does, noStatus: true } as StatuslessTask);
     model.setOutfit(w.plan.agents.outfit === 'peasant' ? 'peasant' : null);
     const view = w.desks.get(def.id)!;
     view.vacancy.children[0].add(model.root);

@@ -29,6 +29,15 @@ const TASK_CHIP: Record<string, [string, string, string]> = {
   offline: ['💤 ASLEEP', STATUS_BULB.offline, '#ffffff'],
 };
 
+/** A card with no real status behind it (a board agent waiting by its board): no pill on it. */
+export type StatuslessTask = WorkerTask & { noStatus: true };
+const statusless = (t: WorkerTask | undefined): boolean => !!t && (t as Partial<StatuslessTask>).noStatus === true;
+
+/** The pill for `status`, or none for a status it doesn't know (never a made-up READY). */
+export function taskChip(status: string): [string, string, string] | undefined {
+  return Object.hasOwn(TASK_CHIP, status) ? TASK_CHIP[status] : undefined;
+}
+
 /** The chip (or bubble) of a worker whose worktree was deleted outside the office. */
 const LOST_CHIP: [string, string, string] = ['🌿 WORKTREE DELETED', '#ffb703', '#2b2d42'];
 
@@ -50,13 +59,13 @@ export function bubbleFor(status: WorkerStatus, bounce: boolean, task: WorkerTas
   const bubble = lost
     ? '🌿 worktree deleted'
     : prLabel ?? (status === 'needs_input' ? NEEDS_YOU.text : status === 'done' && bounce ? '✅ done!' : status === 'working' ? '⌨️ working' : isAsleep(status) ? '💤' : '');
-  const key = `${lost}|${border}|${prLabel}|${task ? `${status}|${bounce}|${task.name}|${task.summary}` : bubble}`;
+  const key = `${statusless(task)}|${lost}|${border}|${prLabel}|${task ? `${status}|${bounce}|${task.name}|${task.summary}` : bubble}`;
   return {
     key,
     draw: () => {
       if (task) {
-        const [text, chipBg, color] = lost ? LOST_CHIP : prLabel ? [prLabel.toUpperCase(), border!, '#ffffff'] : (TASK_CHIP[status] ?? TASK_CHIP.idle);
-        return cardSprite({ chip: { text, bg: chipBg, color }, title: task.name, body: task.summary, bg: isAsleep(status) ? '#e9ecef' : bg, border });
+        const pill = lost ? LOST_CHIP : prLabel ? ([prLabel.toUpperCase(), border!, '#ffffff'] as [string, string, string]) : statusless(task) ? undefined : taskChip(status);
+        return cardSprite({ chip: pill && { text: pill[0], bg: pill[1], color: pill[2] }, title: task.name, body: task.summary, bg: isAsleep(status) ? '#e9ecef' : bg, border });
       }
       if (asking) return textSprite(bubble, { bg: NEEDS_YOU.bg, color: NEEDS_YOU.color, size: NEEDS_YOU.size, border: pr && border });
       return bubble ? textSprite(bubble, { bg: lost ? LOST_CHIP[1] : bg, size: 38, border }) : null;
