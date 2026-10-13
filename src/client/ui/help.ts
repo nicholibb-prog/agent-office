@@ -11,7 +11,7 @@ export const HELP_ROWS: readonly (readonly [string, string])[] = [
   ['Click / E', "Use what you look at: hire a worker, open its terminal, read a board, call a meeting in the meeting room, watch the TV, put a song on the jukebox, tee off from the balcony, sit on a couch, a beanbag, a chair or the balcony bench (walk off to get up)"],
   ['🖥️', "Click a worker's laptop to open its live desktop large. It keeps moving while they work, and sits still when they are idle. Esc closes it. E still opens the real terminal"],
   ['🤝', 'Walk into the meeting room to join a huddle. ☰ Huddle is the shared agenda and the decision log. Idle workers may join; WORKING and needs owner stay put. The roster says in meeting.'],
-  ['👥', 'Click someone under "In the office" to walk over to them (on another floor, you ride the elevator first). The line under their name says what they have open or where they are'],
+  ['👥', 'Open 👥 People and click someone to walk over to them (on another floor, you ride the elevator first). The line under their name says what they have open or where they are'],
   ['🛗', 'Every project is a floor: step into the elevator on the north wall and press E (or click the project name, top left) to go to another one or add a project. It goes down to the garage too, and back up from there'],
   ['🤖', 'An agent stands by the issues board, the PR board and the task queue. Press E at one and type what you want: it runs as an agent that knows that board. O there opens its terminal, X sends it home'],
   ['📝', 'The whiteboard on wheels between the desks and the lounge: press E to draw on it with everyone on your floor, live. What you draw stays up on the board'],
