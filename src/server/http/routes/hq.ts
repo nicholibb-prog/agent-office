@@ -14,7 +14,7 @@ import { cardFor, ingestInbox, notePlayerChat, readThread, appendThread, writeCa
 import { isOkkinSeat, okkinClient, okkinThread, probeOkkin, switchOkkinModel, talkToOkkin } from '../../hq/okkin.js';
 import { markSwitch, switchCooling, talkLimited } from '../../hq/limits.js';
 import { okkinJobs, okkinLastSpeed, okkinLoaded, okkinQueueDepth } from '../../hq/okkin.js';
-import { flipPower, loadPowerConfig, parseAction, powerCooling, powerRightsBlocked, realRunner } from '../../hq/okkin-power.js';
+import { flipPower, loadPowerConfig, recheckExposure, parseAction, powerCooling, powerRightsBlocked, realRunner } from '../../hq/okkin-power.js';
 import { bestModelFor, dialStops, loadLoftConfig, ramAllows } from '../../hq/okkin-loft.js';
 import { createOllama, psModels } from '../../ollama.js';
 import { OKKIN_OLLAMA_ORIGINS } from '../../hq/okkin.js';
@@ -255,6 +255,7 @@ export const hqRoutes = {
       const loft = loadLoftConfig(ctx.cfg.dataDir);
       const stops = dialStops(loft, snap.options);
       const power = loadPowerConfig(ctx.cfg.dataDir);
+      const exposed = snap.chip !== 'offline' ? await recheckExposure(ctx.cfg.dataDir, realRunner, power) : false;
       const gpu = (await realRunner.gpuStats?.()) ?? null;
       const job = String(url.searchParams.get('job') || '').slice(0, 24);
       if (snap.chip === 'working' || snap.chip === 'switching') idleSince = Date.now();
@@ -273,6 +274,7 @@ export const hqRoutes = {
         gpu,
         pick: job ? bestModelFor(job, stops)?.tag ?? null : null,
         idleSleepMin: loft.idleSleepMin,
+        exposed,
       });
     },
   },
