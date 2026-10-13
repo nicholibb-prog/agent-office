@@ -19,7 +19,7 @@ import { okkinInstalled, okkinJobs, okkinLoaded, okkinQueueDepth } from '../../h
 import { flipPower, loadPowerConfig, recheckExposure, parseAction, powerCooling, powerRightsBlocked, realRunner } from '../../hq/okkin-power.js';
 import { benchByTag, bestModelPick, loadedSpeed, dialConfig, dialStops, loadLoftConfig, ramAllows } from '../../hq/okkin-loft.js';
 import { createOllama, psModels } from '../../ollama.js';
-import { OKKIN_OLLAMA_ORIGINS, okkinFetchOverride } from '../../hq/okkin.js';
+import { OKKIN_OLLAMA_ORIGINS, latestOkkinOutput, okkinFetchOverride } from '../../hq/okkin.js';
 
 /** Real per-model speeds seen this session; 'not measured yet' is the client's word for a missing one. */
 function benchmarks() {
@@ -315,6 +315,8 @@ export const hqRoutes = {
         speed: loadedSpeed(loadedNow, bench),
         bench: benchByTag(bench),
         jobs: okkinJobs(),
+        // The CRT: Okkin's latest reply from the in-memory Ask thread (never invented), not for bot credentials.
+        crt: botCredential(req) ? null : latestOkkinOutput(),
         pool: null,
         gpu,
         pick: best?.tag ?? null,

@@ -3,7 +3,7 @@ import type { Ctx } from '../../core/context';
 import { h } from '../../ui/dom';
 import { aside, hintTitle, key, onE } from '../../core/hint';
 import { OKKIN_LOFT_SPOT, modelShortName } from '../../../shared/okkin-loft';
-import { OWNER_ONLY, POWER_ON_FIRST, benchText, chosenIndex, stopsView, switchView, type StopView } from './model';
+import { askView, crtView, holoData, type CrtSource, benchText, chosenIndex, stopsView, switchView, type StopView } from './model';
 
 /** A model's short name, with the full tag on hover and for screen readers. */
 const tagEl = (sel: 'span.okl-tag', tag: string, extra = '') => h(sel, { title: tag, 'aria-label': `${tag}${extra}` }, `${modelShortName(tag)}${extra}`);
@@ -25,6 +25,8 @@ type Loft = {
   pickMeasured?: boolean | null;
   mock?: boolean;
   owner?: boolean;
+  /** Okkin's latest output (the Ask thread), for the CRT. */
+  crt?: CrtSource;
   ownerState?: 'not-set-up' | 'locked' | 'unlocked' | 'changed';
 };
 
@@ -33,11 +35,14 @@ const NEAR = 3.8;
 /** Ask Okkin: a chat box only. Text nodes only (escaped), 500-char cap, memory only on the server. */
 function askBox(on: boolean, owner: boolean, lines: { who: string; text: string }[], ask?: (text: string) => void, say?: (text: string) => void): HTMLElement {
   const log = h('div.okl-log', { role: 'log', 'aria-live': 'polite', 'aria-label': 'Ask Okkin replies' }, ...lines.slice(-6).map((l) => h('p', {}, h('strong', {}, `${l.who} `), l.text)));
-  const input = h('input.okl-input', { type: 'text', maxlength: 500, 'aria-label': 'Ask Okkin', placeholder: !owner ? OWNER_ONLY : on ? 'Ask Okkin' : POWER_ON_FIRST }) as HTMLInputElement;
+  const v = askView(on, owner);
+  const input = h('input.okl-input', { type: 'text', maxlength: 500, 'aria-label': 'Ask Okkin', placeholder: v.placeholder, ...(v.hint ? { 'aria-describedby': 'okl-ask-hint' } : {}) }) as HTMLInputElement;
   // Off, Ask stays focusable and clickable and says why it can't go (never a silent grey).
   const form = h('form.okl-ask', { 'data-off': on && owner ? 'no' : 'yes' }, input, h('button.okl-btn', { type: 'submit', 'aria-disabled': on && owner ? 'false' : 'true', 'data-off': on ? 'no' : 'yes' }, 'Ask'));
-  form.addEventListener('submit', (e) => { e.preventDefault(); if (!owner) { say?.(`Ask: ${OWNER_ONLY}`); return; } if (!on) { say?.(`Ask: ${POWER_ON_FIRST}`); return; } const t = input.value.trim().slice(0, 500); if (t && ask) { input.value = ''; ask(t); } });
-  return h('section', {}, h('h3', {}, 'Ask'), log, form);
+  // The hint is already on screen once (below the box); a refused submit just keeps focus there.
+  form.addEventListener('submit', (e) => { e.preventDefault(); if (v.hint) { input.focus(); return; } const t = input.value.trim().slice(0, 500); if (t && ask) { input.value = ''; ask(t); } });
+  void say;
+  return h('section', {}, h('h3', {}, 'Ask'), log, form, v.hint ? h('p.okl-muted.okl-ask-hint', { id: 'okl-ask-hint' }, v.hint) : null);
 }
 
 /** Unlock owner: the owner passphrase (never stored in the page), or Lock when unlocked. */
@@ -182,8 +187,9 @@ function sceneState(d: Loft | null) {
   const stops = stopsView(d);
   const sw = switchView(d, loadError, loadStatus);
   const idx = chosenIndex(d, stops);
-  const holo = d ? { tps: d.speed?.tokensPerSec ?? null, model: d.loaded[0]?.name ?? null, mock: !!d.mock } : null;
-  return { power: d?.power ?? 'off', busy: d?.okkin.chip === 'working', loading: d?.okkin.chip === 'switching', switchWorks: sw.works, switchLabel: sw.label, light: sw.light, dial: stops.map((s) => ({ role: s.role, status: s.status })), dialIndex: idx, dialRole: stops[idx]?.role, holo } as const;
+  const holo = holoData(d);
+  const crt = crtView(d);
+  return { power: d?.power ?? 'off', busy: d?.okkin.chip === 'working', loading: d?.okkin.chip === 'switching', switchWorks: sw.works, switchLabel: sw.label, light: sw.light, dial: stops.map((s) => ({ role: s.role, status: s.status })), dialIndex: idx, dialRole: stops[idx]?.role, holo, crt } as const;
 }
 
 export function installOkkinLoft(ctx: Ctx) {

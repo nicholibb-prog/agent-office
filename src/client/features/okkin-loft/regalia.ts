@@ -224,7 +224,7 @@ export function buildScroll(): THREE.Group {
 
 /** The pedestal: a stone plinth with a marble top and a gold fillet, the inscription cut into its front. */
 /** The plinth's steps (bottom first: inset from the footprint's front and sides, and rise) and its die. */
-export const PEDESTAL_STEPS = [{ inset: 0, rise: 0.11 }, { inset: 0.14, rise: 0.11 }] as const;
+export const PEDESTAL_STEPS = [{ inset: 0, rise: 0.2 }, { inset: 0.14, rise: 0.2 }] as const;
 export const PEDESTAL_DIE = { inset: 0.28 } as const;
 
 export function buildPedestal(): { group: THREE.Group; inscription: string } {

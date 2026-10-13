@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mesh, roundedBox, textPlane, toon } from '../../world/toon';
 import type { Collider, Interactable } from '../../world/types';
 import type { Fixture } from '../../world/office/fixture';
-import { OKKIN_CONSOLE, OKKIN_LOFT, OKKIN_MODELS, OKKIN_PEDESTAL, OKKIN_SCROLL, OKKIN_SIGN } from '../../../shared/okkin-loft';
+import { OKKIN_CONSOLE, OKKIN_CONSOLE_STEP, OKKIN_CRT, OKKIN_LOFT, OKKIN_MODELS, OKKIN_PEDESTAL, OKKIN_SCROLL, OKKIN_SIGN } from '../../../shared/okkin-loft';
 import { LOFT_PALETTE, buildPedestal, buildScroll, buildSign } from './regalia';
 import { TOWER, buildHero } from './hero';
 
@@ -22,7 +22,78 @@ export type LoftState = {
   loading?: boolean;
   /** The hologram's real data: live tokens/sec and the loaded model; null when there's none. */
   holo?: { tps: number | null; model: string | null; mock: boolean } | null;
+  /** The CRT beside the console (see model.ts crtView). */
+  crt?: { mode: 'off' | 'idle' | 'live'; lines: string[]; mock: boolean };
 };
+
+/** A small retro CRT: scanlines and a slightly curved glass, blue and gold. Draws only what crtView gives it. */
+export function buildCrt() {
+  const g = new THREE.Group();
+  g.name = 'okkin-crt';
+  g.position.set(OKKIN_CRT.x, OKKIN_CRT.y, OKKIN_CRT.z);
+  g.rotation.y = -Math.PI / 2; // screen (+z local) faces the floor (-x)
+  const W = OKKIN_CRT.width, H = OKKIN_CRT.height;
+  g.add(mesh(roundedBox(W + 0.08, H + 0.08, 0.34, 0.05), toon('#0e1626'), 0, 0, -0.14));
+  g.add(mesh(new THREE.BoxGeometry(W + 0.1, 0.02, 0.02), new THREE.MeshBasicMaterial({ color: LOFT_PALETTE.gold }), 0, -H / 2 - 0.035, 0.03, false));
+  const standH = OKKIN_CRT.y - OKKIN_CONSOLE.step - H / 2 - 0.04;
+  const stand = mesh(new THREE.CylinderGeometry(0.05, 0.09, standH, 12), toon(LOFT_PALETTE.stone), 0, -(H / 2 + 0.04) - standH / 2, -0.14);
+  g.add(stand);
+  let canvas: HTMLCanvasElement | null = null;
+  let tex: THREE.CanvasTexture | null = null;
+  if (typeof document !== 'undefined') {
+    canvas = document.createElement('canvas');
+    canvas.width = 384;
+    canvas.height = 300;
+    tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+  }
+  // The glass bulges a little toward you.
+  const geo = new THREE.PlaneGeometry(W, H, 12, 10);
+  const pos = geo.attributes.position!;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i) / (W / 2), y = pos.getY(i) / (H / 2);
+    pos.setZ(i, 0.025 * (1 - (x * x + y * y) / 2));
+  }
+  geo.computeVertexNormals();
+  const screen = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+  screen.name = 'okkin-crt-screen';
+  screen.position.z = 0.03;
+  g.add(screen);
+  let key = '';
+  const draw = (v: { mode: 'off' | 'idle' | 'live'; lines: string[]; mock: boolean }) => {
+    const k = JSON.stringify(v);
+    if (k === key) return;
+    key = k;
+    g.userData.crt = v;
+    const c = canvas?.getContext('2d');
+    if (!c || typeof c.fillText !== 'function') return;
+    const cw = 384, ch = 300;
+    c.fillStyle = v.mode === 'off' ? '#03050a' : '#071430';
+    c.fillRect(0, 0, cw, ch);
+    if (v.mode !== 'off') {
+      c.font = '600 19px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+      c.textAlign = 'left';
+      c.textBaseline = 'top';
+      v.lines.forEach((l, i) => {
+        c.fillStyle = i === 0 && v.mode === 'live' ? LOFT_PALETTE.goldLight : v.mode === 'idle' ? '#8fb0e8' : '#cfe0ff';
+        c.fillText(l, 18, 22 + i * 38);
+      });
+      if (v.mock) {
+        c.fillStyle = LOFT_PALETTE.gold;
+        c.fillRect(cw - 92, ch - 40, 76, 26);
+        c.fillStyle = '#071430';
+        c.font = '800 16px ui-monospace, Menlo, monospace';
+        c.fillText('MOCK', cw - 77, ch - 35);
+      }
+      // Scanlines and a soft vignette.
+      c.fillStyle = 'rgba(0,0,0,.22)';
+      for (let y = 0; y < ch; y += 3) c.fillRect(0, y, cw, 1);
+    }
+    if (tex) tex.needsUpdate = true;
+  };
+  draw({ mode: 'off', lines: [], mock: false });
+  return { group: g, draw, screen };
+}
 
 export const LIGHT = { on: '#34c759', off: '#8e8e93', setup: '#ff9f0a', error: '#ff3b30' } as const;
 
@@ -73,7 +144,15 @@ export function buildOkkinLoft(): OkkinLoftView {
   const C = OKKIN_CONSOLE;
   const consoleG = new THREE.Group();
   consoleG.name = 'okkin-console';
-  consoleG.position.set(C.x, 0, C.z);
+  consoleG.position.set(C.x, C.step, C.z);
+  // The stone step the console and the CRT stand on, with a gold nose.
+  const CS = OKKIN_CONSOLE_STEP;
+  const step = mesh(new THREE.BoxGeometry(CS.maxX - CS.minX, C.step, CS.maxZ - CS.minZ), toon(LOFT_PALETTE.stone), (CS.minX + CS.maxX) / 2, C.step / 2, (CS.minZ + CS.maxZ) / 2);
+  step.name = 'okkin-console-step';
+  group.add(step);
+  group.add(mesh(new THREE.BoxGeometry(0.03, 0.025, CS.maxZ - CS.minZ + 0.01), new THREE.MeshBasicMaterial({ color: LOFT_PALETTE.gold }), CS.minX - 0.005, C.step - 0.0125, (CS.minZ + CS.maxZ) / 2, false));
+  const crt = buildCrt();
+  group.add(crt.group);
   consoleG.rotation.y = -Math.PI / 2; // its front (+z local) faces -x, toward the floor
   // Stone and gold, like the plinth: a stone pillar with gold bands, a deep-blue slate top in a gold rim.
   consoleG.add(mesh(roundedBox(C.width, C.height - 0.08, C.depth, 0.04), toon(LOFT_PALETTE.stone), 0, (C.height - 0.08) / 2, 0));
@@ -140,6 +219,7 @@ export function buildOkkinLoft(): OkkinLoftView {
   let t = 0;
   const paint = () => {
     const on = state.power === 'on';
+    crt.draw(state.crt ?? { mode: 'off', lines: [], mock: false });
     // The switch: up when Okkin is really on. Not set up: amber lamp and the plate says so.
     const works = !!state.switchWorks;
     lever.rotation.x = on ? -0.45 : 0.45;
@@ -158,7 +238,8 @@ export function buildOkkinLoft(): OkkinLoftView {
     { minX: OKKIN_PEDESTAL.minX, maxX: OKKIN_PEDESTAL.maxX, minZ: OKKIN_PEDESTAL.minZ, maxZ: OKKIN_PEDESTAL.maxZ, top: OKKIN_PEDESTAL.height },
     { minX: heroFront, maxX: L.maxX - 0.08, minZ: L.minZ + 0.1, maxZ: L.maxZ - 0.1, top: OKKIN_PEDESTAL.height + TOWER.height },
     { minX: OKKIN_SCROLL.x - 0.25, maxX: OKKIN_SCROLL.x + 0.25, minZ: OKKIN_SCROLL.z - OKKIN_SCROLL.width / 2, maxZ: OKKIN_SCROLL.z + OKKIN_SCROLL.width / 2, top: OKKIN_SCROLL.bottom + OKKIN_SCROLL.height + 0.25 },
-    { minX: C.x - C.depth / 2, maxX: C.x + C.depth / 2, minZ: C.z - C.width / 2, maxZ: C.z + C.width / 2, top: C.height },
+    { minX: C.x - C.depth / 2, maxX: C.x + C.depth / 2, minZ: C.z - C.width / 2, maxZ: C.z + C.width / 2, top: C.step + C.height },
+    { minX: OKKIN_CONSOLE_STEP.minX, maxX: OKKIN_CONSOLE_STEP.maxX, minZ: OKKIN_CONSOLE_STEP.minZ, maxZ: OKKIN_CONSOLE_STEP.maxZ, top: C.step },
   ];
   // E or a click on the switch or the dial: see installOkkinLoft (index.ts) for what they do.
   const interactables: Interactable[] = [

@@ -109,3 +109,39 @@ export function benchText(d: LoftLike | null, s: StopView): string {
   if (!b || !(b.tokensPerSec > 0)) return 'not measured yet';
   return `${b.tokensPerSec} tok/s${d?.mock ? ' (mock)' : s.status === 'unknown' ? ' · earlier this session' : ''}`;
 }
+
+/** What Okkin last said, from the loft data (the in-memory Ask thread); never invented. */
+export type CrtSource = { text: string; at: number; model: string | null } | null;
+export type CrtView = { mode: 'off' | 'idle' | 'live'; lines: string[]; mock: boolean };
+export const CRT_IDLE = 'okkin idle · waiting for a question';
+export const CRT_COLS = 34;
+export const CRT_ROWS = 6;
+
+/** The CRT beside the console: dark when off, an honest idle line with no output, else the latest output's tail. */
+export function crtView(d: (LoftLike & { crt?: CrtSource }) | null): CrtView {
+  const mock = !!d?.mock;
+  if (!d || d.power !== 'on') return { mode: 'off', lines: [], mock };
+  const text = d.crt?.text?.replace(/\s+/g, ' ').trim();
+  if (!text) return { mode: 'idle', lines: [CRT_IDLE], mock };
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    const word = w.length > CRT_COLS ? `${w.slice(0, CRT_COLS - 1)}…` : w;
+    if ((cur ? cur.length + 1 : 0) + word.length > CRT_COLS) { lines.push(cur); cur = word; } else cur = cur ? `${cur} ${word}` : word;
+  }
+  if (cur) lines.push(cur);
+  return { mode: 'live', lines: [`> ${d.crt!.model ?? 'okkin'}`, ...lines.slice(-(CRT_ROWS - 1))], mock };
+}
+
+/** The hologram's data: real tok/s and the loaded model only while Okkin is on; '—' otherwise. */
+export function holoData(d: (LoftLike & { speed?: { tokensPerSec: number } | null; loaded?: { name: string }[] }) | null): { tps: number | null; model: string | null; mock: boolean } | null {
+  if (!d) return null;
+  if (d.power !== 'on') return { tps: null, model: null, mock: !!d.mock };
+  return { tps: d.speed?.tokensPerSec ?? null, model: d.loaded?.[0]?.name ?? null, mock: !!d.mock };
+}
+
+/** The Ask box: ONE hint when it can't send (shown once, below the box); the placeholder never repeats it. */
+export function askView(on: boolean, owner: boolean): { placeholder: string; hint: string | null } {
+  return { placeholder: 'Ask Okkin', hint: !owner ? OWNER_ONLY : on ? null : POWER_ON_FIRST };
+}
