@@ -22,7 +22,7 @@ export function toPaleoHebrew(hebrew: string): string {
 }
 
 /**
- * 'Victory of the people', in the ancient defective spelling נצחן העם: no vav for the -ōn ending,
- * as Iron Age inscriptions wrote it (the Samaria ostraca spell Šomrōn שמרן). Modern: ניצחון העם.
+ * 'Victory of the people', as the owner's checklist asks: the full spelling ניצחון העם (with yod and
+ * vav), letter for letter into Paleo-Hebrew. The ancient defective spelling would be נצחן העם.
  */
-export const VICTORY_OF_THE_PEOPLE = { hebrew: 'נצחן העם', modern: 'ניצחון העם' } as const;
+export const VICTORY_OF_THE_PEOPLE = { hebrew: 'ניצחון העם', defective: 'נצחן העם' } as const;
