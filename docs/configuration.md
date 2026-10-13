@@ -180,8 +180,8 @@ upload; the office holds no Google OAuth token, refresh token or service-account
 
 `--password` on the command line shows up in any process listing, so it is deprecated.
 The server reads the password in this order: `AGENT_OFFICE_PASSWORD`, then
-`AGENT_OFFICE_PASSWORD_FILE` (a path to an owner-only file; one trailing newline is
-trimmed), then `--password` with a one-line warning. The value is never printed.
+`AGENT_OFFICE_PASSWORD_FILE` (a path to an owner-only file; surrounding whitespace is
+trimmed; a blank file is refused), then `--password` with a one-line warning. The value is never printed.
 
 ```sh
 # environment variable
