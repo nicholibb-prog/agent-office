@@ -118,3 +118,16 @@ test('desk face: idle has no live field (unchanged); working with no frame says 
   assert.equal(workerDesktop({ status: 'idle', name: 'Seat A' }, undefined, 0, 0).live, undefined);
   assert.equal(workerDesktop({ status: 'working', name: 'Seat A' }, undefined, 0, 0).live, 'none');
 });
+
+test('stale frames are deleted from memory by frame() and list()', () => {
+  const s = new LiveFrames({ maxBytes: 1024, minIntervalMs: 0, staleMs: 1000 });
+  s.setEnabled('seat-a', true);
+  s.setEnabled('seat-b', true);
+  const t = Date.now();
+  s.push('seat-a', 'image/png', PNG, t);
+  s.push('seat-b', 'image/png', PNG, t);
+  assert.equal(s.frame('seat-a', t + 2000), undefined);
+  assert.equal(s.held('seat-a'), false, 'frame() dropped it');
+  assert.deepEqual(s.list(t + 2000), [{ seat: 'seat-a', live: false }, { seat: 'seat-b', live: false }]);
+  assert.equal(s.held('seat-b'), false, 'list() dropped it');
+});

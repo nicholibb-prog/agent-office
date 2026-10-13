@@ -65,11 +65,21 @@ export class LiveFrames {
   frame(seat: string, now = Date.now()): LiveFrame | undefined {
     if (!this.on.has(seat)) return undefined;
     const f = this.frames.get(seat);
-    if (!f || now - f.at > this.opts.staleMs) return undefined;
+    if (!f) return undefined;
+    if (now - f.at > this.opts.staleMs) {
+      this.frames.delete(seat); // a stale frame is dropped from memory, not kept around
+      return undefined;
+    }
     return f;
   }
 
+  /** Has a frame in memory (stale or not). For tests: frame() and list() drop stale ones. */
+  held(seat: string): boolean {
+    return this.frames.has(seat);
+  }
+
   list(now = Date.now()): { seat: string; live: boolean; at?: number }[] {
+    // frame() drops each seat's stale frame as it goes.
     return [...this.on].sort().map((seat) => {
       const f = this.frame(seat, now);
       return { seat, live: !!f, ...(f ? { at: f.at } : {}) };
