@@ -24,5 +24,6 @@
     "C:\\<ABSOLUTE_DIR>\\okkin-off-v2.ps1"
   ],
   "_stop_preview_variant": "append -WhatIf as a 7th argv for a dry run",
-  "scriptSha256": "798835970eaec25b2dc811c9b0523516af851f20ce8b74f67920891fdb27c4d5"
+  "scriptSha256": "798835970eaec25b2dc811c9b0523516af851f20ce8b74f67920891fdb27c4d5",
+  "scriptPath": "<ABSOLUTE_DIR_PENDING>\\okkin-off-v2.ps1"
 }

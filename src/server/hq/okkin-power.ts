@@ -19,7 +19,7 @@ export const PINNED_OLLAMA_HOST = '127.0.0.1:11434';
 
 export type PowerAction = 'start' | 'stop';
 export type Tuning = { num_ctx?: number; num_gpu?: number; keep_alive?: string | number };
-export type PowerConfig = { start: string[]; stop: string[]; tuning: Tuning; scriptSha256?: string };
+export type PowerConfig = { start: string[]; stop: string[]; tuning: Tuning; scriptSha256?: string; scriptPath?: string };
 export type PowerLoad = { ok: true; config: PowerConfig } | { ok: false; reason: string };
 
 /** Programs and words that would elevate or hand the argv to a shell. Any of them disables the switch. */
@@ -113,7 +113,7 @@ export function loadPowerConfig(dataDir: string, opts: { fs?: PowerFs; platform?
     if (st.uid !== uid) return { ok: false, reason: 'power config not owned by this user' };
     if (st.mode & 0o022) return { ok: false, reason: 'power config is group- or world-writable' };
   }
-  let raw: { start?: unknown; stop?: unknown; tuning?: unknown; scriptSha256?: unknown };
+  let raw: { start?: unknown; stop?: unknown; tuning?: unknown; scriptSha256?: unknown; scriptPath?: unknown };
   try {
     raw = JSON.parse(fs.read(file));
   } catch {
@@ -122,7 +122,12 @@ export function loadPowerConfig(dataDir: string, opts: { fs?: PowerFs; platform?
   if (!argvOk(raw.start) || !argvOk(raw.stop)) return { ok: false, reason: 'power control not set up' };
   const pin = typeof raw.scriptSha256 === 'string' && /^[0-9a-f]{64}$/i.test(raw.scriptSha256) ? raw.scriptSha256.toLowerCase() : undefined;
   if (raw.scriptSha256 !== undefined && !pin) return { ok: false, reason: 'scriptSha256 is not a sha256' };
-  return { ok: true, config: { start: [...raw.start], stop: [...raw.stop], tuning: tuningOf(raw.tuning), ...(pin ? { scriptSha256: pin } : {}) } };
+  const script = scriptOf(raw.stop as string[]);
+  if (script) {
+    // A PowerShell stop must name the exact approved path and carry its sha256 pin.
+    if (typeof raw.scriptPath !== 'string' || raw.scriptPath !== script || !pin) return { ok: false, reason: 'stop script path or sha256 pin missing or different' };
+  }
+  return { ok: true, config: { start: [...raw.start], stop: [...raw.stop], tuning: tuningOf(raw.tuning), ...(pin ? { scriptSha256: pin } : {}), ...(script ? { scriptPath: script } : {}) } };
 }
 
 /** The child's whole env: a few OS basics and the pinned host. Never a request value, never the parent's OLLAMA_*. */
@@ -211,10 +216,25 @@ export const realRunner: Runner = {
   },
 };
 
-/** True when something listens on Ollama's port on every interface (0.0.0.0, [::], or *). */
+/**
+ * Allowlist: true when any LISTEN socket on Ollama's port has a local address other than
+ * 127.0.0.1 or [::1] (a LAN IP, 0.0.0.0, [::], *). Reads `ss -ltn` and Windows `netstat -ano` rows.
+ */
 export function exposedOnAllInterfaces(table: string, port = 11434): boolean {
-  const re = new RegExp(`(^|\\s)(0\\.0\\.0\\.0|\\[::\\]|\\*|::):${port}(\\s|$)`, 'm');
-  return table.split(/\r?\n/).some((line) => re.test(line) && !/ESTABLISHED|TIME_WAIT/i.test(line));
+  for (const raw of table.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || !/LISTEN/i.test(line) && !/^\S+\s+\S+:\d+/.test(line)) continue;
+    if (/ESTABLISHED|TIME_WAIT|CLOSE_WAIT|SYN_/i.test(line)) continue;
+    const cols = line.split(/\s+/);
+    // netstat: Proto Local Foreign State PID. ss: State Recv-Q Send-Q Local Peer.
+    const local = /^tcp/i.test(cols[0]!) ? cols[1] : cols[3];
+    if (!local) continue;
+    const at = local.lastIndexOf(':');
+    if (at < 0 || local.slice(at + 1) !== String(port)) continue;
+    const host = local.slice(0, at).replace(/%.*$/, '');
+    if (host !== '127.0.0.1' && host !== '[::1]') return true;
+  }
+  return false;
 }
 
 /** Stop failed for lack of rights: the switch shows disabled rather than trying anything higher. */
@@ -290,7 +310,8 @@ export async function flipPower(dataDir: string, action: PowerAction, who: strin
   if (busy) return { ...base, status: 409, error: 'power change in progress' };
   if (powerCooling(now())) return { ...base, status: 429, error: 'cooling down' };
   const script = scriptOf(load.config.stop);
-  if (load.config.scriptSha256 && script) {
+  if (script) {
+    if (!load.config.scriptSha256 || load.config.scriptPath !== script) return { ...base, status: 503, error: 'stop script not pinned; refused' };
     const got = (deps.runner.hash ?? fileSha256)(script);
     if (got !== load.config.scriptSha256) return { ...base, status: 503, error: 'stop script hash does not match the pin; refused' };
   }
@@ -346,4 +367,16 @@ export async function flipPower(dataDir: string, action: PowerAction, who: strin
   } finally {
     busy = false;
   }
+}
+
+/** Dan nit (b): while ON, each loft read re-checks exposure; an exposed listener is stopped and logged. */
+export async function recheckExposure(dataDir: string, runner: Runner = realRunner, load: PowerLoad = loadPowerConfig(dataDir)): Promise<boolean> {
+  if (!exposedOnAllInterfaces(await runner.listeners())) return false;
+  let result = 'exposed; power control not set up, could not stop';
+  if (load.ok) {
+    const r = await runner.run(load.config.stop, childEnv());
+    result = r.ok ? 'exposed on loft check; stopped' : 'exposed on loft check; stop failed';
+  }
+  appendPowerLog(dataDir, { at: new Date().toISOString(), who: 'loft-check', action: 'exposed-killed', result, freedMB: null });
+  return true;
 }
