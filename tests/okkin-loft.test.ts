@@ -189,3 +189,11 @@ test('a PowerShell stop without the exact pinned path is refused at load', () =>
   assert.equal(loadPowerConfig('/x', { fs: fsOf({ start: ['/bin/s'], stop, scriptSha256: '7'.repeat(64), scriptPath: 'C:\\other\\okkin-off-v2.ps1' }), uid: 1, platform: 'linux' }).ok, false);
   assert.equal(loadPowerConfig('/x', { fs: fsOf({ start: ['/bin/s'], stop, scriptSha256: '7'.repeat(64), scriptPath: stop[5] }), uid: 1, platform: 'linux' }).ok, true);
 });
+
+test('round dial: 270° sweep, ends and middle', async () => {
+  const { dialAngle } = await import('../src/client/features/okkin-loft/index.ts');
+  assert.equal(dialAngle(0, 5), -135);
+  assert.equal(dialAngle(2, 5), 0);
+  assert.equal(dialAngle(4, 5), 135);
+  assert.equal(dialAngle(0, 1), 0);
+});

@@ -1,9 +1,11 @@
 import { FLOOR } from './layout.js';
 
 /**
- * Okkin's loft: a small server nook against the east wall, north of the TV and south of the back
- * office bay, facing into the room (-x). Racks along the wall, a raised dais, a nameplate above.
+ * Okkin's loft: a freestanding server island on the open floor south-east of the desk pods, west of
+ * the meeting room and north of the loft stairs, its racks facing the desks (-x). It backs onto no
+ * wall, so it covers no board, sign or window.
  */
-export const OKKIN_LOFT = { minX: FLOOR.maxX - 1.5, maxX: FLOOR.maxX, minZ: -10.2, maxZ: -6.2, rackDepth: 0.8, rackHeight: 2.2 } as const;
+export const OKKIN_LOFT = { minX: 5, maxX: 6.2, minZ: 7, maxZ: 10, rackDepth: 0.8, rackHeight: 2.2 } as const;
 /** Where you stand to use the panel: in front of the racks, on open floor. */
-export const OKKIN_LOFT_SPOT = { x: FLOOR.maxX - 2.4, z: -8.2 } as const;
+export const OKKIN_LOFT_SPOT = { x: 3.8, z: 8.5 } as const;
+void FLOOR;

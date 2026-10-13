@@ -46,7 +46,7 @@ export function buildOkkinLoft(): OkkinLoftView {
   group.add(glow);
   // Nameplate above the racks.
   const plate = textPlane('OKKIN');
-  plate.position.set(L.maxX - 0.08, L.rackHeight + 0.45, cz);
+  plate.position.set(rackX - L.rackDepth / 2 - 0.02, L.rackHeight + 0.4, cz);
   plate.rotation.y = -Math.PI / 2;
   group.add(plate);
 
