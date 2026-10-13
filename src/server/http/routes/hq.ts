@@ -14,9 +14,9 @@ import { loadHqLocal, readCrewFile } from '../../workers/crew.js';
 import { cardFor, ingestInbox, notePlayerChat, readThread, appendThread, writeCard } from '../../hq/relay.js';
 import { isOkkinSeat, okkinClient, okkinThread, probeOkkin, switchOkkinModel, talkToOkkin } from '../../hq/okkin.js';
 import { markSwitch, switchCooling, talkLimited } from '../../hq/limits.js';
-import { okkinJobs, okkinLastSpeed, okkinLoaded, okkinQueueDepth } from '../../hq/okkin.js';
+import { okkinInstalled, okkinJobs, okkinLoaded, okkinQueueDepth } from '../../hq/okkin.js';
 import { flipPower, loadPowerConfig, recheckExposure, parseAction, powerCooling, powerRightsBlocked, realRunner } from '../../hq/okkin-power.js';
-import { bestModelPick, dialConfig, dialStops, loadLoftConfig, ramAllows } from '../../hq/okkin-loft.js';
+import { benchByTag, bestModelPick, loadedSpeed, dialConfig, dialStops, loadLoftConfig, ramAllows } from '../../hq/okkin-loft.js';
 import { createOllama, psModels } from '../../ollama.js';
 import { OKKIN_OLLAMA_ORIGINS } from '../../hq/okkin.js';
 
@@ -278,13 +278,14 @@ export const hqRoutes = {
       const snap = okkinClient(await probeOkkin(envOf(process.env), hq, undefined, { dataDir: ctx.cfg.dataDir }));
       startOkkinIdleSleep(ctx.cfg.dataDir);
       const loft = loadLoftConfig(ctx.cfg.dataDir);
-      const stops = dialStops(dialConfig(loft), snap.options);
+      const stops = dialStops(dialConfig(loft), snap.chip === 'offline' ? null : okkinInstalled(), snap.options);
       const power = loadPowerConfig(ctx.cfg.dataDir);
       const exposed = snap.chip !== 'offline' ? await recheckExposure(ctx.cfg.dataDir, realRunner, power) : false;
       const gpu = (await realRunner.gpuStats?.()) ?? null;
       const job = String(url.searchParams.get('job') || '').slice(0, 24);
       const bench = benchmarks();
-      const best = job ? bestModelPick(job, stops.filter((m) => m.installed), bench, ramAllows) : null;
+      const loadedNow = snap.chip === 'offline' ? [] : okkinLoaded();
+      const best = job ? bestModelPick(job, stops.filter((m) => m.installed && m.allowed), bench, ramAllows) : null;
       if (snap.chip === 'working' || snap.chip === 'switching') idleSince = Date.now();
       return send(res, 200, {
         okkin: snap,
@@ -293,11 +294,11 @@ export const hqRoutes = {
         powerReason: power.ok ? null : power.reason,
         // Read-only for everyone else: the panel shows 'Owner only' on the controls.
         owner: okkinCaller(req, ctx.auth.sessionFromAnyCookie(req), ctx.cfg.dataDir).kind === 'owner',
-        dial: stops.map((m) => ({ tag: m.tag, role: m.role, bestFor: m.bestFor, installed: m.installed, ramOk: ramAllows(m), minFreeRamGB: m.minFreeRamGB ?? null })),
-        loaded: okkinLoaded(),
+        dial: stops.map((m) => ({ tag: m.tag, role: m.role, bestFor: m.bestFor, installed: m.installed, allowed: m.allowed, ramOk: ramAllows(m), minFreeRamGB: m.minFreeRamGB ?? null })),
+        loaded: loadedNow,
         queue: okkinQueueDepth(),
-        speed: okkinLastSpeed(),
-        bench,
+        speed: loadedSpeed(loadedNow, bench),
+        bench: benchByTag(bench),
         jobs: okkinJobs(),
         pool: null,
         gpu,

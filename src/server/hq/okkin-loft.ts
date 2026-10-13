@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { freemem } from 'node:os';
 import path from 'node:path';
 import { modelTagOk } from '../../shared/hq.js';
-import { OKKIN_MODELS } from '../../shared/okkin-loft.js';
+import { OKKIN_MODELS, normTag } from '../../shared/okkin-loft.js';
 
 export const LOFT_FILE = 'okkin-loft.json';
 
@@ -56,11 +56,23 @@ export function dialConfig(config: LoftConfig): LoftConfig {
   return config.models.length ? config : { ...config, models: parseLoftConfig({ models: OKKIN_MODELS }).models };
 }
 
-export type DialStop = LoftModel & { installed: boolean };
-/** The dial's stops: every configured model, in config order, each marked installed or not (from /api/tags). */
-export function dialStops(config: LoftConfig, installed: readonly string[]): DialStop[] {
-  const have = new Set(installed);
-  return config.models.map((m) => ({ ...m, installed: have.has(m.tag) }));
+export type DialStop = LoftModel & { installed: boolean | null; allowed: boolean };
+/**
+ * The dial's stops: every configured model, in config order. `installed` comes from the raw /api/tags
+ * list (normalised, see normTag), or null when it couldn't be read (Okkin off): unknown, not 'not
+ * installed'. `allowed` is the exact allowlist ∩ tags (what a switch may load).
+ */
+export function dialStops(config: LoftConfig, installed: readonly string[] | null, allowed: readonly string[] = []): DialStop[] {
+  const have = installed ? new Set(installed.map(normTag)) : null;
+  const ok = new Set(allowed.map(normTag));
+  return config.models.map((m) => ({ ...m, installed: have ? have.has(normTag(m.tag)) : null, allowed: ok.has(normTag(m.tag)) }));
+}
+
+/** Benchmarks keyed by normalised tag, so 'Okkin' / 'okkin:latest' are one model. */
+export function benchByTag(bench: Record<string, { tokensPerSec: number; at?: number }>): Record<string, { tokensPerSec: number; at?: number }> {
+  const out: Record<string, { tokensPerSec: number; at?: number }> = {};
+  for (const [k, v] of Object.entries(bench)) if (!out[normTag(k)]) out[normTag(k)] = v;
+  return out;
 }
 
 /** A model gated on free RAM may only be picked when the box has that much free right now. */
@@ -84,7 +96,9 @@ export type BestPick = { tag: string; measured: boolean; reason: string };
 export function bestModelPick(job: string, stops: readonly LoftModel[], bench: Record<string, { tokensPerSec: number }>, usable: (m: LoftModel) => boolean = () => true): BestPick | null {
   const j = job.trim().toLowerCase();
   const ok = stops.filter((m) => usable(m));
-  const measured = (m: LoftModel) => !!bench[m.tag] && bench[m.tag]!.tokensPerSec > 0;
+  const nb = benchByTag(bench);
+  const measured = (m: LoftModel) => !!nb[normTag(m.tag)] && nb[normTag(m.tag)]!.tokensPerSec > 0;
+  bench = Object.fromEntries(ok.map((m) => [m.tag, nb[normTag(m.tag)] ?? { tokensPerSec: 0 }]));
   const forJob = ok.filter((m) => m.bestFor.map((b) => b.toLowerCase()).includes(j));
   const fastest = (ms: LoftModel[]) => [...ms].sort((a, b) => bench[b.tag]!.tokensPerSec - bench[a.tag]!.tokensPerSec)[0];
   const mj = forJob.filter(measured);
@@ -95,4 +109,17 @@ export function bestModelPick(job: string, stops: readonly LoftModel[], bench: R
   if (any.length) return { tag: fastest(any)!.tag, measured: true, reason: `fastest measured, ${bench[fastest(any)!.tag]!.tokensPerSec} tok/s` };
   const fallback = forJob[0] ?? ok.find((m) => m.role === 'default') ?? ok[0];
   return fallback ? { tag: fallback.tag, measured: false, reason: 'not benchmarked yet' } : null;
+}
+
+/**
+ * The panel's Speed: the benchmark of the model loaded right now (same normalised tag as the Loaded
+ * line and the cards), so the three never disagree. Nothing loaded, or not measured: null.
+ */
+export function loadedSpeed(loaded: readonly { name: string }[], bench: Record<string, { tokensPerSec: number }>): { tokensPerSec: number; model: string } | null {
+  const nb = benchByTag(bench);
+  for (const m of loaded) {
+    const b = nb[normTag(m.name)];
+    if (b && b.tokensPerSec > 0) return { tokensPerSec: b.tokensPerSec, model: m.name };
+  }
+  return null;
 }

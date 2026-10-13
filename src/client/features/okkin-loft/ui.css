@@ -65,7 +65,7 @@ body:has([aria-modal="true"]:not([hidden])) :is(.since-close, #project) { visibi
 .okl-center h3 { align-self: flex-start; }
 .okl-power-reason { max-width: 380px; text-align: center; }
 .okl-missing { font-size: 12px; font-weight: 700; color: #b25000; }
-.okl-tick[data-status="not installed"] { color: #b25000; opacity: .7; text-decoration: line-through; }
+.okl-tick[data-status="not installed"], .okl-tick[data-status="unknown"] { color: #a1a1a6; }
 .okl-load { margin-top: 6px; padding: 6px 14px; font-size: 13px; align-self: flex-start; }
 .okl-knob { cursor: pointer; }
 /* Locked or off controls stay pressable (they say why); they just look quieter. */
@@ -73,3 +73,10 @@ body:has([aria-modal="true"]:not([hidden])) :is(.since-close, #project) { visibi
 .okl-power[aria-disabled="true"] { opacity: .7; cursor: help; }
 .okl-power-reason[data-locked="yes"] { color: #8a5a00; font-weight: 600; }
 .okl-signin { display: inline-block; margin-top: 8px; text-decoration: none; }
+/* The pill sits up top, clear of the console and your hands. */
+.okl-pill { bottom: auto; top: 84px; display: inline-flex; align-items: center; gap: 8px; }
+.okl-light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #8e8e93; margin-right: 6px; vertical-align: middle; flex: none; }
+.okl-light[data-light="on"] { background: #34c759; }
+.okl-light[data-light="setup"] { background: #ff9f0a; }
+.okl-light[data-light="error"] { background: #ff3b30; }
+.okl-load-hint { font-size: 12px; color: #6e6e73; }

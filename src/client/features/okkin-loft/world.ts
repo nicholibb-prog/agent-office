@@ -10,9 +10,13 @@ export type LoftState = {
   /** Whether the power switch works (real config passed). False: it shows 'NOT SET UP', never a fake state. */
   switchWorks?: boolean;
   switchLabel?: string;
+  /** The status light: on green, off grey, setup amber, error red (can't reach Okkin). */
+  light?: 'on' | 'off' | 'setup' | 'error';
   dial?: { role: string; status: 'installed' | 'not installed' | 'unknown' }[];
   dialIndex?: number;
 };
+
+export const LIGHT = { on: '#34c759', off: '#8e8e93', setup: '#ff9f0a', error: '#ff3b30' } as const;
 
 /** The dial in the room turns through this sweep, like the panel's (270°). */
 const SWEEP = (270 * Math.PI) / 180;
@@ -94,13 +98,12 @@ export function buildOkkinLoft(): OkkinLoftView {
   lever.name = 'okkin-power-lever';
   power.add(lever);
   const lampMat = new THREE.MeshBasicMaterial({ color: '#8e8e93' });
-  const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.018, 16), lampMat);
-  lamp.position.set(0.11, 0.07, 0.032);
+  const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.03, 20), lampMat);
+  lamp.name = 'okkin-status-light';
+  lamp.position.set(0.14, 0.06, 0.032);
   power.add(lamp);
   face.add(power);
   label('POWER', -C.width / 4, 0.16);
-  const notSetUp = label('NOT SET UP', -C.width / 4, -0.15, 0.2);
-  notSetUp.name = 'okkin-power-not-set-up';
   // Model dial: a knob with a pointer, and one tick per model round it.
   const dial = new THREE.Group();
   dial.name = 'okkin-model-dial';
@@ -127,7 +130,6 @@ export function buildOkkinLoft(): OkkinLoftView {
     ticks.push({ mat, label: t });
   });
   face.add(dial);
-  label('MODEL', C.width / 4, -0.22, 0.2);
   group.add(consoleG);
 
   let state: LoftState = { power: 'off', busy: false };
@@ -137,13 +139,14 @@ export function buildOkkinLoft(): OkkinLoftView {
     // The switch: up when Okkin is really on. Not set up: amber lamp and the plate says so.
     const works = !!state.switchWorks;
     lever.rotation.x = on ? -0.45 : 0.45;
-    lampMat.color.set(!works ? '#ff9f0a' : on ? '#34c759' : '#8e8e93');
-    notSetUp.visible = !works;
+    const light = state.light ?? (!works ? 'setup' : on ? 'on' : 'off');
+    lampMat.color.set(LIGHT[light]);
+    lamp.userData.light = light;
     const n = state.dial?.length || roles.length;
     knob.rotation.z = -dialTurn(Math.min(state.dialIndex ?? 1, n - 1), n);
     ticks.forEach((t, i) => {
       const st = state.dial?.[i]?.status ?? 'unknown';
-      t.mat.color.set(i === (state.dialIndex ?? 1) ? '#0071e3' : st === 'not installed' ? '#ff9f0a' : st === 'installed' ? '#34c759' : '#6e6e73');
+      t.mat.color.set(i === (state.dialIndex ?? 1) ? '#0071e3' : st === 'installed' ? '#34c759' : '#a1a1a6');
     });
     glowMat.opacity = on ? 0.35 : 0;
     leds.forEach((m, i) => {

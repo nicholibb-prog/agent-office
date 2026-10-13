@@ -3,7 +3,7 @@ import type { Ctx } from '../../core/context';
 import { h } from '../../ui/dom';
 import { aside, hintTitle, key, onE } from '../../core/hint';
 import { OKKIN_LOFT_SPOT, modelShortName } from '../../../shared/okkin-loft';
-import { OWNER_ONLY, POWER_ON_FIRST, chosenIndex, stopsView, switchView, type StopView } from './model';
+import { OWNER_ONLY, POWER_ON_FIRST, benchText, chosenIndex, stopsView, switchView, type StopView } from './model';
 
 /** A model's short name, with the full tag on hover and for screen readers. */
 const tagEl = (sel: 'span.okl-tag', tag: string, extra = '') => h(sel, { title: tag, 'aria-label': `${tag}${extra}` }, `${modelShortName(tag)}${extra}`);
@@ -14,7 +14,7 @@ type Loft = {
   powerControl: 'ready' | 'cooling' | 'no-rights' | 'not-set-up';
   powerReason: string | null;
   okkin: { chip: string; configured: string; model: string | null };
-  dial: { tag: string; role: string; installed?: boolean; ramOk: boolean; minFreeRamGB: number | null }[];
+  dial: { tag: string; role: string; installed?: boolean | null; allowed?: boolean; ramOk: boolean; minFreeRamGB: number | null }[];
   loaded: { name: string; vramMB: number | null }[];
   queue: number;
   speed: { tokensPerSec: number; model: string } | null;
@@ -94,14 +94,16 @@ export function buildDial(stops: StopView[], start: number, on: boolean, pick: (
     knob.style.setProperty('--a', `${dialAngle(i, stops.length)}deg`);
     knob.setAttribute('aria-valuenow', String(i));
     knob.setAttribute('aria-valuetext', `${s.role || 'model'}: ${modelShortName(s.tag)} (${s.tag}), ${active ? 'active' : s.note.toLowerCase()}`);
-    // Never silently grey: an unusable Load says why when pressed (Turn power on first, Not installed…).
-    const load = h('button.okl-btn.okl-load', { type: 'button', 'aria-disabled': !s.usable || active ? 'true' : 'false', title: active ? 'Loaded' : s.usable ? 'Load this model' : s.note }, active ? 'Loaded' : 'Load');
+    // Never silently grey: an unusable Load says why when pressed (Turn power on first, Owner only, Not installed…).
+    const hint = active ? 'Loaded' : s.usable ? 'Load this model' : s.note;
+    const load = h('button.okl-btn.okl-load', { type: 'button', 'aria-disabled': !s.usable || active ? 'true' : 'false', title: hint, 'aria-label': `Load: ${hint}` }, active ? 'Loaded' : 'Load');
     load.addEventListener('click', choose);
     readout.replaceChildren(
       h('span.okl-role', {}, s.role || 'model'),
       tagEl('span.okl-tag', s.tag),
-      active ? h('span.okl-active', {}, 'Active') : h(s.status === 'not installed' ? 'span.okl-missing' : 'span.okl-muted', {}, on ? s.note : `Off · ${s.note}`),
+      active ? h('span.okl-active', {}, 'Active') : h('span.okl-muted', {}, s.note),
       load,
+      ...(!active && !s.usable ? [h('span.okl-load-hint', {}, hint)] : []),
     );
   };
   const k0 = i;
@@ -128,20 +130,21 @@ export function renderPanel(root: HTMLElement, d: Loft | null, act: { toggle(): 
   // The power switch is always there; it only works once the real power config passed. Static icons, never a spinner.
   const sw = switchView(d, loadError, loadStatus);
   // Always focusable and clickable. Locked, a press says why (the reason is also shown under it).
-  const power = h('button.okl-power', { type: 'button', 'data-works': sw.works ? 'yes' : 'no', 'aria-pressed': on ? 'true' : 'false', 'aria-disabled': sw.works ? 'false' : 'true', 'aria-label': `Power switch, Okkin ${sw.power}. ${sw.label}${sw.reason ? `. ${sw.reason}` : ''}` }, h('span.okl-power-ring', { 'data-icon': sw.icon, 'aria-hidden': 'true' }, sw.icon === 'setup' ? '🔧' : '⏻'), h('span.okl-power-label', {}, sw.label));
+  const power = h('button.okl-power', { type: 'button', 'data-works': sw.works ? 'yes' : 'no', 'aria-pressed': on ? 'true' : 'false', 'aria-disabled': sw.works ? 'false' : 'true', 'aria-label': `Power switch, Okkin ${sw.power}. ${sw.label}${sw.reason ? `. ${sw.reason}` : ''}` }, h('span.okl-power-ring', { 'data-icon': sw.icon, 'aria-hidden': 'true' }, sw.icon === 'setup' ? '🔧' : '⏻'), h('span.okl-power-label', {}, h('span.okl-light', { 'data-light': sw.light, title: sw.tip, 'aria-hidden': 'true' }), sw.label));
+  power.title = sw.tip;
   power.addEventListener('click', () => act.toggle());
   const stops = stopsView(d);
   const dial = buildDial(stops, chosenIndex(d, stops), on, act.pick, act.say ?? (() => undefined));
   const stat = (k: string, v: string) => h('div.okl-stat', {}, h('span.okl-k', {}, k), h('span.okl-v', {}, v));
   const gpu = d?.gpu;
-  const cards = h('div.okl-cards', {}, ...stops.map((s) => h('div.okl-card', {}, tagEl('span.okl-tag', s.tag), h('span.okl-v', {}, s.status === 'not installed' ? 'not installed' : d?.bench[s.tag] ? `${d.bench[s.tag]!.tokensPerSec} tok/s` : 'not measured yet'))));
+  const cards = h('div.okl-cards', {}, ...stops.map((s) => h('div.okl-card', {}, tagEl('span.okl-tag', s.tag), h('span.okl-v', {}, benchText(d, s)))));
   const job = h('select.okl-job', { 'aria-label': 'Job type' }, ...['open', 'quick', 'chat', 'code', 'long'].map((j) => h('option', { value: j }, j)));
   const best = h('button.okl-btn', { type: 'button' }, 'Best model for this job');
   best.addEventListener('click', () => act.best((job as HTMLSelectElement).value));
   const close = h('button.okl-close', { type: 'button', 'aria-label': 'Close' }, '×');
   close.addEventListener('click', act.close);
   const parts: (HTMLElement | null)[] = [
-    h('header.okl-head', {}, h('div', {}, h('h2', {}, 'Okkin'), h('p.okl-muted', {}, d ? (on ? `On · ${d.okkin.chip}` : 'Off') : 'Okkin offline')), d?.mock ? h('span.okl-mock', {}, 'mock') : null, close),
+    h('header.okl-head', {}, h('div', {}, h('h2', {}, 'Okkin'), h('p.okl-muted', {}, d ? (on ? `On · ${d.okkin.chip}` : 'Off') : sw.label)), d?.mock ? h('span.okl-mock', {}, 'mock') : null, close),
     h('section.okl-center', {}, h('h3', {}, 'Power'), power, sw.reason ? h('p.okl-muted.okl-power-reason', { 'data-locked': sw.works ? 'no' : 'yes' }, sw.reason) : null, sw.signIn ? h('a.okl-btn.okl-signin', { href: '/' }, 'Sign in again') : null),
     h('section', {}, h('h3', {}, `Model switch · ${stops.length} models`), dial),
     h('section.okl-stats', {},
@@ -162,12 +165,13 @@ export function renderPanel(root: HTMLElement, d: Loft | null, act: { toggle(): 
 function sceneState(d: Loft | null) {
   const stops = stopsView(d);
   const sw = switchView(d, loadError, loadStatus);
-  return { power: d?.power ?? 'off', busy: d?.okkin.chip === 'working', switchWorks: sw.works, switchLabel: sw.label, dial: stops.map((s) => ({ role: s.role, status: s.status })), dialIndex: chosenIndex(d, stops) } as const;
+  return { power: d?.power ?? 'off', busy: d?.okkin.chip === 'working', switchWorks: sw.works, switchLabel: sw.label, light: sw.light, dial: stops.map((s) => ({ role: s.role, status: s.status })), dialIndex: chosenIndex(d, stops) } as const;
 }
 
 export function installOkkinLoft(ctx: Ctx) {
   const view = ctx.office.okkinLoft;
-  const pill = h('button.okl-pill', { type: 'button', hidden: true }, "Okkin's loft");
+  const pillLight = h('span.okl-light', { 'data-light': 'setup', 'aria-hidden': 'true' });
+  const pill = h('button.okl-pill', { type: 'button', hidden: true }, pillLight, "Okkin's loft");
   const panel = h('div.okl-panel', { role: 'dialog', 'aria-modal': 'true', 'aria-label': "Okkin's loft", hidden: true });
   document.body.append(pill, panel);
   let data: Loft | null = null;
@@ -233,6 +237,7 @@ export function installOkkinLoft(ctx: Ctx) {
     if (frozen) return;
     data = await load();
     view.setState(sceneState(data));
+    { const sw = switchView(data, loadError, loadStatus); pillLight.dataset.light = sw.light; pill.title = sw.tip; pill.setAttribute('aria-label', `Okkin's loft. ${sw.tip}`); }
     if (!panel.hidden && !pressing) paint();
   };
   function openPanel(focusClose = true) {
