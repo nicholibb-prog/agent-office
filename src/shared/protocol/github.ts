@@ -80,8 +80,26 @@ export function ghListsBlock(issues: { error?: string }, pulls: { error?: string
   return undefined;
 }
 
+/**
+ * The calm line a 3D board shows when it has nothing to list. Never the raw error text: a repo with
+ * issues switched off says so plainly, the known gh states get a short plain line, and anything
+ * else is a generic "couldn't load" (the detail stays in the server log).
+ */
+export function boardEmptyNote(kind: 'issues' | 'pulls', state: { error?: string; loading?: boolean; fetchedAt?: number }): string {
+  const { error } = state;
+  if (error) {
+    if (kind === 'issues' && /disabled issues|issues (are|is) disabled|has issues disabled/i.test(error)) return 'Issues are turned off for this repo';
+    if (error === GH_NOT_LOGGED_IN) return 'GitHub is not signed in on this machine';
+    if (error === GH_NOT_FOUND || error === GH_FAILED) return 'GitHub is not set up on this machine';
+    return kind === 'issues' ? "Couldn't load issues right now" : "Couldn't load pull requests right now";
+  }
+  if (state.loading && !state.fetchedAt) return 'Loading…';
+  return kind === 'issues' ? 'No open issues' : 'No open PRs';
+}
+
 /** The line under the empty-state heading. */
 export function ghBoardHint(error?: string): string {
+  if (error && /disabled issues|issues (are|is) disabled|has issues disabled/i.test(error)) return 'Turn issues on in the repo settings on GitHub to list them here.';
   if (error === GH_NOT_FOUND) return 'The office could not find the GitHub CLI. Set GH_PATH, or install gh and put it on PATH.';
   if (error === GH_FAILED) return 'The GitHub CLI could not be started. Issues, pull requests, and the queue stay empty.';
   if (error === GH_NOT_LOGGED_IN) return 'Run gh auth login once on the office machine. Issues, pull requests, and the queue stay empty until that works.';
