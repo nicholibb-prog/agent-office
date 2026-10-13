@@ -14,6 +14,7 @@ import { hqBriefRoutes } from './hq-brief.js';
 import { officeRoutes } from './office.js';
 import { hqRoutes } from './hq.js';
 import { poolRoutes } from './pool.js';
+import { liveRoutes } from './live.js';
 
 export const routes: readonly Route[] = [
   // Anyone.
@@ -42,6 +43,10 @@ export const routes: readonly Route[] = [
   bridgeRoutes.kaviFeedGet,
   bridgeRoutes.kaviOutbox,
   bridgeRoutes.kaviOutboxGet,
+  liveRoutes.push,
+  liveRoutes.seats,
+  liveRoutes.toggle,
+  liveRoutes.frame,
   hqBriefRoutes.brief,
   hqBriefRoutes.seen,
   hqBriefRoutes.needs,

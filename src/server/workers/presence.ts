@@ -25,6 +25,7 @@ export function noteShellOutput(w: Worker, now = Date.now()): WorkerStatus | und
 /** A working shell that has stopped printing. Undefined while it is still going, or it is not a shell. */
 export function shellQuiet(w: Worker, now = Date.now()): WorkerStatus | undefined {
   if (w.info.kind !== 'shell' || w.info.status !== 'working') return;
+  if (w.sticky) return; // the bridge said working; terminal silence is not a done signal
   if (w.outputAt === undefined || now - w.outputAt < SHELL_QUIET_MS) return;
   return 'idle';
 }
@@ -69,6 +70,7 @@ export function commitStatus(w: Worker, status: WorkerStatus, fx: StatusFx) {
   if (w.info.status === 'needs_input') w.leftNeedsInputAt = Date.now();
   clockWork(w.info, status);
   w.info.status = status;
+  if (status !== 'working') w.sticky = undefined;
   // Done, idle or asleep: it's not acting anything out any more.
   if (status !== 'working' && status !== 'needs_input') w.info.action = undefined;
   // Nobody is looking at the terminal right now -> raise the flag (the worker jumps). A worker at the
