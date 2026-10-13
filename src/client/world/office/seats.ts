@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BEANBAGS, DESKS, DESK_SIZE, FLOOR, KIOSK, SEATING_BY_ID, STATIONS, STATION_AGENT, deskSeat, type DeskDef, type StationKind } from '../../../shared/layout';
+import { CHAIR_OFFSET, BEANBAGS, DESKS, DESK_SIZE, FLOOR, KIOSK, SEATING_BY_ID, STATIONS, STATION_AGENT, deskSeat, type DeskDef, type StationKind } from '../../../shared/layout';
 import { deskPoint } from '../../../shared/nav';
 import { mesh, roundedBox, textPlane, toon } from '../toon';
 import type { Collider, DeskView, Interactable } from '../types';
@@ -79,7 +79,7 @@ export function buildDesk(def: DeskDef, index: number, trimMat: THREE.Material):
 
   // On the chair, facing the desk.
   const seatAnchor = new THREE.Object3D();
-  seatAnchor.position.set(0, 0.4, 0.93);
+  seatAnchor.position.set(0, 0.4, CHAIR_OFFSET + 0.03);
   seatAnchor.rotation.y = Math.PI;
   seatAnchor.scale.setScalar(0.82);
   group.add(seatAnchor);
@@ -90,7 +90,7 @@ export function buildDesk(def: DeskDef, index: number, trimMat: THREE.Material):
   group.add(stage);
 
   const ch = chair(PALETTE.chairs[index % PALETTE.chairs.length]);
-  ch.position.set(0, 0, 0.9);
+  ch.position.set(0, 0, CHAIR_OFFSET);
   group.add(ch);
 
   const vacancyY = height + 0.55;
