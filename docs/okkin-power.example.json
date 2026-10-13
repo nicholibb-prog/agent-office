@@ -1,0 +1,6 @@
+{
+  "_note": "PLACEHOLDERS ONLY. The office refuses any argv containing < or >. Jack supplies the real argv; Dan approves it before it goes into .agent-office/okkin-power.json (owner-only, not group/world writable). No shell, no runas/sudo/sc.",
+  "start": ["<JACK_START_ARGV_0>", "<JACK_START_ARGV_1>"],
+  "stop": ["<JACK_STOP_ARGV_0>", "<JACK_STOP_ARGV_1>"],
+  "tuning": {}
+}

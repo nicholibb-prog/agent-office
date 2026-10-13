@@ -1,0 +1,11 @@
+{
+  "_note": "EXAMPLE ONLY. Values are UNVERIFIED drafts from Jack. Copy to .agent-office/okkin-loft.json and confirm each tag against `ollama list` first.",
+  "idleSleepMin": null,
+  "models": [
+    { "tag": "qwen3.5:4b", "role": "quick", "bestFor": ["quick", "summary"], "num_ctx": 8192, "keep_alive": "10m" },
+    { "tag": "okkin:latest", "role": "default", "bestFor": ["chat", "open"], "num_ctx": 8192, "keep_alive": "10m" },
+    { "tag": "qwen3.5:9b", "role": "chat", "bestFor": ["chat", "writing"], "num_ctx": 8192, "keep_alive": "10m" },
+    { "tag": "ornith-1.5:9b", "role": "code", "bestFor": ["code"], "num_ctx": 16384, "keep_alive": "10m" },
+    { "tag": "hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M", "role": "big", "bestFor": ["long", "reasoning"], "num_ctx": 8192, "keep_alive": 0, "minFreeRamGB": 22 }
+  ]
+}
