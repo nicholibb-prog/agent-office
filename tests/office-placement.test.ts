@@ -56,3 +56,29 @@ test('the Jev board on the south wall clears the balcony door, the windows and t
   for (const w of WINDOWS.filter((w) => w.wall === 'south' && w.y0 < 3)) assert.ok(clear(w.u - w.width / 2, w.u + w.width / 2), `window at ${w.u}`);
   assert.ok(clear(STAIRS.fromX, STAIRS.toX), 'stairs');
 });
+
+import { OKKIN_LOFT, OKKIN_LOFT_SPOT } from '../src/shared/okkin-loft.js';
+import { ELEVATOR, ELEVATOR_FRONT, GONG, JUKEBOX, TV, WING, WHITEBOARD, LOFT } from '../src/shared/layout.js';
+
+test("Okkin's loft stays clear of desks, boards, stairs, elevator, TV, jukebox, gong and the back-office bay", () => {
+  const loft: Box = { minX: OKKIN_LOFT.minX, maxX: OKKIN_LOFT.maxX, minZ: OKKIN_LOFT.minZ, maxZ: OKKIN_LOFT.maxZ };
+  const spot: Box = { minX: OKKIN_LOFT_SPOT.x - 0.4, maxX: OKKIN_LOFT_SPOT.x + 0.4, minZ: OKKIN_LOFT_SPOT.z - 0.4, maxZ: OKKIN_LOFT_SPOT.z + 0.4 };
+  const others: Record<string, Box> = {
+    ...Object.fromEntries(deskZones.map((z, i) => [`desk${i}`, z])),
+    ...boards,
+    stairs: { minX: STAIRS.fromX, maxX: STAIRS.toX, minZ: STAIRS.minZ, maxZ: STAIRS.maxZ },
+    loftUp: { minX: LOFT.minX, maxX: LOFT.maxX, minZ: LOFT.minZ, maxZ: LOFT.maxZ },
+    elevator: { minX: ELEVATOR.x - ELEVATOR.width / 2 - 0.5, maxX: ELEVATOR.x + ELEVATOR.width / 2 + 0.5, minZ: FLOOR.minZ, maxZ: ELEVATOR_FRONT + 1 },
+    tv: { minX: TV.x - 0.6, maxX: FLOOR.maxX, minZ: TV.z - TV.width / 2, maxZ: TV.z + TV.width / 2 },
+    jukebox: { minX: JUKEBOX.x - 1, maxX: FLOOR.maxX, minZ: JUKEBOX.z - 1, maxZ: JUKEBOX.z + 1 },
+    gong: { minX: GONG.x - GONG.width / 2, maxX: GONG.x + GONG.width / 2, minZ: FLOOR.minZ, maxZ: GONG.z + 0.6 },
+    wingMouth: { minX: WING.minX, maxX: WING.maxX, minZ: FLOOR.minZ, maxZ: FLOOR.minZ + 1.5 },
+    whiteboard: { minX: WHITEBOARD.x - WHITEBOARD.width / 2, maxX: WHITEBOARD.x + WHITEBOARD.width / 2, minZ: WHITEBOARD.z - 0.3, maxZ: WHITEBOARD.z + 0.3 },
+  };
+  for (const [name, b] of Object.entries(others)) {
+    assert.equal(overlaps(loft, b), false, `loft overlaps ${name}`);
+    assert.equal(overlaps(spot, b), false, `panel spot overlaps ${name}`);
+  }
+  assert.ok(loft.maxX <= FLOOR.maxX && loft.minZ >= FLOOR.minZ + 1.5, 'inside the room, clear of the bay');
+  assert.equal(overlaps(spot, loft), false, 'the panel spot is open floor');
+});
