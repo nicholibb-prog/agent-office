@@ -93,3 +93,70 @@ test('no typing indicator anywhere in the thread or the desk-PC screen', () => {
     assert.doesNotMatch(src, /typing|is writing|\.\.\.\s*['"`]|composing/i, f);
   }
 });
+
+import { symlinkSync } from 'node:fs';
+import { MAX_SCAN, MAX_BYTES, MAX_THREAD } from '../src/server/kavi-thread.js';
+
+test('a symlinked to-george pointing outside the bridge is refused', () => {
+  const r = bridge();
+  const outside = path.join(tmpdir(), 'ao-kout-' + process.pid + Math.random().toString(36).slice(2));
+  mkdirSync(outside);
+  writeFileSync(path.join(outside, 'secret.md'), 'outside text');
+  rmSync(path.join(r, 'to-george'), { recursive: true });
+  symlinkSync(outside, path.join(r, 'to-george'));
+  assert.deepEqual(readThread(r).items, []);
+  rmSync(r, { recursive: true, force: true });
+  rmSync(outside, { recursive: true, force: true });
+});
+
+test('a symlinked to-kavi pointing at Major Files is refused before it is listed', () => {
+  const r = bridge();
+  const mf = path.join(tmpdir(), 'ao-kmf-' + process.pid, 'Documents', 'Major Files');
+  mkdirSync(mf, { recursive: true });
+  writeFileSync(path.join(mf, 'owner-to-kavi-x.md'), '# From the owner\n\nprivate');
+  rmSync(path.join(r, 'to-kavi'), { recursive: true });
+  symlinkSync(mf, path.join(r, 'to-kavi'));
+  const listed: string[] = [];
+  const orig = threadFs.readdirSync;
+  threadFs.readdirSync = (p: string) => (listed.push(p), orig(p));
+  try {
+    assert.deepEqual(readThread(r).items, []);
+    assert.ok(!listed.some((p) => /major files/i.test(p)), 'Major Files never listed');
+  } finally {
+    threadFs.readdirSync = orig;
+  }
+  rmSync(r, { recursive: true, force: true });
+  rmSync(path.join(tmpdir(), 'ao-kmf-' + process.pid), { recursive: true, force: true });
+});
+
+test('a symlinked reply file is skipped', () => {
+  const r = bridge();
+  const outside = path.join(tmpdir(), 'ao-kf-' + process.pid + Math.random().toString(36).slice(2) + '.md');
+  writeFileSync(outside, 'linked secret');
+  symlinkSync(outside, path.join(r, 'to-george', 'link.md'));
+  put(path.join(r, 'to-george', 'real.md'), 'real reply', T);
+  assert.deepEqual(readThread(r).items.map((i) => i.text), ['real reply']);
+  rmSync(r, { recursive: true, force: true });
+  rmSync(outside, { force: true });
+});
+
+test('caps: newest replies by time, at most MAX_THREAD read, scan stops at MAX_SCAN names', () => {
+  const r = bridge();
+  for (let i = 0; i < MAX_SCAN + 50; i++) put(path.join(r, 'to-george', `r${String(i).padStart(4, '0')}.md`), `reply ${i}`, T + i * 1000);
+  const t = readThread(r);
+  assert.equal(t.items.length, MAX_THREAD);
+  const times = t.items.map((i) => Date.parse(i.at));
+  assert.deepEqual([...times].sort((a, b) => a - b), times, 'oldest first');
+  rmSync(r, { recursive: true, force: true });
+});
+
+test('caps: stop reading at about 2 MB in total', () => {
+  const r = bridge();
+  const big = 'x'.repeat(200 * 1024);
+  for (let i = 0; i < 15; i++) put(path.join(r, 'to-george', `big${i}.md`), big, T + i * 1000);
+  const t = readThread(r);
+  assert.ok(t.items.length * big.length <= MAX_BYTES, 'within the byte budget');
+  assert.equal(t.items.length, Math.floor(MAX_BYTES / big.length));
+  assert.equal(Date.parse(t.items.at(-1)!.at), T + 14_000, 'the newest are the ones kept');
+  rmSync(r, { recursive: true, force: true });
+});

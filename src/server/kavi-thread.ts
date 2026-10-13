@@ -49,23 +49,56 @@ export function mergeThread(owner: ThreadItem[], kavi: ThreadItem[], max = MAX_T
   return all.slice(-max).map((a) => a.x);
 }
 
-function readSide(dir: string, match: RegExp, from: ThreadItem['from'], strip: boolean): ThreadItem[] {
+export const MAX_SCAN = 200;
+export const MAX_BYTES = 2 * 1024 * 1024;
+
+/** One side's folder, only if it is a real directory directly inside the bridge root and not Major Files. */
+function sideDir(root: string, name: string): string | null {
+  const want = path.join(root, name);
+  try {
+    const st = lstatSync(want);
+    if (st.isSymbolicLink() || !st.isDirectory()) return null;
+    const real = threadFs.realpathSync(want);
+    if (path.dirname(real) !== root || isMajorFiles(real)) return null;
+    return real;
+  } catch {
+    return null;
+  }
+}
+
+function readSide(root: string, name: string, match: RegExp, from: ThreadItem['from'], strip: boolean, budget: { bytes: number }): ThreadItem[] {
+  const dir = sideDir(root, name);
+  if (!dir) return [];
   let names: string[];
   try {
     names = threadFs.readdirSync(dir);
   } catch {
     return [];
   }
-  const out: ThreadItem[] = [];
+  const found: { file: string; mtimeMs: number; size: number }[] = [];
+  let scanned = 0;
   for (const n of names) {
+    if (scanned >= MAX_SCAN) break;
     if (n.startsWith('.') || !match.test(n)) continue;
+    scanned++;
     const file = path.join(dir, n);
     try {
       const st = lstatSync(file);
-      if (!st.isFile() || st.size > 256 * 1024) continue;
-      const raw = readFileSync(file, 'utf8');
+      if (st.isSymbolicLink() || !st.isFile() || st.size > 256 * 1024) continue;
+      found.push({ file, mtimeMs: st.mtimeMs, size: st.size });
+    } catch {
+      /* vanished */
+    }
+  }
+  found.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const out: ThreadItem[] = [];
+  for (const f of found.slice(0, MAX_THREAD)) {
+    if (budget.bytes + f.size > MAX_BYTES) break;
+    try {
+      const raw = readFileSync(f.file, 'utf8');
+      budget.bytes += Buffer.byteLength(raw);
       const text = (strip ? noteBody(raw) : raw.trim()).slice(0, MAX_TEXT);
-      if (text) out.push({ from, text, at: new Date(st.mtimeMs).toISOString() });
+      if (text) out.push({ from, text, at: new Date(f.mtimeMs).toISOString() });
     } catch {
       /* vanished or unreadable */
     }
@@ -84,7 +117,8 @@ export function readThread(dir: string | undefined): KaviThread {
     return { ...base, state: 'unreachable' };
   }
   if (isMajorFiles(root)) return { ...base, state: 'unreachable' };
-  const owner = readSide(path.join(root, TO_KAVI), OWNER_NOTE, 'owner', true);
-  const kavi = readSide(path.join(root, TO_GEORGE), REPLY, 'kavi', false);
+  const budget = { bytes: 0 };
+  const kavi = readSide(root, TO_GEORGE, REPLY, 'kavi', false, budget);
+  const owner = readSide(root, TO_KAVI, OWNER_NOTE, 'owner', true, budget);
   return { ...base, state: 'ok', items: mergeThread(owner, kavi) };
 }

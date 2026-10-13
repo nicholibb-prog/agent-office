@@ -106,6 +106,8 @@ test("Okkin's racks leave the foot of the loft stairs and its approach clear", (
   assert.equal(overlaps(loft, foot), false, 'racks block the foot of the stairs');
   // The whole flight keeps a walkable 1 m strip along its north side.
   assert.ok(loft.maxZ <= STAIRS.minZ - 1, 'racks within 1 m of the stairs');
+});
+
 test("Kavi's desk sits by her board on the west wall, inside the room, clear of desks, board, door and stairs", () => {
   const d = KAVI_DESK_BOX;
   assert.ok(d.minX >= FLOOR.minX && d.maxX <= FLOOR.maxX && d.minZ >= FLOOR.minZ && d.maxZ <= FLOOR.maxZ, 'inside the room');
