@@ -17,11 +17,11 @@ void FLOOR;
  * The stone pedestal the supercomputer stands on (0.45 m: a step up, scaled to the office), a little
  * larger than the loft's footprint. Its front face (-x) carries the Paleo-Hebrew engraving.
  */
-export const OKKIN_PEDESTAL = { minX: OKKIN_LOFT.minX - 0.05, maxX: OKKIN_LOFT.maxX + 0.05, minZ: OKKIN_LOFT.minZ - 0.05, maxZ: OKKIN_LOFT.maxZ + 0.05, height: 0.45 } as const;
+export const OKKIN_PEDESTAL = { minX: OKKIN_LOFT.minX - 0.05, maxX: OKKIN_LOFT.maxX + 0.05, minZ: OKKIN_LOFT.minZ - 0.05, maxZ: OKKIN_LOFT.maxZ + 0.05, height: 0.55 } as const;
 /** The 日光 hanging scroll (kakejiku) on its stand, at the pedestal's north end, facing the floor (-x). */
 export const OKKIN_SCROLL = { x: OKKIN_LOFT.minX + 0.25, z: OKKIN_LOFT.minZ - 0.35, width: 0.5, height: 1.6, bottom: 0.55 } as const;
 /** The OKKIN sign above it all. */
-export const OKKIN_SIGN = { width: 2.6, height: 0.7, y: 4.45 } as const;
+export const OKKIN_SIGN = { width: 3.4, height: 0.9, y: 4.35 } as const;
 export const OKKIN_CONSOLE = { x: 4.5, z: 8.5, width: 0.9, depth: 0.4, height: 0.95 } as const;
 
 /**

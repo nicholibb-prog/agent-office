@@ -24,17 +24,17 @@ capitals Ο Κ Κ Ι Ν.
 ## 日光 (Nikko) scroll
 
 A kakejiku: dark lacquer panel in a deep-blue brocade mount, gold brush kanji (Yuji Syuku)
-top to bottom, lacquer rollers with gold caps, on a slim stone stand. The red seal is a plain
+top to bottom, wooden rollers with gold caps and silk tassels, on a slim stone stand. The red seal is a plain
 square: no characters are invented.
 
 ## Inscription on the pedestal: "victory of the people"
 
-- Spelling: **נצחן העם**, the ancient defective spelling, with no vav for the -ōn ending.
-  Justification: Iron Age Hebrew inscriptions write -ōn without the mater lectionis; the
-  Samaria ostraca spell Šomrōn (Samaria) as שמרן. The modern full spelling is ניצחון העם.
+- Spelling: **ניצחון העם**, the full (modern) spelling, as the owner's latest checklist asks. It
+  replaces the earlier choice of the ancient defective spelling נצחן העם (no yod, no vav for the
+  -ōn ending, as Iron Age inscriptions wrote it; the Samaria ostraca spell Šomrōn as שמרן).
 - Script: Paleo-Hebrew, encoded in the Unicode Phoenician block (U+10900–U+1091F), which
   Unicode uses for Paleo-Hebrew, and drawn right to left (canvas `direction = 'rtl'`, logical order).
 - Mapping (`src/shared/paleo-hebrew.ts`, tested): letter for letter; final forms map to the base
   letters (ן → נ, ם → מ; also ך ף ץ); the space becomes the word separator U+1091F.
-  נ U+1090D · צ U+10911 · ח U+10907 · ן→נ U+1090D · (sep U+1091F) · ה U+10904 · ע U+1090F · ם→מ U+1090C.
+  נ U+1090D · י U+10909 · צ U+10911 · ח U+10907 · ו U+10905 · ן→נ U+1090D · (sep U+1091F) · ה U+10904 · ע U+1090F · ם→מ U+1090C.
 - Chiselled look: each letter is drawn as a dark cut with a lit lower lip and a faint gold fill.

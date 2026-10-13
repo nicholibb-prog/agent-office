@@ -17,13 +17,12 @@ test('Paleo-Hebrew: every letter maps to its Phoenician-block code point, final 
   assert.throws(() => toPaleoHebrew('A'));
 });
 
-test('the inscription: נצחן העם (defective, no vav), in logical right-to-left order, word separator between', () => {
-  assert.equal(VICTORY_OF_THE_PEOPLE.hebrew, 'נצחן העם');
+test('the inscription: ניצחון העם (full spelling, per the owner checklist), in logical right-to-left order, word separator between', () => {
+  assert.equal(VICTORY_OF_THE_PEOPLE.hebrew, 'ניצחון העם');
   const s = toPaleoHebrew(VICTORY_OF_THE_PEOPLE.hebrew);
-  // nun tsade het nun · he ayin mem
-  assert.deepEqual(cp(s), ['1090D', '10911', '10907', '1090D', '1091F', '10904', '1090F', '1090C']);
+  // nun yod tsade het vav nun · he ayin mem (logical order; drawn right to left)
+  assert.deepEqual(cp(s), ['1090D', '10909', '10911', '10907', '10905', '1090D', '1091F', '10904', '1090F', '1090C']);
   assert.ok(s.includes(PHOENICIAN_WORD_SEPARATOR));
-  assert.ok(!s.includes('\u{10905}'), 'no vav');
 });
 
 test('fonts are local subsets, each with its OFL licence; no CDN', () => {
@@ -44,8 +43,10 @@ const scroll: Box = { minX: OKKIN_SCROLL.x - 0.25, maxX: OKKIN_SCROLL.x + 0.25, 
 const desks: Box[] = DESKS.map((d) => ({ minX: d.x - DESK_SIZE.width / 2 - 0.2, maxX: d.x + DESK_SIZE.width / 2 + 0.2, minZ: d.z - DESK_SIZE.depth / 2 - 1, maxZ: d.z + DESK_SIZE.depth / 2 + 1 }));
 const stairsFoot: Box = { minX: STAIRS.fromX - 1.6, maxX: STAIRS.toX, minZ: STAIRS.minZ - 1, maxZ: STAIRS.maxZ };
 
-test('pedestal is 0.3–0.6 m, inside the room, clear of the stairs (1 m strip) and every desk zone', () => {
-  assert.ok(OKKIN_PEDESTAL.height >= 0.3 && OKKIN_PEDESTAL.height <= 0.6);
+test('pedestal is 1.5–2 ft (0.457–0.610 m), against a 0.78 m desk and a 1.4 m eye line; inside the room, clear of the stairs (1 m strip) and every desk zone', () => {
+  const FT = 0.3048;
+  assert.ok(OKKIN_PEDESTAL.height >= 1.5 * FT && OKKIN_PEDESTAL.height <= 2 * FT, `${(OKKIN_PEDESTAL.height / FT).toFixed(2)} ft`);
+  assert.ok(OKKIN_PEDESTAL.height / DESK_SIZE.height > 0.6, 'reads as a plinth next to a desk, not a step');
   assert.ok(pedestal.minX >= FLOOR.minX && pedestal.maxX <= FLOOR.maxX && pedestal.minZ >= FLOOR.minZ && pedestal.maxZ <= FLOOR.maxZ);
   for (const b of [pedestal, scroll]) {
     assert.equal(ov(b, stairsFoot), false);

@@ -46,6 +46,7 @@ export function buildHero() {
   const metal = new THREE.MeshLambertMaterial({ color: '#15171c' });
   const gold = new THREE.MeshLambertMaterial({ color: LOFT_PALETTE.gold });
   const inner = new THREE.MeshBasicMaterial({ color: '#05070d' });
+  const goldLit = new THREE.MeshBasicMaterial({ color: '#4a3a10' });
   const glass = new THREE.MeshBasicMaterial({ color: '#0c1830', transparent: true, opacity: 0.3, depthWrite: false });
   const fans: THREE.Object3D[] = [];
   const box = (w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number) => {
@@ -62,6 +63,13 @@ export function buildHero() {
     t.add(box(TOWER.depth, 0.08, TOWER.width, metal, 0, TOWER.height - 0.04, 0));
     t.add(box(TOWER.depth + 0.02, 0.1, TOWER.width + 0.02, metal, 0, 0.05, 0));
     t.add(box(TOWER.depth + 0.03, 0.025, TOWER.width + 0.03, gold, 0, TOWER.height - 0.1, 0));
+    // A gold light strip down each front edge and across the crown: lit with the blades.
+    for (const dz of [-1, 1]) {
+      const s = box(0.02, TOWER.height - 0.2, 0.025, goldLit, -TOWER.depth / 2 - 0.01, TOWER.height / 2, (dz * (TOWER.width - 0.06)) / 2);
+      s.name = 'okkin-gold-strip';
+      t.add(s);
+    }
+    t.add(box(0.02, 0.025, TOWER.width - 0.06, goldLit, -TOWER.depth / 2 - 0.01, TOWER.height - 0.14, 0));
     const pane = new THREE.Mesh(new THREE.PlaneGeometry(TOWER.width - 0.08, TOWER.height - 0.2), glass);
     pane.rotation.y = -Math.PI / 2;
     pane.position.set(-TOWER.depth / 2 - 0.004, TOWER.height / 2, 0);
@@ -178,6 +186,7 @@ export function buildHero() {
   const lit = new THREE.Color('#5d8cff');
   const tmp = new THREE.Color();
   const accent = new THREE.Color();
+  const goldHot = new THREE.Color(LOFT_PALETTE.goldLight);
   const levels: number[] = new Array(rowOf.length).fill(OFF_LEVEL);
   const paint = () => {
     accent.set(accentFor(st.role));
@@ -203,6 +212,8 @@ export function buildHero() {
     floorMat.color.copy(haloMat.color);
     floorMat.opacity = near ? hl * 0.4 : 0;
     beamMat.opacity = mode === 'off' ? 0.05 : 0.12 + 0.05 * Math.sin(t * 3);
+    // The gold strips follow the tower: dark off, glowing gold with the breathe or ripple.
+    goldLit.color.set('#3a2c0c').lerp(goldHot, mode === 'off' ? 0 : Math.min(1, 0.35 + hl));
   };
   const view = {
     group: g,
