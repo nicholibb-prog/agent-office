@@ -279,10 +279,14 @@ export const bridgeRoutes = {
     path: '/api/bridge/inbox',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!bridgeGate(ctx, req, res)) return;
+      // The seat is the token's seat (see #20). A body seat is allowed only when it is that seat.
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
       const body = await readJson<{ seat?: string; text?: string }>(req, res);
       if (!body) return;
-      const seat = String(body.seat || '');
+      if (body.seat !== undefined && String(body.seat).trim().toLowerCase() !== seat) {
+        return send(res, 403, { error: 'seat does not match seat token' });
+      }
       const text = String(body.text || '');
       if (!isSeatId(seat) || seat === 'okkin') return send(res, 400, { error: 'inbox is for a generic seat' });
       const at = Date.now();
