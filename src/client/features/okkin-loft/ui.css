@@ -37,3 +37,20 @@
 .okl-btn:disabled { background: #a1a1a6; cursor: not-allowed; }
 .okl-panel button:focus-visible, .okl-pill:focus-visible, .okl-job:focus-visible { outline: 3px solid #0071e3; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .okl-panel { animation: none; } .okl-stop, .okl-power-ring, .okl-power-ring::after { transition: none; } }
+.okl-dialwrap { display: flex; align-items: center; gap: 28px; }
+.okl-face { position: relative; width: 168px; height: 168px; flex: none; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #fbfbfd, #dcdfe4 70%); box-shadow: inset 0 1px 0 #fff, 0 12px 30px rgba(0,0,0,.14); }
+.okl-tick { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) rotate(var(--a)) translateY(-70px) rotate(calc(-1 * var(--a))); border: 0; background: none; font: inherit; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #6e6e73; cursor: pointer; padding: 2px; }
+.okl-tick:disabled { opacity: .35; cursor: not-allowed; }
+.okl-knob { position: absolute; left: 50%; top: 50%; width: 84px; height: 84px; margin: -42px 0 0 -42px; border-radius: 50%; background: conic-gradient(from 0deg, #e9eaee, #c7cad0, #eef0f3, #c3c6cc, #e9eaee); box-shadow: 0 6px 16px rgba(0,0,0,.22), inset 0 1px 1px rgba(255,255,255,.9); transform: rotate(var(--a, 0deg)); transition: transform .35s cubic-bezier(.2,.8,.2,1); cursor: grab; }
+.okl-knob[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.okl-pointer { position: absolute; left: 50%; top: 8px; width: 4px; height: 16px; margin-left: -2px; border-radius: 2px; background: #0071e3; }
+.okl-knob:focus-visible { outline: 3px solid #0071e3; outline-offset: 4px; }
+.okl-readout { display: flex; flex-direction: column; gap: 4px; margin: 0; min-width: 0; }
+.okl-active { font-size: 12px; font-weight: 700; color: #248a3d; }
+.okl-log { max-height: 140px; overflow: auto; font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+.okl-log p { margin: 0; }
+.okl-ask { display: flex; gap: 10px; margin-top: 8px; }
+.okl-input { flex: 1; padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(0,0,0,.1); background: rgba(255,255,255,.8); font: inherit; color: inherit; }
+.okl-input:focus-visible, .okl-tick:focus-visible { outline: 3px solid #0071e3; outline-offset: 2px; }
+.okl-note:empty { display: none; }
+@media (prefers-reduced-motion: reduce) { .okl-knob { transition: none; } }
