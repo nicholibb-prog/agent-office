@@ -1,6 +1,6 @@
 // Keyword floor for the work pool. Every pass is a straight scan: no nested quantifiers.
 // The floor is the highest tier among a few spellings of the same text.
-import { casefoldStrip, decodeOnce, domainFloor, foldConfusables, hasAltLatin, spaceFillers, spaceIgnorable, stripIgnorable, wideLatinFloor, type FoldMode } from './pool-fold.js';
+import { casefoldStrip, decodeBase64Tokens, decodeOnce, domainFloor, foldConfusables, hasAltLatin, spaceFillers, spaceIgnorable, stripIgnorable, wideLatinFloor, type FoldMode } from './pool-fold.js';
 
 const PREFIXES = ['force', 'auto', 'pre', 'git', 're', 'un'];
 
@@ -28,6 +28,8 @@ const SIX = [
   'creds', 'pwd', 'releas',
   // Dan's #28 FIX: destructive shell, network listeners, trash, and abuse words.
   'format', 'mkfs', 'reset', 'kill', 'shutdown', 'port', 'listen', 'trash', 'exfil', 'scrape', 'hack', 'shipit',
+  // Dan's pool follow-up: power and wipe words.
+  'reboot', 'halt', 'poweroff',
 ];
 /** Sign-in and a destructive shell word. Code filenames are scored separately. */
 const FOUR = ['rm', 'login', 'signin'];
@@ -68,6 +70,9 @@ const PHRASES: readonly [string, number][] = [
   ['sign a contract', 7],
   // Dan's #28 FIX.
   ['dd if', 6],
+  ['truncate table', 6],
+  ['git clean -fdx', 6],
+  ['git clean', 6],
   ['--hard', 6],
   ['reset hard', 6],
   ['approve this pr', 6],
@@ -374,24 +379,37 @@ function exactHits(text: string): Set<string> {
   return hits;
 }
 
+/** Most fragments a split word is rejoined from. */
+const MAX_SPLIT = 8;
+
 function score(text: string, hits: Set<string>): number {
   let best = 1;
   const flat = squeeze(text);
   for (const [phrase, tier] of PHRASES) if (flat.includes(phrase)) best = Math.max(best, tier);
   let word = '';
-  let prev = '';
+  const prev: string[] = [];
   const end = () => {
     if (word && !hits.has(word)) {
       const own = wordTier(word);
       best = Math.max(best, own);
-      // Dan's #28 FIX: a stray space or newline inside a word ("dep loy", "pass\nword", "pa y").
-      // Count the joined pair only when a stem crosses the break, i.e. it beats both halves alone.
-      if (prev && !hits.has(prev + word)) {
-        const joined = wordTier(prev + word);
-        if (joined > own && joined > wordTier(prev)) best = Math.max(best, joined);
+      // A stray space or newline inside a word: "dep loy", "pass\nword", "pa y", and 3+ parts like "sh ip it".
+      // A join of the last k fragments counts only when a stem reaches into the newest fragment,
+      // i.e. it beats the newest fragment alone and the join without it.
+      let head = '';
+      let headTier = 0;
+      for (let k = prev.length - 1; k >= 0; k--) {
+        head = prev[k] + head;
+        const joined = head + word;
+        if (hits.has(joined)) continue;
+        const tier = wordTier(joined);
+        headTier = wordTier(head);
+        if (tier > own && tier > headTier) best = Math.max(best, tier);
       }
     }
-    if (word) prev = word;
+    if (word) {
+      prev.push(word);
+      if (prev.length > MAX_SPLIT - 1) prev.shift();
+    }
     word = '';
   };
   for (let i = 0; i < flat.length; i++) {
@@ -563,35 +581,4 @@ export function keywordFloor(text: string): number {
   if (best === 7) return 7;
   const b64 = decodeBase64Tokens(text);
   return b64 ? Math.max(best, floorOnce(b64)) : best;
-}
-
-const B64_TOKEN = /[A-Za-z0-9+/]{8,96}={0,2}/g;
-
-/**
- * Dan's #28 FIX: short base64 tokens ("cGFzc3dvcmQ=") are decoded once and scored as text.
- * Only tokens of a valid base64 length that decode to printable ASCII count. Returns '' when none.
- */
-export function decodeBase64Tokens(text: string): string {
-  const out: string[] = [];
-  for (const m of text.matchAll(B64_TOKEN)) {
-    const tok = m[0];
-    if (tok.length % 4 !== 0) continue;
-    let bin: string;
-    try {
-      bin = globalThis.atob(tok);
-    } catch {
-      continue;
-    }
-    if (bin.length < 3) continue;
-    let ok = true;
-    for (let i = 0; i < bin.length; i++) {
-      const c = bin.charCodeAt(i);
-      if (c < 32 || c > 126) {
-        if (c !== 9 && c !== 10 && c !== 13) ok = false;
-        break;
-      }
-    }
-    if (ok) out.push(bin);
-  }
-  return out.join(' ');
 }

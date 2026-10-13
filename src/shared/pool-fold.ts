@@ -254,3 +254,34 @@ function readEntity(text: string, at: number): { value: string; end: number } | 
   if (!Number.isFinite(cp) || cp < 0 || cp > 0x10ffff) return undefined;
   return { value: String.fromCodePoint(cp), end: j };
 }
+
+const B64_TOKEN = /[A-Za-z0-9+/]{4,96}={0,2}/g;
+
+/**
+ * Dan's #28 FIX: short base64 tokens ("cGFzc3dvcmQ=") are decoded once and scored as text.
+ * Only tokens of a valid base64 length that decode to printable ASCII count. Returns '' when none.
+ */
+export function decodeBase64Tokens(text: string): string {
+  const out: string[] = [];
+  for (const m of text.matchAll(B64_TOKEN)) {
+    const tok = m[0];
+    if (tok.length % 4 !== 0) continue;
+    let bin: string;
+    try {
+      bin = globalThis.atob(tok);
+    } catch {
+      continue;
+    }
+    if (bin.length < 3) continue;
+    let ok = true;
+    for (let i = 0; i < bin.length; i++) {
+      const c = bin.charCodeAt(i);
+      if (c < 32 || c > 126) {
+        if (c !== 9 && c !== 10 && c !== 13) ok = false;
+        break;
+      }
+    }
+    if (ok) out.push(bin);
+  }
+  return out.join(' ');
+}
