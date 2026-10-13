@@ -3,11 +3,10 @@ import { mesh, roundedBox, toon } from '../../world/toon';
 import type { Collider } from '../../world/types';
 import type { Fixture } from '../../world/office/fixture';
 import { blockerAt, stepTo, type Body } from '../../player/collide';
+import { FACE_PX, FACE_SRC, paintFace } from './picture';
 
 /** Face-computer NPC. No desk. Patrols the office. */
 const HOME = { x: -8.9, z: 5.55 } as const;
-const PX = 256;
-const FONT = 'Nunito, ui-rounded, system-ui, sans-serif';
 
 /** Aisle-ish waypoints — each step still resolved against office colliders. */
 const PATROL: { x: number; z: number }[] = [
@@ -23,7 +22,10 @@ export interface KaviKarenNpc {
   group: THREE.Group;
   colliders: Collider[];
   tick(dt: number): void;
-  setFeedTitles(titles: string[]): void;
+  /** Her screen, showing Kavi's picture (see picture.ts). */
+  face: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  /** Lets go of the face's picture, texture, material and geometry. */
+  dispose(): void;
 }
 
 export function buildKaviKaren(officeColliders: Collider[]): KaviKarenNpc {
@@ -40,41 +42,26 @@ export function buildKaviKaren(officeColliders: Collider[]): KaviKarenNpc {
   group.add(mesh(roundedBox(0.85, 0.7, 0.12, 0.04), chassis, 0, 1.05, 0));
   group.add(mesh(roundedBox(0.5, 0.06, 0.04, 0.02), accent, 0, 0.78, 0.07));
 
+  // The face: a still picture of Kavi framed like a video-call view (see picture.ts). The picture is
+  // loaded once and painted into the screen's canvas when it arrives; nothing is redrawn per frame.
   const canvas = document.createElement('canvas');
-  canvas.width = PX;
-  canvas.height = PX;
+  canvas.width = FACE_PX.w;
+  canvas.height = FACE_PX.h;
   const g = canvas.getContext('2d')!;
-  let feedLine = 'Bridge feed';
-  const paint = () => {
-    g.fillStyle = '#118ab2';
-    g.fillRect(0, 0, PX, PX);
-    g.fillStyle = '#fff';
-    g.beginPath(); g.arc(PX * 0.35, PX * 0.42, 28, 0, Math.PI * 2); g.fill();
-    g.beginPath(); g.arc(PX * 0.65, PX * 0.42, 28, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#2b2d42';
-    g.beginPath(); g.arc(PX * 0.35, PX * 0.42, 12, 0, Math.PI * 2); g.fill();
-    g.beginPath(); g.arc(PX * 0.65, PX * 0.42, 12, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = '#ef476f';
-    g.lineWidth = 6;
-    g.beginPath();
-    g.arc(PX * 0.5, PX * 0.55, 40, 0.15 * Math.PI, 0.85 * Math.PI);
-    g.stroke();
-    g.fillStyle = '#edf2f4';
-    g.font = `800 20px ${FONT}`;
-    g.textAlign = 'center';
-    g.fillText('Bridge', PX / 2, PX * 0.82);
-    g.font = `700 12px ${FONT}`;
-    g.fillStyle = '#a8dadc';
-    const line = feedLine.length > 28 ? feedLine.slice(0, 27) + '…' : feedLine;
-    g.fillText(line, PX / 2, PX * 0.92);
-  };
-  paint();
+  paintFace(g, null);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  const face = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.72, 0.55),
-    new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }),
-  );
+  const picture = new Image();
+  picture.decoding = 'async';
+  picture.onload = () => {
+    paintFace(g, picture);
+    texture.needsUpdate = true;
+  };
+  picture.src = FACE_SRC;
+  const faceGeo = new THREE.PlaneGeometry(0.72, 0.55);
+  const faceMat = new THREE.MeshBasicMaterial({ map: texture, toneMapped: false });
+  const face = new THREE.Mesh(faceGeo, faceMat);
+  face.name = 'kavi-face';
   face.position.set(0, 1.08, 0.07);
   group.add(face);
 
@@ -123,17 +110,19 @@ export function buildKaviKaren(officeColliders: Collider[]): KaviKarenNpc {
     group.rotation.y = Math.atan2(group.position.x - ox || dx, group.position.z - oz || dz);
   };
 
-  const setFeedTitles = (titles: string[]) => {
-    feedLine = titles[0] || 'Bridge feed';
-    paint();
-    texture.needsUpdate = true;
+  const dispose = () => {
+    picture.onload = null;
+    picture.src = '';
+    texture.dispose();
+    faceMat.dispose();
+    faceGeo.dispose();
   };
 
   // Own footprint collider moves with her (updated lightly via tick position — static home ok for hire blocking).
   const colliders: Collider[] = [
     { minX: HOME.x - 0.5, maxX: HOME.x + 0.5, minZ: HOME.z - 0.35, maxZ: HOME.z + 0.35, top: 1.9 },
   ];
-  return { group, colliders, tick, setFeedTitles };
+  return { group, colliders, tick, face, dispose };
 }
 
 declare module '../../world/types' {
@@ -142,7 +131,7 @@ declare module '../../world/types' {
   }
 }
 
-/** NPC fixture — no desk; collide+wander; face reads Bridge feed titles. */
+/** NPC fixture — no desk; collide+wander; face shows Kavi's picture (not a live call). */
 export const kaviKaren: Fixture<'kaviKaren'> = (site) => {
   const built = buildKaviKaren(site.colliders);
   return {
