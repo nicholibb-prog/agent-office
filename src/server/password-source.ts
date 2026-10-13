@@ -1,4 +1,5 @@
 import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { isMajorFiles } from './major-files.js';
 
 // Where the office password comes from, in order:
 //   1. AGENT_OFFICE_PASSWORD (environment)
@@ -6,10 +7,8 @@ import { readFileSync, realpathSync, statSync } from 'node:fs';
 //   3. --password <value> on the command line (deprecated: any process listing can see it)
 // The value itself is never logged, printed or put in an error message.
 
-/** Minimal Major Files check (src/server/major-files.ts isn't on main yet): Documents\Major Files, either slash, any case. */
-export function isMajorFilesPath(p: string): boolean {
-  return /(^|[\\/])documents[\\/]+major files([\\/]|$)/i.test(String(p));
-}
+/** Shared Major Files matcher (src/server/major-files.ts). */
+export const isMajorFilesPath = (p: string): boolean => isMajorFiles(p);
 
 export class PasswordSourceError extends Error {}
 
