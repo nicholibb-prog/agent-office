@@ -7,6 +7,8 @@
 // - the server cannot see inside a picture, so it cannot mask fields: the SOURCE bot must not send
 //   frames showing passwords, tokens or secrets, the ProArt's own screen, or anything from Major Files.
 
+import { isSeatId } from '../shared/hq.js';
+
 export const LIVE_MAX_BYTES = 400 * 1024; // one decoded frame
 export const LIVE_MIN_INTERVAL_MS = 250; // at most 4 frames a second per seat
 export const LIVE_STALE_MS = 10_000; // an older frame is "no live feed"
@@ -15,7 +17,6 @@ export const LIVE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 export type LiveFrame = { mime: string; bytes: Buffer; at: number };
 export type PushResult = { ok: true } | { ok: false; status: number; error: string };
 
-const SEAT = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
 function sniff(b: Buffer): string | undefined {
   if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
@@ -38,7 +39,7 @@ export class LiveFrames {
   /** Turned on by a person in the office session. Off drops whatever frame was held. */
   setEnabled(seat: string, on: boolean): boolean {
     const s = seat.trim().toLowerCase();
-    if (!SEAT.test(s)) return false;
+    if (!isSeatId(s)) return false; // a real crew seat only
     if (on) this.on.add(s);
     else {
       this.on.delete(s);
