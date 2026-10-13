@@ -2,8 +2,11 @@
 // It only stats packet files in <dir>/in and <dir>/out. It never reads packet text,
 // never returns file names or paths, never writes, and never calls any service.
 import { readdirSync, realpathSync, statSync } from 'node:fs';
-import { isMajorFiles } from './kavi-send.js';
+import { isMajorFiles, underMajorFiles } from './major-files.js';
 import path from 'node:path';
+
+/** fs calls the desk makes on the configured path; tests spy on them. */
+export const kaviDeskFs = { realpathSync: (p: string) => realpathSync(p) };
 
 export type KaviDeskState = 'unconfigured' | 'unreachable' | 'quiet' | 'waiting' | 'answered';
 
@@ -44,10 +47,11 @@ function scan(dir: string): { count: number; newest: number } | null {
 export function readKaviDesk(dir: string | undefined, now = Date.now()): KaviDesk {
   const base = { live: false as const, inCount: 0, outCount: 0, lastIn: null, lastOut: null, checkedAt: new Date(now).toISOString() };
   if (!dir) return { ...base, state: 'unconfigured' };
-  // Major Files is never listed: check the configured path and where it really points.
+  // Major Files is never touched: the raw path is checked before any fs call,
+  // then where it really points.
   if (isMajorFiles(dir)) return { ...base, state: 'unreachable' };
   try {
-    if (isMajorFiles(realpathSync(dir))) return { ...base, state: 'unreachable' };
+    if (underMajorFiles(dir, kaviDeskFs.realpathSync(dir))) return { ...base, state: 'unreachable' };
   } catch {
     return { ...base, state: 'unreachable' };
   }
