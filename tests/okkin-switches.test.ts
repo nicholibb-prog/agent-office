@@ -84,7 +84,8 @@ test('panel: even when the loft API fails, both controls still show (five stops,
   assert.equal(sw.label, "Can't reach Okkin");
   assert.equal(sw.light, 'error');
   assert.match(sw.tip, /^Can't reach Okkin/);
-  assert.match(sw.reason ?? '', /403/);
+  assert.equal(sw.reason, "Okkin refused this office's address", 'friendly by default');
+  assert.match(sw.detail ?? '', /403/, 'raw text kept for hover/focus');
 });
 
 test('switch only works once the real power config passed', () => {
