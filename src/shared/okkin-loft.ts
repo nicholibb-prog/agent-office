@@ -7,5 +7,5 @@ import { FLOOR } from './layout.js';
  */
 export const OKKIN_LOFT = { minX: 5, maxX: 6.2, minZ: 7, maxZ: 10, rackDepth: 0.8, rackHeight: 2.2 } as const;
 /** Where you stand to use the panel: in front of the racks, on open floor. */
-export const OKKIN_LOFT_SPOT = { x: 3.8, z: 8.5 } as const;
+export const OKKIN_LOFT_SPOT = { x: 3.3, z: 8.5 } as const;
 void FLOOR;

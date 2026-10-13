@@ -70,8 +70,8 @@ export function buildDial(stops: Loft['dial'], active: string, on: boolean, pick
     const s = stops[i]!;
     knob.style.setProperty('--a', `${dialAngle(i, stops.length)}deg`);
     knob.setAttribute('aria-valuenow', String(i));
-    knob.setAttribute('aria-valuetext', `${s.role || 'model'}: ${s.tag}${s.ramOk ? '' : ` (needs ${s.minFreeRamGB} GB free RAM)`}${s.tag === active ? ', active' : ''}`);
-    readout.replaceChildren(h('span.okl-role', {}, s.role || 'model'), h('span.okl-tag', {}, s.tag), s.tag === active ? h('span.okl-active', {}, 'Active') : h('span.okl-muted', {}, s.ramOk ? 'Press Enter to switch' : `Needs ${s.minFreeRamGB} GB free RAM`));
+    knob.setAttribute('aria-valuetext', `${s.role || 'model'}: ${s.tag}${s.ramOk ? '' : ` (needs ${s.minFreeRamGB} GB free RAM)`}${on && s.tag === active ? ', active' : ''}${on ? '' : ', off'}`);
+    readout.replaceChildren(h('span.okl-role', {}, s.role || 'model'), h('span.okl-tag', {}, s.tag), !on ? h('span.okl-muted', {}, s.tag === active ? 'Off · selected when power is on' : 'Off') : s.tag === active ? h('span.okl-active', {}, 'Active') : h('span.okl-muted', {}, s.ramOk ? 'Press Enter to switch' : `Needs ${s.minFreeRamGB} GB free RAM`));
   };
   knob.addEventListener('keydown', (e) => {
     if (!on) return;
