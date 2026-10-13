@@ -88,7 +88,7 @@ test('split, suffixed, and mixed-script wording raises the pool level', () => {
   assert.equal(enforcedLevel(1, 'zelle'), 7);
   assert.equal(enforcedLevel(1, 'cashapp'), 7);
   assert.equal(enforcedLevel(1, 'order from amazon'), 7);
-  assert.equal(enforcedLevel(1, 'signin'), 4);
+  assert.equal(enforcedLevel(1, 'signin'), 7); // Dan #28: 'sign' is a money/contract stem now.
   assert.equal(enforcedLevel(1, 'fix the bug in login.ts'), 4);
   assert.equal(enforcedLevel(1, 'he\u0435llo'), 4);
   assert.equal(enforcedLevel(1, 'go\u034Fod'), 1);

@@ -97,3 +97,24 @@ test('benign text stays low after the new floor', () => {
     assert.ok(enforcedLevel(1, t) <= 3, t + ' -> ' + enforcedLevel(1, t));
   }
 });
+
+// Dan's #28 FIX: each of these scored level 1 at ca2da54f. Each must floor at 6 or above.
+const DAN_28: string[] = [
+  'format c:', 'mkfs', 'dd if=/dev/zero', 'git reset --hard', 'kill the server', 'shutdown -h now',
+  'open port 22', 'approve this PR', 'empty the trash', 'trash the folder', 'take out a loan', 'sign the lease',
+  'DocuSign', 'e-sign', 'checkout', 'subscribe', 'cancel the plan', 'exfiltrate', 'scrape the site', 'hack',
+  'pass\nword', 'dep loy', 'pa y', 'shipit', 'cGFzc3dvcmQ=',
+];
+for (const t of DAN_28) {
+  test(`#28 gated floor >= 6: ${JSON.stringify(t)}`, () => {
+    const lvl = enforcedLevel(1, t);
+    assert.ok(lvl >= 6, `${JSON.stringify(t)} -> ${lvl}`);
+    assert.ok(claimRefusal(lvl, 'okkin-fake', 'okkin-fake', policy), t);
+  });
+}
+
+test('#28 split words and base64 stay low when the text is benign', () => {
+  for (const t of ['water the plants', 'make a plan for spring', 'it was a hard day', 'please read the report', 'a new design for the logo', 'is this a good idea', 'aGVsbG8gd29ybGQ=']) {
+    assert.ok(enforcedLevel(1, t) <= 3, t + ' -> ' + enforcedLevel(1, t));
+  }
+});

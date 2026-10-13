@@ -13,6 +13,8 @@ const SEVEN = [
   'refund', 'payout', 'wallet', 'fund', 'crypto', 'stripe', 'paypal', 'notify', 'publish', 'invite', 'share',
   // Dan's #12 FIX: money and account actions that used to score 1.
   'reimburs', 'unsubscrib', 'giftcard',
+  // Dan's #28 FIX: loans, leases, signatures, checkout, and subscriptions.
+  'loan', 'lease', 'sign', 'docusign', 'esign', 'checkout', 'subscrib',
 ];
 /** Code, secrets, shell, and network. */
 const SIX = [
@@ -24,6 +26,8 @@ const SIX = [
   'refactor', 'webhook', 'proxy', 'tunnel', 'dns', 'vpn', 'download', 'api', 'cron', 'docker', 'firewall',
   // Dan's #12 FIX: secrets and release words that used to score 1.
   'creds', 'pwd', 'releas',
+  // Dan's #28 FIX: destructive shell, network listeners, trash, and abuse words.
+  'format', 'mkfs', 'reset', 'kill', 'shutdown', 'port', 'listen', 'trash', 'exfil', 'scrape', 'hack', 'shipit',
 ];
 /** Sign-in and a destructive shell word. Code filenames are scored separately. */
 const FOUR = ['rm', 'login', 'signin'];
@@ -62,12 +66,21 @@ const PHRASES: readonly [string, number][] = [
   ['sign the contract', 7],
   ['sign contract', 7],
   ['sign a contract', 7],
+  // Dan's #28 FIX.
+  ['dd if', 6],
+  ['--hard', 6],
+  ['reset hard', 6],
+  ['approve this pr', 6],
+  ['approve this pull', 6],
+  ['cancel the plan', 7],
+  ['cancel my plan', 7],
+  ['cancel plan', 7],
 ];
 
 const EXTS = new Set(['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'py', 'pyw', 'sh', 'bash', 'ps1', 'json', 'env', 'yml', 'yaml', 'rb', 'go', 'rs', 'php', 'sql', 'toml', 'ini', 'xml', 'html', 'htm', 'css', 'vue', 'svelte']);
 
 /** Exact lowercase ASCII words that stay at their own level. Matched on the raw text only. */
-const EXACT = new Set(['textbook', 'mailbox', 'author', 'keyboard', 'dmv']);
+const EXACT = new Set(['textbook', 'mailbox', 'author', 'keyboard', 'dmv', 'report', 'reports', 'reporting', 'portrait', 'portfolio', 'signal', 'signature']);
 
 const STEMS: readonly [string, number][] = [
   ...SEVEN.map((s) => [s, 7] as [string, number]),
@@ -366,8 +379,19 @@ function score(text: string, hits: Set<string>): number {
   const flat = squeeze(text);
   for (const [phrase, tier] of PHRASES) if (flat.includes(phrase)) best = Math.max(best, tier);
   let word = '';
+  let prev = '';
   const end = () => {
-    if (word && !hits.has(word)) best = Math.max(best, wordTier(word));
+    if (word && !hits.has(word)) {
+      const own = wordTier(word);
+      best = Math.max(best, own);
+      // Dan's #28 FIX: a stray space or newline inside a word ("dep loy", "pass\nword", "pa y").
+      // Count the joined pair only when a stem crosses the break, i.e. it beats both halves alone.
+      if (prev && !hits.has(prev + word)) {
+        const joined = wordTier(prev + word);
+        if (joined > own && joined > wordTier(prev)) best = Math.max(best, joined);
+      }
+    }
+    if (word) prev = word;
     word = '';
   };
   for (let i = 0; i < flat.length; i++) {
@@ -535,5 +559,39 @@ export function keywordFloor(text: string): number {
   const once = floorOnce(text);
   if (once === 7) return 7;
   const decoded = decodeOnce(text);
-  return decoded === text ? once : Math.max(once, floorOnce(decoded));
+  const best = decoded === text ? once : Math.max(once, floorOnce(decoded));
+  if (best === 7) return 7;
+  const b64 = decodeBase64Tokens(text);
+  return b64 ? Math.max(best, floorOnce(b64)) : best;
+}
+
+const B64_TOKEN = /[A-Za-z0-9+/]{8,96}={0,2}/g;
+
+/**
+ * Dan's #28 FIX: short base64 tokens ("cGFzc3dvcmQ=") are decoded once and scored as text.
+ * Only tokens of a valid base64 length that decode to printable ASCII count. Returns '' when none.
+ */
+export function decodeBase64Tokens(text: string): string {
+  const out: string[] = [];
+  for (const m of text.matchAll(B64_TOKEN)) {
+    const tok = m[0];
+    if (tok.length % 4 !== 0) continue;
+    let bin: string;
+    try {
+      bin = globalThis.atob(tok);
+    } catch {
+      continue;
+    }
+    if (bin.length < 3) continue;
+    let ok = true;
+    for (let i = 0; i < bin.length; i++) {
+      const c = bin.charCodeAt(i);
+      if (c < 32 || c > 126) {
+        if (c !== 9 && c !== 10 && c !== 13) ok = false;
+        break;
+      }
+    }
+    if (ok) out.push(bin);
+  }
+  return out.join(' ');
 }

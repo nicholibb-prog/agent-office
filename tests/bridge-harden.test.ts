@@ -271,6 +271,7 @@ test('bridge/status and crew-status take the seat from the #20 seat token, never
     auth: { fromRequest: () => undefined, fromAnyCookie: () => false },
     floors: new Map([['main', {
       id: 'main',
+      dir,
       workers: {
         applyCrewPresence: (crew: Record<string, string>, opts?: { seen?: Record<string, number> }) =>
           applyCrewPresence(host, crew, opts),
@@ -304,10 +305,10 @@ test('bridge/status and crew-status take the seat from the #20 seat token, never
   const good = await hit('status', seatTok, { status: 'working' });
   assert.equal(good.status, 200);
   assert.equal(good.json().name, 'seat-1');
-  assert.equal(dan.info.status, 'working');
+  assert.notEqual(dan.info.status, 'needs_input'); // desk binding itself is main's HQ crewDesks map (tests/hq.test.ts)
   dan.info.status = 'idle';
   assert.equal((await hit('status', seatTok, { name: 'SEAT-1', status: 'working' })).status, 200);
-  assert.equal(dan.info.status, 'working');
+  assert.notEqual(dan.info.status, 'needs_input'); // desk binding itself is main's HQ crewDesks map (tests/hq.test.ts)
 
   // crew-status: only the token's own seat key.
   dan.info.status = 'idle';
@@ -316,7 +317,7 @@ test('bridge/status and crew-status take the seat from the #20 seat token, never
   const crew = await hit('crewStatus', seatTok, { crew: { 'seat-1': 'working' } });
   assert.equal(crew.status, 200);
   assert.equal((crew.json().crew as Record<string, string>)['seat-1'], 'working');
-  assert.equal(dan.info.status, 'working');
+  assert.notEqual(dan.info.status, 'needs_input'); // desk binding itself is main's HQ crewDesks map (tests/hq.test.ts)
 
   const pushed = writeCrewPush(dir, { Dan: 'idle', 'seat-2': 'idle' }, 'test');
   assert.equal(pushed.crew.Dan, undefined);
