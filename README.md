@@ -85,7 +85,7 @@ Common options:
 
 ```bash
 agent-office ~/code/my-project              # use a project you already have as the first floor
-agent-office --password 'correct horse'     # choose the password
+AGENT_OFFICE_PASSWORD='correct horse' agent-office   # choose the password (or AGENT_OFFICE_PASSWORD_FILE)
 agent-office --port 4700
 agent-office --agent pi                     # default agent: claude, codex, opencode, grok, muse, dsh, pi or cursor-agent
 agent-office --no-open                      # print the sign-in link instead of opening a browser

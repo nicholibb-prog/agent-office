@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { WEATHERS, type Weather } from '../shared/protocol.js';
 import { AGENT_PROVIDERS, PROVIDER_META } from '../shared/providers.js';
 import { MAX_WORKER_LIMIT, parseWorkerLimit } from './machine.js';
+import { PasswordSourceError, resolvePassword, scrubPasswordArgv } from './password-source.js';
 
 export interface Config {
   /** The office's own folder: the building's data lives in its .agent-office. */
@@ -114,7 +115,9 @@ Options:
   -p, --port <n>          Port to listen on (default 4600, env PORT)
   -H, --host <addr>       Address to bind (default 127.0.0.1: only this machine).
                           0.0.0.0 lets other computers on your network in
-      --password <pw>     Office password (env AGENT_OFFICE_PASSWORD).
+      --password <pw>     Deprecated (visible in process listings). Use env
+                          AGENT_OFFICE_PASSWORD, or AGENT_OFFICE_PASSWORD_FILE
+                          (an owner-only file holding the password).
                           Without one, a random password is generated once and
                           saved in <dir>/.agent-office/config.json
       --claim-token <t>   Show the generated password exactly once, at /claim?t=<t>
@@ -225,7 +228,7 @@ export function loadConfig(argv: string[]): Config {
   // some platforms export HOST=0.0.0.0, and that must not become the default bind.
   let host = '127.0.0.1';
   let open = !process.env.AGENT_OFFICE_NO_OPEN || process.env.AGENT_OFFICE_NO_OPEN === '0';
-  let password = process.env.AGENT_OFFICE_PASSWORD || '';
+  let argvPassword = '';
   let agentCmd = process.env.AGENT_OFFICE_AGENT || 'claude';
   let agentArgs: string[] = splitArgs(process.env.AGENT_OFFICE_AGENT_ARGS || '');
   let dshProfile = process.env.AGENT_OFFICE_DSH_PROFILE || 'acp';
@@ -262,7 +265,7 @@ export function loadConfig(argv: string[]): Config {
         host = takeValue(argv, i++, a).trim() || '127.0.0.1';
         break;
       case '--password':
-        password = takeValue(argv, i++, a);
+        argvPassword = takeValue(argv, i++, a);
         break;
       case '--agent':
         agentCmd = takeValue(argv, i++, a);
@@ -336,6 +339,18 @@ export function loadConfig(argv: string[]): Config {
         project = path.resolve(a);
     }
   }
+
+  // Env first, then an owner-only file, then the deprecated --password flag. Never print the value.
+  let password = '';
+  try {
+    ({ password } = resolvePassword({ argvPassword }));
+  } catch (e) {
+    console.error(e instanceof PasswordSourceError ? e.message : 'agent-office: could not read the office password');
+    process.exit(2);
+  }
+  argvPassword = '';
+  scrubPasswordArgv(argv);
+  if (argv !== process.argv) scrubPasswordArgv(process.argv);
 
   // An office already runs in this project (started here before there were floors): carry on with
   // it, its workers and its password, rather than open an empty building somewhere else.

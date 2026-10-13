@@ -4,6 +4,7 @@ import { Office } from './office.js';
 import { forget, signIn, type Credentials } from './session.js';
 import { SshTunnel, sshArgs } from './ssh.js';
 import type { Forward } from './wire.js';
+import { resolvePassword, scrubPasswordArgv } from '../password-source.js';
 
 // `agent-office tunnel`, run on your own computer: every web server a worker starts in an office
 // somewhere else opens on the same port here, by itself, and closes when the worker stops it. It
@@ -42,8 +43,8 @@ Options:
       --office-port <n>   With an SSH address: the office's port on its own
                           machine (default ${DEFAULT_PORT})
       --name <name>       Sign in with this account (env AGENT_OFFICE_NAME)
-      --password <pw>     The password, instead of being asked for it
-                          (env AGENT_OFFICE_PASSWORD)
+      --password <pw>     Deprecated (visible in process listings): use env
+                          AGENT_OFFICE_PASSWORD or AGENT_OFFICE_PASSWORD_FILE
       --no-open           With an SSH address: don't open the office in a browser
       --insecure          Accept a certificate nobody vouches for (--self-signed)
   -h, --help              Show this help
@@ -69,8 +70,9 @@ function parsePort(v: string, flag: string): number {
 }
 
 /** Reads the command line; throws what's wrong with it. Undefined for --help. */
-export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): Options | undefined {
-  const o: Options = { where: '', officePort: DEFAULT_PORT, credentials: { name: env.AGENT_OFFICE_NAME || undefined, password: env.AGENT_OFFICE_PASSWORD || undefined }, open: !env.AGENT_OFFICE_NO_OPEN, insecure: false, ssh: [] };
+export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env, warn: (line: string) => void = (l) => console.warn(l)): Options | undefined {
+  const o: Options = { where: '', officePort: DEFAULT_PORT, credentials: { name: env.AGENT_OFFICE_NAME || undefined, password: undefined }, open: !env.AGENT_OFFICE_NO_OPEN, insecure: false, ssh: [] };
+  let argvPassword = '';
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const value = () => {
@@ -85,13 +87,16 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
     } else if (a === '-p' || a === '--port') o.port = parsePort(value(), a);
     else if (a === '--office-port') o.officePort = parsePort(value(), a);
     else if (a === '--name') o.credentials.name = value();
-    else if (a === '--password') o.credentials.password = value();
+    else if (a === '--password') argvPassword = value();
     else if (a === '--no-open') o.open = false;
     else if (a === '--insecure') o.insecure = true;
     else if (a.startsWith('-')) throw new Error(`unknown option ${a}`);
     else if (o.where) throw new Error(`one office at a time: ${o.where} or ${a}?`);
     else o.where = a;
   }
+  // Env, then an owner-only file, then the deprecated flag (warned, value never shown).
+  o.credentials.password = resolvePassword({ env, argvPassword, warn }).password || undefined;
+  if (argvPassword && argv === process.argv) scrubPasswordArgv(process.argv);
   return o;
 }
 

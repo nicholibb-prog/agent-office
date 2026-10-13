@@ -56,7 +56,8 @@ office.example.com {
 
 ```bash
 agent-office setup --projects ~/workspace --project owner/repo   # once; or pick projects in the office
-agent-office --host 127.0.0.1 --trust-proxy --password "$(openssl rand -base64 18)"
+umask 077; openssl rand -base64 18 > ~/.config/agent-office/password   # owner-only file
+AGENT_OFFICE_PASSWORD_FILE=~/.config/agent-office/password agent-office --host 127.0.0.1 --trust-proxy
 ```
 
 Caddy proxies WebSockets out of the box. With nginx, forward the Host and Upgrade headers:
