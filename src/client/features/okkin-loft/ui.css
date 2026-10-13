@@ -84,3 +84,9 @@ body:has([aria-modal="true"]:not([hidden])) :is(.since-close, #project) { visibi
 .okl-power[data-locked="yes"] .okl-power-ring { color: #8e8e93; box-shadow: inset 0 2px 3px rgba(255,255,255,.9), 0 10px 24px rgba(0,0,0,.18); filter: grayscale(1); }
 .okl-owner { margin-top: 8px; }
 .okl-owner .okl-muted { display: inline-block; margin-right: 12px; }
+/* Ask while Okkin is off (or for a non-owner): greyed out, still focusable so it can say why. */
+.okl-ask[data-off="yes"] .okl-input { background: rgba(142,142,147,.12); color: #8e8e93; border-color: rgba(142,142,147,.25); }
+.okl-ask[data-off="yes"] .okl-btn { background: #c7c7cc; color: #fff; }
+/* Focus: a gold ring from the loft's palette, not the system blue. */
+.okl-input:focus, .okl-ask .okl-btn:focus { outline: none; }
+.okl-input:focus-visible, .okl-ask .okl-btn:focus-visible, .okl-tick:focus-visible { outline: 2px solid #c9a227; outline-offset: 2px; box-shadow: 0 0 0 4px rgba(201,162,39,.22); }

@@ -226,3 +226,10 @@ test('Unlock owner and Lock are served (registered with the office routes)', asy
   const list = routes as unknown as unknown[];
   assert.ok(list.includes(hqRoutes.okkinOwnerUnlock) && list.includes(hqRoutes.okkinOwnerLock));
 });
+
+test('Ask while off is greyed, and focus uses a palette-gold ring, not the system blue', () => {
+  const css = readFileSync(path.join(import.meta.dirname, '../src/client/features/okkin-loft/ui.css'), 'utf8');
+  assert.match(css, /\.okl-ask\[data-off="yes"\] \.okl-input \{[^}]*#8e8e93/);
+  const focus = css.slice(css.lastIndexOf('.okl-input:focus-visible'));
+  assert.match(focus, /outline: 2px solid #c9a227/);
+});

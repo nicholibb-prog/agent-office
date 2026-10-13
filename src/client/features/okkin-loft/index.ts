@@ -35,7 +35,7 @@ function askBox(on: boolean, owner: boolean, lines: { who: string; text: string 
   const log = h('div.okl-log', { role: 'log', 'aria-live': 'polite', 'aria-label': 'Ask Okkin replies' }, ...lines.slice(-6).map((l) => h('p', {}, h('strong', {}, `${l.who} `), l.text)));
   const input = h('input.okl-input', { type: 'text', maxlength: 500, 'aria-label': 'Ask Okkin', placeholder: !owner ? OWNER_ONLY : on ? 'Ask Okkin' : POWER_ON_FIRST }) as HTMLInputElement;
   // Off, Ask stays focusable and clickable and says why it can't go (never a silent grey).
-  const form = h('form.okl-ask', {}, input, h('button.okl-btn', { type: 'submit', 'aria-disabled': on && owner ? 'false' : 'true', 'data-off': on ? 'no' : 'yes' }, 'Ask'));
+  const form = h('form.okl-ask', { 'data-off': on && owner ? 'no' : 'yes' }, input, h('button.okl-btn', { type: 'submit', 'aria-disabled': on && owner ? 'false' : 'true', 'data-off': on ? 'no' : 'yes' }, 'Ask'));
   form.addEventListener('submit', (e) => { e.preventDefault(); if (!owner) { say?.(`Ask: ${OWNER_ONLY}`); return; } if (!on) { say?.(`Ask: ${POWER_ON_FIRST}`); return; } const t = input.value.trim().slice(0, 500); if (t && ask) { input.value = ''; ask(t); } });
   return h('section', {}, h('h3', {}, 'Ask'), log, form);
 }
@@ -216,8 +216,9 @@ export function installOkkinLoft(ctx: Ctx) {
       return refresh();
     });
   };
-  const unlock = (passphrase: string) => void post('/api/bridge/okkin/owner/unlock', { passphrase }).then((r) => { note = r.status === 200 ? 'Owner unlocked' : `Unlock: ${r.body.error ?? 'refused'}`; return refresh(); });
-  const lock = () => void post('/api/bridge/okkin/owner/lock', {}).then(() => { note = 'Owner locked'; return refresh(); });
+  const unlock = (passphrase: string) => void post('/api/bridge/okkin/owner/unlock', { passphrase }).then((r) => { // Unlocked shows in the Owner section itself; only a refusal needs a note.
+      note = r.status === 200 ? '' : `Unlock: ${r.body.error ?? 'refused'}`; return refresh(); });
+  const lock = () => void post('/api/bridge/okkin/owner/lock', {}).then(() => { note = ''; return refresh(); });
   const toggle = () => {
     const sw = switchView(data, loadError, loadStatus);
     if (!sw.works) {
