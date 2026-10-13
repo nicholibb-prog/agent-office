@@ -7,7 +7,7 @@ import { FLOOR } from './layout.js';
  */
 export const OKKIN_LOFT = { minX: 5, maxX: 6.2, minZ: 7, maxZ: 10, rackDepth: 0.8, rackHeight: 2.2 } as const;
 /** Where you stand to use the panel: in front of the racks, on open floor. */
-export const OKKIN_LOFT_SPOT = { x: 1.6, z: 8.5 } as const;
+export const OKKIN_LOFT_SPOT = { x: 1.1, z: 8.5 } as const;
 void FLOOR;
 /**
  * The physical controls: a console on a pedestal in front of the racks (between them and where you
@@ -21,7 +21,7 @@ export const OKKIN_PEDESTAL = { minX: OKKIN_LOFT.minX - 0.05, maxX: OKKIN_LOFT.m
 /** The 日光 hanging scroll (kakejiku) on its stand, at the pedestal's north end, facing the floor (-x). */
 export const OKKIN_SCROLL = { x: OKKIN_LOFT.minX + 0.25, z: OKKIN_LOFT.minZ - 0.35, width: 0.5, height: 1.6, bottom: 0.55 } as const;
 /** The OKKIN sign above it all. */
-export const OKKIN_SIGN = { width: 2.6, height: 0.7, y: 3.75 } as const;
+export const OKKIN_SIGN = { width: 2.6, height: 0.7, y: 4.45 } as const;
 export const OKKIN_CONSOLE = { x: 4.5, z: 8.5, width: 0.9, depth: 0.4, height: 0.95 } as const;
 
 /**

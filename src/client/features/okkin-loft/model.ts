@@ -35,6 +35,8 @@ export type SwitchView = {
   locked?: boolean;
   /** The loft API said 401/403-session: the fix is to sign in again. */
   signIn?: boolean;
+  /** The raw error behind `reason` (e.g. the HTTP 403 text): shown on hover or focus only. */
+  detail?: string | null;
 };
 
 /** The server's short powerReason, said so an operator knows what to do. Never a silent grey switch. */
@@ -82,8 +84,9 @@ export function chosenIndex(d: LoftLike | null, stops: StopView[]): number {
 export function switchView(d: LoftLike | null, apiError: string | null = null, apiStatus: number | null = null): SwitchView {
   if (!d) {
     // The loft API didn't answer for us: a lapsed session (401) is its own state, with its own fix.
-    if (apiStatus === 401) return { power: 'unknown', works: false, label: 'Sign in again', icon: 'setup', light: 'error', tip: 'Sign in again', reason: 'Your office session ended. Sign in again to use the switch.', signIn: true };
-    return { power: 'unknown', works: false, label: "Can't reach Okkin", icon: 'setup', light: 'error', tip: `Can't reach Okkin${apiError ? `: ${apiError}` : ''}`, reason: apiError ?? 'The loft did not answer.' };
+    if (apiStatus === 401) return { power: 'unknown', works: false, label: 'Sign in again', icon: 'setup', light: 'error', tip: 'Sign in again', reason: 'Your office session ended. Sign in again to use the switch.', signIn: true, detail: apiError };
+    const reason = apiError && /\b403\b/.test(apiError) ? "Okkin refused this office's address" : apiError ? "Okkin's loft didn't answer" : 'The loft did not answer.';
+    return { power: 'unknown', works: false, label: "Can't reach Okkin", icon: 'setup', light: 'error', tip: `Can't reach Okkin: ${reason}`, reason, detail: apiError };
   }
   const on = d.power === 'on';
   // Not the owner: a locked switch, grey (never green), whatever the power is.

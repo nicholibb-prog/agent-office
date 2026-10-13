@@ -16,7 +16,7 @@ import { resetOkkinForTests, setOkkinFetchForTests } from '../src/server/hq/okki
 import { testOwner } from './support/okkin-owner.js';
 import { POWER_ON_FIRST, powerReasonText, stopsView, switchView, type LoftLike } from '../src/client/features/okkin-loft/model.js';
 
-const ctx2d = new Proxy({}, { get: (_t, k) => (k === 'measureText' ? () => ({ width: 40 }) : () => undefined), set: () => true });
+const ctx2d = new Proxy({}, { get: (_t, k) => (k === 'measureText' ? () => ({ width: 40 }) : () => ({ addColorStop() {} })), set: () => true });
 (globalThis as { document?: unknown }).document ??= { createElement: () => ({ getContext: () => ctx2d, width: 0, height: 0 }) };
 
 const support = path.join(import.meta.dirname, 'support');
