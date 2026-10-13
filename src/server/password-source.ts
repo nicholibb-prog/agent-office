@@ -3,7 +3,7 @@ import { isMajorFiles } from './major-files.js';
 
 // Where the office password comes from, in order:
 //   1. AGENT_OFFICE_PASSWORD (environment)
-//   2. AGENT_OFFICE_PASSWORD_FILE (a path to an owner-only file; one trailing newline is trimmed)
+//   2. AGENT_OFFICE_PASSWORD_FILE (a path to an owner-only file; surrounding whitespace is trimmed)
 //   3. --password <value> on the command line (deprecated: any process listing can see it)
 // The value itself is never logged, printed or put in an error message.
 
@@ -45,9 +45,15 @@ export function readPasswordFile(file: string, platform: NodeJS.Platform = proce
   } catch {
     throw new PasswordSourceError('AGENT_OFFICE_PASSWORD_FILE: cannot be read');
   }
-  const value = text.replace(/\r?\n$/, '');
+  const value = text.trim();
   if (!value) throw new PasswordSourceError('AGENT_OFFICE_PASSWORD_FILE: file is empty');
   return value;
+}
+
+/** Drop the password variables from the environment so child processes (gh, git, browsers, models) don't inherit them. */
+export function scrubPasswordEnv(env: NodeJS.ProcessEnv = process.env): void {
+  delete env.AGENT_OFFICE_PASSWORD;
+  delete env.AGENT_OFFICE_PASSWORD_FILE;
 }
 
 export function resolvePassword(input: PasswordSourceInput = {}): { password: string; source: PasswordSource } {

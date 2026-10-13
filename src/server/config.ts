@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { WEATHERS, type Weather } from '../shared/protocol.js';
 import { AGENT_PROVIDERS, PROVIDER_META } from '../shared/providers.js';
 import { MAX_WORKER_LIMIT, parseWorkerLimit } from './machine.js';
-import { PasswordSourceError, resolvePassword, scrubPasswordArgv } from './password-source.js';
+import { PasswordSourceError, resolvePassword, scrubPasswordArgv, scrubPasswordEnv } from './password-source.js';
 
 export interface Config {
   /** The office's own folder: the building's data lives in its .agent-office. */
@@ -344,6 +344,8 @@ export function loadConfig(argv: string[]): Config {
   let password = '';
   try {
     ({ password } = resolvePassword({ argvPassword }));
+    // Gone from the environment, so gh, git, browsers and model runners don't inherit it.
+    scrubPasswordEnv(process.env);
   } catch (e) {
     console.error(e instanceof PasswordSourceError ? e.message : 'agent-office: could not read the office password');
     process.exit(2);

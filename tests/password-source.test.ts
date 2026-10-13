@@ -12,6 +12,7 @@ import {
   scrubPasswordArgv,
 } from '../src/server/password-source.js';
 import { loadConfig } from '../src/server/config.js';
+import { execFileSync } from 'node:child_process';
 
 const SECRET = 'S3cret-Value-zq81';
 const posix = process.platform !== 'win32';
@@ -41,10 +42,11 @@ test('precedence: env beats file beats argv', (t) => {
   assert.deepEqual(resolvePassword({ env: {}, warn: w }), { password: '', source: 'none' });
 });
 
-test('file: trims one trailing newline only', (t) => {
+test('file: value is trimmed; whitespace-only file refused', (t) => {
   const d = tmp(t);
   assert.equal(readPasswordFile(secretFile(d, SECRET + '\r\n')), SECRET);
-  assert.equal(readPasswordFile(secretFile(d, ' a b \n\n')), ' a b \n');
+  assert.equal(readPasswordFile(secretFile(d, ' a b \n\n')), 'a b');
+  assert.throws(() => readPasswordFile(secretFile(d, '   \t \n')), (e: Error) => /empty/.test(e.message) && !e.message.includes(SECRET));
 });
 
 test('file: group/world-readable refused on POSIX, without the value in the error', { skip: !posix }, (t) => {
@@ -153,4 +155,25 @@ test('tunnel parseArgs: same order (env, file, argv) and a value-free warning', 
   assert.equal(parseArgs(['--password', SECRET], {}, w)!.credentials.password, SECRET);
   assert.deepEqual(warn, [ARGV_DEPRECATION]);
   assert.throws(() => parseArgs([], { AGENT_OFFICE_PASSWORD_FILE: '/x/Documents/Major Files/pw' }, w), (e: Error) => /Major Files/.test(e.message) && !e.message.includes(SECRET));
+});
+
+test('loadConfig: password env vars are gone afterwards and not inherited by children', (t) => {
+  const f = secretFile(tmp(t));
+  for (const env of [{ AGENT_OFFICE_PASSWORD: SECRET, AGENT_OFFICE_PASSWORD_FILE: f }, { AGENT_OFFICE_PASSWORD_FILE: f }]) {
+    Object.assign(process.env, env);
+    assert.equal(loadConfig(['--home', tmp(t), '--no-open']).password, SECRET);
+    assert.equal(process.env.AGENT_OFFICE_PASSWORD, undefined);
+    assert.equal(process.env.AGENT_OFFICE_PASSWORD_FILE, undefined);
+    const childEnv = execFileSync(process.execPath, ['-e', 'process.stdout.write(JSON.stringify(process.env))'], { encoding: 'utf8' });
+    assert.ok(!childEnv.includes('AGENT_OFFICE_PASSWORD') && !childEnv.includes(SECRET));
+  }
+});
+
+test('tunnel parseArgs: password env vars are removed from the environment', async () => {
+  const { parseArgs } = await import('../src/server/tunnel/index.js');
+  process.env.AGENT_OFFICE_PASSWORD = SECRET;
+  process.env.AGENT_OFFICE_PASSWORD_FILE = '/unused';
+  assert.equal(parseArgs([], process.env)!.credentials.password, SECRET);
+  assert.equal(process.env.AGENT_OFFICE_PASSWORD, undefined);
+  assert.equal(process.env.AGENT_OFFICE_PASSWORD_FILE, undefined);
 });
