@@ -420,7 +420,7 @@ test('buildDecisionLog redacts stop reasons and uses owner when stopped', () => 
     costKnown: true,
     status: 'stopped',
     reason: 'the Skeptic (SecretName) was sent home',
-    calledBy: 'Nick',
+    calledBy: 'CallerName',
     startedAt: 1,
     finishedAt: Date.parse('2026-10-07T01:00:00.000Z'),
     notes: '.meeting',
@@ -428,6 +428,6 @@ test('buildDecisionLog redacts stop reasons and uses owner when stopped', () => 
   assert.equal(log.decidedBy, 'owner');
   assert.equal(log.decidedAt, '2026-10-07T01:00:00.000Z');
   assert.equal(log.decision, 'Stopped: the Skeptic was sent home');
-  assert.doesNotMatch(log.decision, /SecretName|Nick/);
+  assert.doesNotMatch(log.decision, /SecretName|CallerName/);
   assert.deepEqual(log.seats.map((s) => s.bot), ['bot-a', 'bot-b']);
 });
