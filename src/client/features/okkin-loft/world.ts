@@ -3,7 +3,7 @@ import { mesh, roundedBox, textPlane, toon } from '../../world/toon';
 import type { Collider, Interactable } from '../../world/types';
 import type { Fixture } from '../../world/office/fixture';
 import { OKKIN_CONSOLE, OKKIN_LOFT, OKKIN_MODELS, OKKIN_PEDESTAL, OKKIN_SCROLL, OKKIN_SIGN } from '../../../shared/okkin-loft';
-import { buildPedestal, buildScroll, buildSign } from './regalia';
+import { LOFT_PALETTE, buildPedestal, buildScroll, buildSign } from './regalia';
 import { TOWER, buildHero } from './hero';
 
 export type LoftState = {
@@ -75,8 +75,11 @@ export function buildOkkinLoft(): OkkinLoftView {
   consoleG.name = 'okkin-console';
   consoleG.position.set(C.x, 0, C.z);
   consoleG.rotation.y = -Math.PI / 2; // its front (+z local) faces -x, toward the floor
-  consoleG.add(mesh(roundedBox(C.width, C.height - 0.08, C.depth, 0.04), toon('#c9ccd1'), 0, (C.height - 0.08) / 2, 0));
-  const top = mesh(roundedBox(C.width + 0.06, 0.08, C.depth + 0.1, 0.03), toon('#f2f3f5'), 0, C.height - 0.04, 0.02);
+  // Stone and gold, like the plinth: a stone pillar with gold bands, a deep-blue slate top in a gold rim.
+  consoleG.add(mesh(roundedBox(C.width, C.height - 0.08, C.depth, 0.04), toon(LOFT_PALETTE.stone), 0, (C.height - 0.08) / 2, 0));
+  for (const y of [0.04, C.height - 0.14]) consoleG.add(mesh(new THREE.BoxGeometry(C.width + 0.03, 0.03, C.depth + 0.03), new THREE.MeshBasicMaterial({ color: LOFT_PALETTE.gold }), 0, y, 0, false));
+  const top = mesh(roundedBox(C.width + 0.06, 0.08, C.depth + 0.1, 0.03), toon(LOFT_PALETTE.gold), 0, C.height - 0.04, 0.02);
+  top.add(mesh(new THREE.BoxGeometry(C.width - 0.02, 0.012, C.depth + 0.02), toon(LOFT_PALETTE.blue), 0, 0.04, 0, false));
   top.rotation.x = 0.35;
   consoleG.add(top);
   const face = new THREE.Group();
@@ -84,7 +87,7 @@ export function buildOkkinLoft(): OkkinLoftView {
   face.rotation.x = 0.35 - Math.PI / 2;
   consoleG.add(face);
   const label = (text: string, x: number, y: number, scale = 0.26) => {
-    const t = textPlane(text);
+    const t = textPlane(text, { color: LOFT_PALETTE.goldLight });
     t.scale.setScalar(scale);
     t.position.set(x, y, 0.012);
     face.add(t);
@@ -94,8 +97,8 @@ export function buildOkkinLoft(): OkkinLoftView {
   const power = new THREE.Group();
   power.name = 'okkin-power-switch';
   power.position.set(-C.width / 4, 0, 0);
-  power.add(mesh(new THREE.BoxGeometry(0.16, 0.2, 0.03), toon('#1d1d1f'), 0, 0, 0.015, false));
-  const lever = mesh(new THREE.BoxGeometry(0.1, 0.07, 0.05), toon('#f5f5f7'), 0, 0, 0.045, false);
+  power.add(mesh(new THREE.BoxGeometry(0.16, 0.2, 0.03), toon('#0b1222'), 0, 0, 0.015, false));
+  const lever = mesh(new THREE.BoxGeometry(0.1, 0.07, 0.05), toon(LOFT_PALETTE.marble), 0, 0, 0.045, false);
   lever.name = 'okkin-power-lever';
   power.add(lever);
   const lampMat = new THREE.MeshBasicMaterial({ color: '#8e8e93' });
@@ -109,10 +112,10 @@ export function buildOkkinLoft(): OkkinLoftView {
   const dial = new THREE.Group();
   dial.name = 'okkin-model-dial';
   dial.position.set(C.width / 4, -0.01, 0);
-  dial.add(mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.01, 32), toon('#e9eaee'), 0, 0, 0.005, false).rotateX(Math.PI / 2));
+  dial.add(mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.01, 32), toon(LOFT_PALETTE.gold), 0, 0, 0.005, false).rotateX(Math.PI / 2));
   const knob = new THREE.Group();
-  knob.add(mesh(new THREE.CylinderGeometry(0.06, 0.065, 0.04, 24), toon('#c3c6cc'), 0, 0, 0.03, false).rotateX(Math.PI / 2));
-  knob.add(mesh(new THREE.BoxGeometry(0.012, 0.05, 0.012), new THREE.MeshBasicMaterial({ color: '#0071e3' }), 0, 0.03, 0.052, false));
+  knob.add(mesh(new THREE.CylinderGeometry(0.06, 0.065, 0.04, 24), toon(LOFT_PALETTE.marble), 0, 0, 0.03, false).rotateX(Math.PI / 2));
+  knob.add(mesh(new THREE.BoxGeometry(0.012, 0.05, 0.012), new THREE.MeshBasicMaterial({ color: LOFT_PALETTE.blue }), 0, 0.03, 0.052, false));
   knob.name = 'okkin-dial-knob';
   dial.add(knob);
   const ticks: { mat: THREE.MeshBasicMaterial; label: THREE.Object3D }[] = [];
@@ -123,7 +126,7 @@ export function buildOkkinLoft(): OkkinLoftView {
     const tick = new THREE.Mesh(new THREE.CircleGeometry(0.012, 10), mat);
     tick.position.set(Math.sin(a) * 0.09, Math.cos(a) * 0.09, 0.012);
     dial.add(tick);
-    const t = textPlane(role.toUpperCase());
+    const t = textPlane(role.toUpperCase(), { color: LOFT_PALETTE.goldLight });
     t.scale.setScalar(0.13);
     t.position.set(Math.sin(a) * 0.17, Math.cos(a) * 0.17, 0.012);
     t.name = `okkin-dial-stop-${role}`;
@@ -147,7 +150,7 @@ export function buildOkkinLoft(): OkkinLoftView {
     knob.rotation.z = -dialTurn(Math.min(state.dialIndex ?? 1, n - 1), n);
     ticks.forEach((t, i) => {
       const st = state.dial?.[i]?.status ?? 'unknown';
-      t.mat.color.set(i === (state.dialIndex ?? 1) ? '#0071e3' : st === 'installed' ? '#34c759' : '#a1a1a6');
+      t.mat.color.set(i === (state.dialIndex ?? 1) ? LOFT_PALETTE.goldLight : st === 'installed' ? LOFT_PALETTE.marble : '#6b7280');
     });
   };
   paint();

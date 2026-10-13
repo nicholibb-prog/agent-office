@@ -29,12 +29,12 @@ square: no characters are invented.
 
 ## Inscription on the pedestal: "victory of the people"
 
-- Spelling: **ניצחון העם**, the full (modern) spelling, as the owner's latest checklist asks. It
-  replaces the earlier choice of the ancient defective spelling נצחן העם (no yod, no vav for the
-  -ōn ending, as Iron Age inscriptions wrote it; the Samaria ostraca spell Šomrōn as שמרן).
+- Spelling: **נצחון העם**, as the owner's latest checklist asks: the older defective spelling with
+  no yod after the nun (as Biblical Hebrew writes נצח), keeping the vav of the -ōn ending. Modern
+  spelling would be ניצחון העם; the fully Iron Age form would also drop the vav (נצחן).
 - Script: Paleo-Hebrew, encoded in the Unicode Phoenician block (U+10900–U+1091F), which
   Unicode uses for Paleo-Hebrew, and drawn right to left (canvas `direction = 'rtl'`, logical order).
 - Mapping (`src/shared/paleo-hebrew.ts`, tested): letter for letter; final forms map to the base
   letters (ן → נ, ם → מ; also ך ף ץ); the space becomes the word separator U+1091F.
-  נ U+1090D · י U+10909 · צ U+10911 · ח U+10907 · ו U+10905 · ן→נ U+1090D · (sep U+1091F) · ה U+10904 · ע U+1090F · ם→מ U+1090C.
+  נ U+1090D · צ U+10911 · ח U+10907 · ו U+10905 · ן→נ U+1090D · (sep U+1091F) · ה U+10904 · ע U+1090F · ם→מ U+1090C.
 - Chiselled look: each letter is drawn as a dark cut with a lit lower lip and a faint gold fill.

@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 // The supercomputer's light comes from real Okkin state only, and the power sequence runs in order:
 // on ON bottom to top, on OFF top to bottom.
 import test from 'node:test';
@@ -49,25 +50,31 @@ test('hologram: real numbers only; — when none; MOCK when mock', () => {
   assert.deepEqual(hologramLines({ tps: 41, model: 'okkin:latest', mock: true }), { top: '41 tok/s', bottom: 'okkin:latest', mock: true });
 });
 
-test('the scene: two towers, instanced blades, halo and floor glow local to the loft; paints the sequence in order', async () => {
+test('the scene: ONE monolith (glass front, deep blades, four fans, a light spine, cable runs), instanced blades, halo and floor glow local to the loft; paints the sequence in order', async () => {
   const { buildHero } = await import('../src/client/features/okkin-loft/hero.js');
   const h = buildHero();
   const towers: unknown[] = [];
   h.group.traverse((o) => { if (o.name === 'okkin-tower') towers.push(o); });
-  assert.equal(towers.length, 2);
-  assert.equal(h.blades.count, 2 * 2 * BLADE_ROWS, 'one InstancedMesh for every blade');
+  assert.equal(towers.length, 1, 'one monolith');
+  assert.equal(h.blades.count, 3 * BLADE_ROWS, 'one InstancedMesh for every blade');
+  const named = (n: string) => { const out: THREE.Object3D[] = []; h.group.traverse((o) => { if (o.name === n) out.push(o); }); return out; };
+  assert.equal(named('okkin-fan').length, 4, 'a bank of four fans');
+  assert.equal(named('okkin-light-spine').length, 1);
+  assert.ok(named('okkin-cable').length >= 3, 'cable runs');
+  const bladeGeo = (h.blades.geometry as THREE.BoxGeometry).parameters;
+  assert.ok(bladeGeo.width >= 0.25, 'blades have depth behind the glass');
   for (const n of ['okkin-halo', 'okkin-floor-reflection', 'okkin-hologram']) assert.ok(h.group.getObjectByName(n), n);
   h.setState({ power: 'on', busy: false, holo: null });
   h.tick(0.3);
   const lv = h.levels();
   const rows = h.rowOf();
-  const avg = (r: number) => lv.filter((_, i) => rows[i] === r).reduce((a, b) => a + b, 0) / 4;
+  const avg = (r: number) => lv.filter((_, i) => rows[i] === r).reduce((a, b) => a + b, 0) / 3;
   assert.ok(avg(0) > avg(BLADE_ROWS - 1), 'mid-ON: bottom rows lit before top');
   h.tick(2);
   h.setState({ power: 'off', busy: false, holo: null });
   h.tick(0.3);
   const lv2 = h.levels();
-  const avg2 = (r: number) => lv2.filter((_, i) => rows[i] === r).reduce((a, b) => a + b, 0) / 4;
+  const avg2 = (r: number) => lv2.filter((_, i) => rows[i] === r).reduce((a, b) => a + b, 0) / 3;
   assert.ok(avg2(BLADE_ROWS - 1) < avg2(0), 'mid-OFF: top rows dark before bottom');
   h.tick(3);
   assert.ok(h.levels().every((l) => l === OFF_LEVEL));

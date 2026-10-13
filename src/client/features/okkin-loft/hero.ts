@@ -1,4 +1,4 @@
-// Okkin's supercomputer: two tall glass-and-black-metal towers on the stone pedestal, compute and GPU
+// Okkin's supercomputer: one tall glass-and-black-metal monolith on the stone pedestal, compute and GPU
 // blades behind smoked glass (one InstancedMesh), fans on top, a halo and a floor glow (a sprite and
 // additive planes local to the loft: no post-processing pass), and a thin hologram showing live
 // tokens/sec and the loaded model. Lit only from real state (see hero-light.ts).
@@ -16,8 +16,11 @@ export type HeroState = {
   holo: { tps: number | null; model: string | null; mock: boolean } | null;
 };
 
-export const TOWER = { depth: 0.85, width: 1.2, height: 2.5, gap: 0.24 } as const;
-const COLS = 2;
+/** ONE monolith: glass front, blades with depth, a fan bank, a light spine, cable runs. */
+export const TOWER = { depth: 0.8, width: 2.1, height: 2.6 } as const;
+const COLS = 3;
+/** The front, along z: blades on the left part, the fan bank at the right end. */
+const FAN_BANK = 0.42;
 
 function glowTexture(): THREE.Texture | null {
   if (typeof document === 'undefined') return null;
@@ -42,13 +45,17 @@ export function buildHero() {
   const cz = (L.minZ + L.maxZ) / 2;
   const tx = L.maxX - TOWER.depth / 2 - 0.08;
   const front = tx - TOWER.depth / 2;
-  const towersZ = [cz - (TOWER.width + TOWER.gap) / 2, cz + (TOWER.width + TOWER.gap) / 2];
+  const towersZ = [cz];
   const metal = new THREE.MeshLambertMaterial({ color: '#15171c' });
   const gold = new THREE.MeshLambertMaterial({ color: LOFT_PALETTE.gold });
   const inner = new THREE.MeshBasicMaterial({ color: '#05070d' });
   const goldLit = new THREE.MeshBasicMaterial({ color: '#4a3a10' });
   const glass = new THREE.MeshBasicMaterial({ color: '#0c1830', transparent: true, opacity: 0.3, depthWrite: false });
   const fans: THREE.Object3D[] = [];
+  const fanMat = new THREE.MeshLambertMaterial({ color: '#7d8796' });
+  const spineMat = new THREE.MeshBasicMaterial({ color: '#0d1830' });
+  const cableMat = new THREE.MeshLambertMaterial({ color: '#0b0d12' });
+  const cableBlue = new THREE.MeshLambertMaterial({ color: LOFT_PALETTE.blue });
   const box = (w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number) => {
     const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     b.position.set(x, y, z);
@@ -58,7 +65,10 @@ export function buildHero() {
     const t = new THREE.Group();
     t.name = 'okkin-tower';
     t.position.set(tx, PH, z);
-    t.add(box(TOWER.depth - 0.06, TOWER.height - 0.08, TOWER.width - 0.06, inner, 0, TOWER.height / 2, 0));
+    // The dark core sits back from the glass, so the blades (and fans) have a lit bay in front of it.
+    t.add(box(TOWER.depth - 0.44, TOWER.height - 0.08, TOWER.width - 0.06, inner, 0.2, TOWER.height / 2, 0));
+    // Bay walls: black metal top and bottom of the blade bay, and a back plate.
+    t.add(box(0.4, 0.04, TOWER.width - 0.06, metal, -TOWER.depth / 2 + 0.2, 0.17, 0));
     for (const [dx, dz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]] as const) t.add(box(0.06, TOWER.height, 0.06, metal, (dx * (TOWER.depth - 0.06)) / 2, TOWER.height / 2, (dz * (TOWER.width - 0.06)) / 2));
     t.add(box(TOWER.depth, 0.08, TOWER.width, metal, 0, TOWER.height - 0.04, 0));
     t.add(box(TOWER.depth + 0.02, 0.1, TOWER.width + 0.02, metal, 0, 0.05, 0));
@@ -75,34 +85,63 @@ export function buildHero() {
     pane.position.set(-TOWER.depth / 2 - 0.004, TOWER.height / 2, 0);
     pane.renderOrder = 2;
     t.add(pane);
-    for (const fz of [-0.28, 0.28]) {
+    // The fan bank: four fans behind the glass at the right end, spinning only when on.
+    const fanZ = TOWER.width / 2 - FAN_BANK / 2 - 0.05;
+    t.add(box(0.04, TOWER.height - 0.3, FAN_BANK, metal, -TOWER.depth / 2 + 0.08, TOWER.height / 2, fanZ));
+    for (let k = 0; k < 4; k++) {
       const fan = new THREE.Group();
-      fan.position.set(0, TOWER.height + 0.005, fz);
-      fan.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.01, 24), new THREE.MeshLambertMaterial({ color: '#2a2e36' })));
+      fan.position.set(-TOWER.depth / 2 + 0.05, 0.45 + k * ((TOWER.height - 0.8) / 3), fanZ);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.018, 8, 28), gold);
+      ring.rotation.y = Math.PI / 2;
+      fan.add(ring);
       const rotor = new THREE.Group();
       rotor.name = 'okkin-fan';
-      for (let k = 0; k < 5; k++) {
+      for (let j = 0; j < 7; j++) {
         const arm = new THREE.Group();
-        arm.rotation.y = (k / 5) * Math.PI * 2;
-        arm.add(box(0.17, 0.008, 0.05, new THREE.MeshLambertMaterial({ color: '#8e96a3' }), 0.085, 0.01, 0));
+        arm.rotation.x = (j / 7) * Math.PI * 2;
+        const blade = box(0.01, 0.14, 0.045, fanMat, 0, 0.08, 0);
+        blade.rotation.y = 0.5;
+        arm.add(blade);
         rotor.add(arm);
       }
+      rotor.add(box(0.02, 0.05, 0.05, metal, 0, 0, 0));
       fan.add(rotor);
       fans.push(rotor);
       t.add(fan);
     }
+    // The light spine: a vertical bar between blades and fans, animated with the state.
+    const spine = box(0.03, TOWER.height - 0.3, 0.05, spineMat, -TOWER.depth / 2 - 0.006, TOWER.height / 2, fanZ - FAN_BANK / 2 - 0.05);
+    spine.name = 'okkin-light-spine';
+    t.add(spine);
+    // Cable runs: down the back corners into the plinth, and across the crown.
+    for (const dz of [-1, 1]) {
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, TOWER.height + 0.1, 8), cableMat);
+      c.name = 'okkin-cable';
+      c.position.set(TOWER.depth / 2 + 0.04, TOWER.height / 2 - 0.05, (dz * (TOWER.width - 0.3)) / 2);
+      t.add(c);
+      const c2 = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, TOWER.height, 8), cableBlue);
+      c2.name = 'okkin-cable';
+      c2.position.set(TOWER.depth / 2 + 0.04, TOWER.height / 2, (dz * (TOWER.width - 0.45)) / 2);
+      t.add(c2);
+    }
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, TOWER.width - 0.3, 8), cableMat);
+    crown.name = 'okkin-cable';
+    crown.rotation.x = Math.PI / 2;
+    crown.position.set(TOWER.depth / 2 + 0.04, TOWER.height + 0.03, 0);
+    t.add(crown);
     g.add(t);
   }
   // Blades: one InstancedMesh for both towers. Row 0 is the bottom.
   const bladeH = (TOWER.height - 0.36) / BLADE_ROWS;
-  const span = TOWER.width - 0.2;
-  const blades = new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, bladeH * 0.72, span / COLS - 0.04), new THREE.MeshBasicMaterial({ color: '#ffffff' }), towersZ.length * COLS * BLADE_ROWS);
+  const span = TOWER.width - FAN_BANK - 0.3;
+  const spanZ0 = -TOWER.width / 2 + 0.1;
+  const blades = new THREE.InstancedMesh(new THREE.BoxGeometry(0.32, bladeH * 0.62, span / COLS - 0.05), new THREE.MeshBasicMaterial({ color: '#ffffff' }), towersZ.length * COLS * BLADE_ROWS);
   blades.name = 'okkin-blades';
   const rowOf: number[] = [];
   const m4 = new THREE.Matrix4();
   let n = 0;
   for (const z of towersZ) for (let c = 0; c < COLS; c++) for (let r = 0; r < BLADE_ROWS; r++) {
-    m4.makeTranslation(front + 0.05, PH + 0.2 + (r + 0.5) * bladeH, z - span / 2 + (c + 0.5) * (span / COLS));
+    m4.makeTranslation(front + 0.2, PH + 0.2 + (r + 0.5) * bladeH, z + spanZ0 + (c + 0.5) * (span / COLS));
     blades.setMatrixAt(n, m4);
     blades.setColorAt(n, new THREE.Color('#0a1022'));
     rowOf.push(r);
@@ -131,7 +170,7 @@ export function buildHero() {
   const holo = new THREE.Group();
   holo.name = 'okkin-hologram';
   holo.position.set(tx, PH + TOWER.height, cz);
-  const beamMat = new THREE.MeshBasicMaterial({ color: '#7fb2ff', transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const beamMat = new THREE.MeshBasicMaterial({ color: '#3b6fe0', transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.12, 0.9, 16, 1, true), beamMat);
   beam.position.y = 0.45;
   holo.add(beam);
@@ -167,14 +206,14 @@ export function buildHero() {
     c.strokeStyle = 'rgba(201,162,39,.9)';
     c.lineWidth = 3;
     c.stroke();
-    c.fillStyle = '#9cc4ff';
+    c.fillStyle = LOFT_PALETTE.goldLight;
     c.textAlign = 'center';
     c.font = '700 74px -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif';
     c.fillText(lines.top, 256, 92);
     c.font = '500 34px -apple-system, "SF Pro Text", "Helvetica Neue", Arial, sans-serif';
     c.fillText(lines.bottom.length > 26 ? `${lines.bottom.slice(0, 25)}…` : lines.bottom, 256, 150);
     if (lines.mock) {
-      c.fillStyle = 'rgba(255,159,10,.95)';
+      c.fillStyle = LOFT_PALETTE.gold;
       c.fillRect(196, 162, 120, 34);
       c.fillStyle = '#1d1d1f';
       c.font = '800 24px -apple-system, Arial, sans-serif';
@@ -195,6 +234,7 @@ export function buildHero() {
   const tmp = new THREE.Color();
   const accent = new THREE.Color();
   const goldHot = new THREE.Color(LOFT_PALETTE.goldLight);
+  const spineHot = new THREE.Color('#fff3c4');
   const levels: number[] = new Array(rowOf.length).fill(OFF_LEVEL);
   const paint = () => {
     accent.set(accentFor(st.role));
@@ -221,6 +261,8 @@ export function buildHero() {
     floorMat.opacity = near ? hl * 0.4 : 0;
     beamMat.opacity = mode === 'off' ? 0.05 : 0.12 + 0.05 * Math.sin(t * 3);
     // The gold strips follow the tower: dark off, glowing gold with the breathe or ripple.
+    // The spine: deep blue when off, then gold-white with the breathe or the ripple.
+    spineMat.color.set('#0d1830').lerp(spineHot, mode === 'off' ? 0 : Math.min(1, 0.3 + hl * 1.2));
     goldLit.color.set('#3a2c0c').lerp(goldHot, mode === 'off' ? 0 : Math.min(1, 0.35 + hl));
   };
   const view = {
@@ -245,12 +287,11 @@ export function buildHero() {
       if (v === near) return;
       near = v;
       holo.visible = v;
-      for (const f of fans) f.parent!.visible = v;
     },
     tick(dt: number) {
       t += dt;
       if (sweep !== null && t - sweep > 1.3) sweep = null;
-      if (near && mode !== 'off') for (const f of fans) f.rotation.y += dt * (mode === 'working' ? 18 : 7);
+      if (near && mode !== 'off') for (const f of fans) f.rotation.x += dt * (mode === 'working' ? 18 : 7);
       acc += dt;
       if (!near && acc < 0.25) return;
       acc = 0;

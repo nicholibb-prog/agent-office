@@ -17,11 +17,12 @@ test('Paleo-Hebrew: every letter maps to its Phoenician-block code point, final 
   assert.throws(() => toPaleoHebrew('A'));
 });
 
-test('the inscription: ניצחון העם (full spelling, per the owner checklist), in logical right-to-left order, word separator between', () => {
-  assert.equal(VICTORY_OF_THE_PEOPLE.hebrew, 'ניצחון העם');
+test('the inscription: נצחון העם (no yod, per the owner checklist), in logical right-to-left order, word separator between', () => {
+  assert.equal(VICTORY_OF_THE_PEOPLE.hebrew, 'נצחון העם');
+  assert.ok(!VICTORY_OF_THE_PEOPLE.hebrew.includes('י'), 'no yod');
   const s = toPaleoHebrew(VICTORY_OF_THE_PEOPLE.hebrew);
-  // nun yod tsade het vav nun · he ayin mem (logical order; drawn right to left)
-  assert.deepEqual(cp(s), ['1090D', '10909', '10911', '10907', '10905', '1090D', '1091F', '10904', '1090F', '1090C']);
+  // nun tsade het vav nun · he ayin mem (logical order; drawn right to left)
+  assert.deepEqual(cp(s), ['1090D', '10911', '10907', '10905', '1090D', '1091F', '10904', '1090F', '1090C']);
   assert.ok(s.includes(PHOENICIAN_WORD_SEPARATOR));
 });
 
@@ -64,4 +65,19 @@ test('console stays reachable: in front of the pedestal with a gap, and a clear 
 
 test('the sign hangs under the ceiling', () => {
   assert.ok(OKKIN_SIGN.y + OKKIN_SIGN.height / 2 < WALL_HEIGHT - 0.3);
+});
+
+test('the plinth is stepped like a temple base: two steps and a die, with fluted pilasters and gold banding', async () => {
+  const ctx2d = new Proxy({}, { get: (_t, k) => (k === 'measureText' ? () => ({ width: 40 }) : () => ({ addColorStop() {} })), set: () => true });
+  (globalThis as { document?: unknown }).document ??= { createElement: () => ({ getContext: () => ctx2d, width: 0, height: 0 }) };
+  const { buildPedestal, PEDESTAL_STEPS, PEDESTAL_DIE } = await import('../src/client/features/okkin-loft/regalia.js');
+  const { group } = buildPedestal();
+  const named = (re: RegExp) => { let n = 0; group.traverse((o) => { if (re.test(o.name)) n++; }); return n; };
+  assert.equal(named(/^okkin-pedestal-step-/), 2);
+  assert.equal(named(/^okkin-pedestal-die$/), 1);
+  assert.ok(named(/^okkin-pilaster$/) >= 3 && named(/^okkin-flute$/) >= 9);
+  assert.ok(named(/^okkin-pedestal-gold$/) >= 4);
+  assert.ok(PEDESTAL_STEPS[1].inset > PEDESTAL_STEPS[0].inset && PEDESTAL_DIE.inset > PEDESTAL_STEPS[1].inset, 'each tier sets back');
+  const rise = PEDESTAL_STEPS.reduce((a, s) => a + s.rise, 0);
+  assert.ok(OKKIN_PEDESTAL.height - rise >= 0.25, 'the die is tall enough to carry the engraving');
 });
