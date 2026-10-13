@@ -144,7 +144,7 @@ export function buildHero() {
     cardTex = new THREE.CanvasTexture(cardCanvas);
     cardTex.colorSpace = THREE.SRGBColorSpace;
   }
-  const cardMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 0.45), new THREE.MeshBasicMaterial({ map: cardTex, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+  const cardMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 0.45), new THREE.MeshBasicMaterial({ map: cardTex, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
   cardMesh.name = 'okkin-hologram-card';
   cardMesh.rotation.y = -Math.PI / 2;
   cardMesh.position.set(-0.05, 0.62, 0);
@@ -159,7 +159,15 @@ export function buildHero() {
     const c = cardCanvas?.getContext('2d');
     if (!c || typeof c.fillText !== 'function') return;
     c.clearRect(0, 0, 512, 200);
-    c.fillStyle = 'rgba(127,178,255,.95)';
+    // A smoked-glass backing so the readout reads against a bright room.
+    c.fillStyle = 'rgba(8,16,38,.82)';
+    c.beginPath();
+    if (typeof c.roundRect === 'function') c.roundRect(6, 6, 500, 188, 22); else c.rect(6, 6, 500, 188);
+    c.fill();
+    c.strokeStyle = 'rgba(201,162,39,.9)';
+    c.lineWidth = 3;
+    c.stroke();
+    c.fillStyle = '#9cc4ff';
     c.textAlign = 'center';
     c.font = '700 74px -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif';
     c.fillText(lines.top, 256, 92);
