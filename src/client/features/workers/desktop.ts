@@ -147,15 +147,58 @@ export function paintDesk(ctx: CanvasRenderingContext2D, w: number, h: number, f
   ctx.restore();
 }
 
-/** The bot's real desktop, aspect kept (1:1 pixels when it fits), with a LIVE badge and its name. */
-export function paintLiveFrame(ctx: CanvasRenderingContext2D, w: number, h: number, face: DeskFace, f: LiveImage) {
-  ctx.save();
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, w, h);
+/** How long a new desk frame takes to fade in over the last one. */
+export const CROSSFADE_MS = 450;
+
+/** Opacity of the newest frame `elapsed` ms after it arrived. Reduced motion: no fade, straight on. */
+export function fadeAlpha(elapsed: number, still: boolean): number {
+  if (still || elapsed >= CROSSFADE_MS) return 1;
+  const k = Math.max(0, elapsed) / CROSSFADE_MS;
+  return k * k * (3 - 2 * k); // smoothstep
+}
+
+/**
+ * Two frames per canvas (double buffer): the one on screen and the one fading in over it. A new
+ * frame is drawn on top of the old one, so the screen never shows blank between frames.
+ */
+type Buffers = { cur: LiveImage; prev?: LiveImage; swapAt: number };
+const buffers = new WeakMap<object, Buffers>();
+
+/** Which frames to draw, and how opaque the top one is. Exported for tests. */
+export function liveLayers(key: object, f: LiveImage, now: number, still: boolean): { under?: LiveImage; top: LiveImage; alpha: number } {
+  let b = buffers.get(key);
+  if (!b) {
+    b = { cur: f, swapAt: now - CROSSFADE_MS };
+    buffers.set(key, b);
+  } else if (b.cur.img !== f.img) {
+    b.prev = b.cur;
+    b.cur = f;
+    b.swapAt = now;
+  } else b.cur = f;
+  const alpha = fadeAlpha(now - b.swapAt, still);
+  if (alpha >= 1) b.prev = undefined;
+  return { under: b.prev, top: b.cur, alpha };
+}
+
+function drawFit(ctx: CanvasRenderingContext2D, w: number, h: number, f: LiveImage) {
   const k = Math.min(w / f.w, h / f.h);
   const dw = f.w * k;
   const dh = f.h * k;
   ctx.drawImage(f.img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+}
+
+/** The bot's real desktop, aspect kept, crossfaded from the last frame, with its LIVE / near-live badge. */
+export function paintLiveFrame(ctx: CanvasRenderingContext2D, w: number, h: number, face: DeskFace, f: LiveImage) {
+  ctx.save();
+  const layers = liveLayers(ctx, f, typeof performance !== 'undefined' ? performance.now() : Date.now(), !!face.still);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+  if (layers.under) drawFit(ctx, w, h, layers.under);
+  ctx.globalAlpha = layers.alpha;
+  drawFit(ctx, w, h, layers.top);
+  ctx.globalAlpha = 1;
+  f = layers.top;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   ctx.font = `800 ${Math.round(h / 30)}px ${FONT}`;
