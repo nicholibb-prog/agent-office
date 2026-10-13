@@ -223,6 +223,10 @@ export function buildScroll(): THREE.Group {
 }
 
 /** The pedestal: a stone plinth with a marble top and a gold fillet, the inscription cut into its front. */
+/** The plinth's steps (bottom first: inset from the footprint's front and sides, and rise) and its die. */
+export const PEDESTAL_STEPS = [{ inset: 0, rise: 0.11 }, { inset: 0.14, rise: 0.11 }] as const;
+export const PEDESTAL_DIE = { inset: 0.28 } as const;
+
 export function buildPedestal(): { group: THREE.Group; inscription: string } {
   const P = OKKIN_PEDESTAL;
   const g = new THREE.Group();
@@ -248,27 +252,54 @@ export function buildPedestal(): { group: THREE.Group; inscription: string } {
   });
   stoneTex.wrapS = THREE.ClampToEdgeWrapping;
   const stone = new THREE.MeshLambertMaterial({ color: LOFT_PALETTE.stone });
+  const stoneLight = new THREE.MeshLambertMaterial({ color: LOFT_PALETTE.marble });
   const front = new THREE.MeshLambertMaterial({ map: stoneTex });
-  // Box faces: +x, -x, +y, -y, +z, -z. The -x face looks at the floor.
-  const body = new THREE.Mesh(new THREE.BoxGeometry(w, P.height - 0.05, d), [stone, stone, stone, stone, stone, stone]);
-  body.position.set((P.minX + P.maxX) / 2, (P.height - 0.05) / 2, (P.minZ + P.maxZ) / 2);
-  g.add(body);
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(d, P.height - 0.05), front);
+  const goldMat = new THREE.MeshBasicMaterial({ color: LOFT_PALETTE.gold });
+  const cz = (P.minZ + P.maxZ) / 2;
+  const blk = (x0: number, x1: number, z0: number, z1: number, y0: number, y1: number, mat: THREE.Material, name = '') => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), mat);
+    m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    if (name) m.name = name;
+    g.add(m);
+    return m;
+  };
+  // A stepped temple plinth (crepidoma): two steps, then the die with fluted pilasters, a gold band
+  // on each step's nose and under the marble cap. The back (+x) is flush; steps face the floor and sides.
+  const S = PEDESTAL_STEPS;
+  let y = 0;
+  S.forEach((st, i) => {
+    const x0 = P.minX + st.inset, z0 = P.minZ + st.inset, z1 = P.maxZ - st.inset;
+    blk(x0, P.maxX, z0, z1, y, y + st.rise, i % 2 ? stoneLight : stone, `okkin-pedestal-step-${i}`);
+    const band = blk(x0 - 0.008, P.maxX + 0.004, z0 - 0.008, z1 + 0.008, y + st.rise - 0.022, y + st.rise, goldMat, 'okkin-pedestal-gold');
+    void band;
+    y += st.rise;
+  });
+  const die = PEDESTAL_DIE;
+  const dx0 = P.minX + die.inset, dz0 = P.minZ + die.inset, dz1 = P.maxZ - die.inset;
+  const dieTop = P.height - 0.05;
+  blk(dx0, P.maxX, dz0, dz1, y, dieTop, stone, 'okkin-pedestal-die');
+  // The engraving, on the die's face toward the floor.
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(dz1 - dz0, dieTop - y), front);
   face.name = 'okkin-engraving';
   face.rotation.y = -Math.PI / 2;
-  face.position.set(P.minX - 0.002, (P.height - 0.05) / 2, (P.minZ + P.maxZ) / 2);
+  face.position.set(dx0 - 0.003, (y + dieTop) / 2, cz);
   g.add(face);
-  const topTex = canvasTex(256, 512, (c, cw, ch) => marble(c, cw, ch));
-  const top = new THREE.Mesh(new THREE.BoxGeometry(w + 0.06, 0.05, d + 0.06), new THREE.MeshLambertMaterial({ map: topTex }));
-  top.position.set((P.minX + P.maxX) / 2, P.height - 0.025, (P.minZ + P.maxZ) / 2);
-  g.add(top);
-  // Gold trim bands: one under the marble top, one at the foot.
-  const goldMat = new THREE.MeshBasicMaterial({ color: LOFT_PALETTE.gold });
-  for (const [y, hgt] of [[P.height - 0.07, 0.04], [0.03, 0.035]] as const) {
-    const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.07, hgt, d + 0.07), goldMat);
-    band.name = 'okkin-pedestal-gold';
-    band.position.set((P.minX + P.maxX) / 2, y, (P.minZ + P.maxZ) / 2);
-    g.add(band);
+  // Fluted pilasters: at both ends of the face and framing the engraving.
+  const fl = new THREE.CylinderGeometry(0.014, 0.014, dieTop - y - 0.02, 8);
+  const pz = [dz0 + 0.07, dz0 + (dz1 - dz0) * 0.55, dz1 - 0.07];
+  for (const z of pz) {
+    blk(dx0 - 0.03, dx0, z - 0.06, z + 0.06, y, dieTop, stoneLight, 'okkin-pilaster');
+    for (const k of [-1, 0, 1]) {
+      const f = new THREE.Mesh(fl, stone);
+      f.name = 'okkin-flute';
+      f.position.set(dx0 - 0.034, (y + dieTop) / 2, z + k * 0.036);
+      g.add(f);
+    }
+    blk(dx0 - 0.04, dx0, z - 0.07, z + 0.07, dieTop - 0.03, dieTop, goldMat, 'okkin-pedestal-gold');
   }
+  // Marble cap with a gold band under it.
+  const topTex = canvasTex(256, 512, (c, cw, ch) => marble(c, cw, ch));
+  blk(dx0 - 0.04, P.maxX + 0.03, dz0 - 0.04, dz1 + 0.04, dieTop, P.height, new THREE.MeshLambertMaterial({ map: topTex }), 'okkin-pedestal-cap');
+  blk(dx0 - 0.045, P.maxX + 0.035, dz0 - 0.045, dz1 + 0.045, dieTop - 0.02, dieTop + 0.004, goldMat, 'okkin-pedestal-gold');
   return { group: g, inscription };
 }

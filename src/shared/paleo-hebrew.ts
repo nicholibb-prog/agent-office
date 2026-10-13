@@ -22,7 +22,8 @@ export function toPaleoHebrew(hebrew: string): string {
 }
 
 /**
- * 'Victory of the people', as the owner's checklist asks: the full spelling ניצחון העם (with yod and
- * vav), letter for letter into Paleo-Hebrew. The ancient defective spelling would be נצחן העם.
+ * 'Victory of the people', as the owner's latest checklist asks: נצחון העם, the older defective
+ * spelling with no yod (Biblical Hebrew writes נצח without a yod after the nun), keeping the vav of
+ * the -ōn ending. Modern spelling would be ניצחון העם. Letter for letter into Paleo-Hebrew.
  */
-export const VICTORY_OF_THE_PEOPLE = { hebrew: 'ניצחון העם', defective: 'נצחן העם' } as const;
+export const VICTORY_OF_THE_PEOPLE = { hebrew: 'נצחון העם', modern: 'ניצחון העם' } as const;
