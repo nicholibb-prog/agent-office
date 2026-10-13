@@ -191,3 +191,16 @@ test('owner wording: file prefix and header say owner, never a personal name', (
   }
   rmSync(r, { recursive: true, force: true });
 });
+
+test('shared Major Files matcher: spellings, slash styles and case', async () => {
+  const { isMajorFiles: shared, underMajorFiles } = await import('../src/server/major-files.js');
+  assert.equal(isMajorFiles, shared);
+  for (const p of ['C:\\Users\\owner\\Documents\\Major Files\\a.pdf', '/x/major_files/y', '/x/MAJOR-FILES', 'D:/Archive/major files/z', 'majorfiles\\q']) {
+    assert.equal(shared(p), true, p);
+  }
+  for (const p of ['/x/Major Filesystem/y', '/x/minor files', '/home/owner/Documents/Bridge']) assert.equal(shared(p), false, p);
+  assert.equal(underMajorFiles('/safe/link', '/real/Major_Files/b'), true);
+  const r = bridge();
+  assert.throws(() => safeName('major_files'), /Major Files/);
+  rmSync(r, { recursive: true, force: true });
+});
