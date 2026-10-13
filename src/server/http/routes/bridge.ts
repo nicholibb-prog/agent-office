@@ -220,7 +220,7 @@ export function bridgeGate(ctx: Ctx, req: http.IncomingMessage, res: http.Server
 }
 
 /** Routes that speak or set presence: a seat token only. Returns the caller's seat. */
-function seatGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): string | null {
+export function seatGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): string | null {
   const c = bridgeCaller(ctx, req, res);
   if (!c) return null;
   if (c.kind !== 'seat') {
@@ -389,7 +389,8 @@ export const bridgeRoutes = {
     path: '/api/bridge/kavi-feed',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!bridgeGate(ctx, req, res)) return;
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
       const body = await readJson<{ titles?: { name?: string; id?: string; modifiedTime?: string }[] }>(req, res);
       if (!body) return;
       const titles = (body.titles || [])
@@ -402,6 +403,7 @@ export const bridgeRoutes = {
       const payload = {
         updatedAt: new Date().toISOString(),
         source: 'bridge',
+        seat,
         allowlist: 'local bridge feed',
         titles,
       };
@@ -410,7 +412,7 @@ export const bridgeRoutes = {
       } catch {
         return send(res, 500, { error: OFFICE_ERROR });
       }
-      return send(res, 200, { ok: true, count: titles.length });
+      return send(res, 200, { ok: true, count: titles.length, seat });
     },
   },
   kaviFeedGet: {
@@ -433,15 +435,16 @@ export const bridgeRoutes = {
     path: '/api/bridge/kavi-outbox',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!bridgeGate(ctx, req, res)) return;
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
       const body = await readJson<{ title?: string; text?: string }>(req, res);
       if (!body) return;
       const title = String(body.title || 'office-chat').slice(0, 80).trim() || 'office-chat';
       const text = String(body.text || '').slice(0, 4000);
       const file = path.join(ctx.cfg.dataDir, 'kavi-outbox.json');
       try {
-        const items = appendOutboxItem(file, { title, text, at: new Date().toISOString() });
-        return send(res, 200, { ok: true, queued: items.length });
+        const items = appendOutboxItem(file, { title, text, at: new Date().toISOString(), seat });
+        return send(res, 200, { ok: true, queued: items.length, seat });
       } catch {
         return send(res, 500, { error: OFFICE_ERROR });
       }

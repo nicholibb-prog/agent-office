@@ -65,6 +65,8 @@ export interface OutboxItem {
   title: string;
   text: string;
   at: string;
+  /** Seat token that queued it, when it came over the bridge. */
+  seat?: string;
 }
 
 export function seatTurnTitle(floorId: string, seatId: string): string {
