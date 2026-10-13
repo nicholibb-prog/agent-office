@@ -111,3 +111,26 @@ agent-office tunnel [office@address | url] [--port <n>] [--office-port <n>] [--n
 ## Local model for the huddle
 
 The meeting room and the three front desks can ask a model on this machine. `OLLAMA_URL` defaults to `http://127.0.0.1:11434`. `OKKIN_MODEL` is unset until you set it (a doc example is `qwen3.5:9b`). The host has to be `http://127.0.0.1`, `http://localhost`, or `http://[::1]`. `https` is refused. `localhost` is rewritten to `127.0.0.1` before any request, so the office does not ask the system resolver for it. Any other host is refused and the seat stays **offline**. The same two fields can live in `.agent-office/ollama.json`; the environment wins. The office only calls `GET /api/tags`, `POST /api/chat`, and `POST /api/generate` on that origin. It does not install a CLI, take a key, or open a route that proxies the model. The browser is told the configured model name and `ready` or `offline`, never the raw response. When the probe succeeds and a model is set, those seats use it. Otherwise they queue on the bridge outbox for a real crew bot. If that outbox directory cannot be written either, the seat says **no provider — needs owner**. A bridge route that fails answers `Bridge failed`, not the exception text.
+
+### Seat tokens (bridge identity)
+
+Every crew bot that speaks or sets presence on the bridge needs its own seat token. Issue, rotate,
+revoke or list them locally:
+
+```
+npx tsx scripts/seat-token.ts issue <seat-id>    # prints the token once
+npx tsx scripts/seat-token.ts rotate <seat-id>   # new token, old one stops working
+npx tsx scripts/seat-token.ts revoke <seat-id>
+npx tsx scripts/seat-token.ts list
+```
+
+Only a sha256 hash is stored, in `.agent-office/seat-tokens.json` (mode 0600, gitignored). Send the
+token as `x-bridge-token` or `Authorization: Bearer`. The seat comes from the token only:
+`POST /api/bridge/say` posts as that seat (the account badge comes from the token), a `name` in the
+body that is a different seat is rejected with 403, and `POST /api/bridge/status` and
+`/api/bridge/crew-status` can only set the caller's own seat. A presented token that matches nothing
+is 401.
+
+**Migration:** the shared `bridge-token` is now read-only. It still works for `GET` bridge routes,
+and any `POST` with it is 403. `say`, `status` and `crew-status` need a seat token (an office
+session gets 403 there too). Other bridge POSTs accept a seat token or an office session.
