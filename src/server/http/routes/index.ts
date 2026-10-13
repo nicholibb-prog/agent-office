@@ -13,6 +13,7 @@ import { bridgeRoutes } from './bridge.js';
 import { hqBriefRoutes } from './hq-brief.js';
 import { officeRoutes } from './office.js';
 import { hqRoutes } from './hq.js';
+import { poolRoutes } from './pool.js';
 
 export const routes: readonly Route[] = [
   // Anyone.
@@ -45,6 +46,15 @@ export const routes: readonly Route[] = [
   hqBriefRoutes.seen,
   hqBriefRoutes.needs,
   hqBriefRoutes.board,
+  poolRoutes.list,
+  poolRoutes.post,
+  poolRoutes.claim,
+  poolRoutes.heartbeat,
+  poolRoutes.release,
+  poolRoutes.complete,
+  poolRoutes.pull,
+  poolRoutes.danPass,
+  poolRoutes.job,
   pageRoutes.assets,
   pageRoutes.login,
   pageRoutes.claim,
@@ -57,6 +67,8 @@ export const routes: readonly Route[] = [
   officeRoutes.sinceClose,
   officeRoutes.dismiss,
   officeRoutes.close,
+  poolRoutes.callers,
+  poolRoutes.ownerApproval,
   agentRoutes.models,
   fileRoutes.image,
   fileRoutes.whiteboardFile,

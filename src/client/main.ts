@@ -52,6 +52,7 @@ import { installHud } from './features/hud';
 import { installJev } from './features/jev';
 import { installHq } from './features/hq';
 import { installKaviBoard } from './features/kavi-board';
+import { installWorkPool } from './features/work-pool';
 import { installJukebox } from './features/jukebox';
 import { installMeeting } from './features/meeting';
 import { installHuddle } from './features/huddle';
@@ -186,6 +187,7 @@ parts.seating = installSeating(ctx, { shares: () => parts.talk.currentShares(), 
 installGong(ctx, { burstOver: parts.views.burstOver, workerViews: parts.views.workerViews, court: () => parts.worlds.court(), idleAgents: () => parts.worlds.idleAgents() });
 installJev(ctx);
 installKaviBoard(ctx);
+installWorkPool(ctx);
 
 parts.hintbar = installHintBar(ctx, core, parts);
 parts.emotes = installEmotes(ctx, { personOf });

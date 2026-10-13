@@ -15,6 +15,7 @@ import { jukeboxHandlers, jukeboxView } from './jukebox.js';
 import { huddleHandlers, huddleView } from './huddle.js';
 import { meetingHandlers, meetingView } from './meetings.js';
 import { planHandlers, planView } from './plan.js';
+import { poolView } from './pool.js';
 import { presenceHandlers } from './presence.js';
 import { queueHandlers, queueView } from './queue.js';
 import { rooftopHandlers } from './rooftop.js';
@@ -78,4 +79,5 @@ export const views: ViewPieces = {
   huddle: huddleView,
   cabinet: cabinetView,
   jev: jevView,
+  pool: poolView,
 };

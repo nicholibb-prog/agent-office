@@ -175,6 +175,19 @@ export function bridgeShape(req: http.IncomingMessage, res: http.ServerResponse)
   return true;
 }
 
+/** Whether the request carries a bridge credential (x-bridge-token or Bearer). */
+export function bridgeCredentialPresent(req: http.IncomingMessage): boolean {
+  const hdr = req.headers['x-bridge-token'];
+  if (typeof hdr === 'string' && hdr.trim()) return true;
+  const auth = req.headers.authorization;
+  return typeof auth === 'string' && /^Bearer\s+\S+/i.test(auth);
+}
+
+/** Host, Origin, and JSON shape only (no credential check). Used by the pool's session routes. */
+export function officeRequestShape(req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  return bridgeShape(req, res);
+}
+
 export type BridgeCaller = { kind: 'seat'; seat: string } | { kind: 'shared' } | { kind: 'session' };
 
 /**
