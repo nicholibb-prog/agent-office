@@ -1,0 +1,66 @@
+// The loft's dressing: the Paleo-Hebrew inscription (mapping and spelling), the bundled fonts and
+// their licences, and the pedestal, scroll and console placed clear of the stairs, aisles and desks.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { PHOENICIAN_WORD_SEPARATOR, VICTORY_OF_THE_PEOPLE, toPaleoHebrew } from '../src/shared/paleo-hebrew.js';
+import { OKKIN_CONSOLE, OKKIN_LOFT_SPOT, OKKIN_PEDESTAL, OKKIN_SCROLL, OKKIN_SIGN } from '../src/shared/okkin-loft.js';
+import { DESKS, DESK_SIZE, FLOOR, STAIRS, WALL_HEIGHT } from '../src/shared/layout.js';
+
+const cp = (s: string) => [...s].map((c) => c.codePointAt(0)!.toString(16).toUpperCase());
+
+test('Paleo-Hebrew: every letter maps to its Phoenician-block code point, final forms to the base letter', () => {
+  const pairs: [string, number][] = [['א', 0x10900], ['ב', 0x10901], ['ה', 0x10904], ['ו', 0x10905], ['ח', 0x10907], ['י', 0x10909], ['כ', 0x1090a], ['מ', 0x1090c], ['נ', 0x1090d], ['ע', 0x1090f], ['פ', 0x10910], ['צ', 0x10911], ['ת', 0x10915]];
+  for (const [h, c] of pairs) assert.equal(toPaleoHebrew(h).codePointAt(0), c, h);
+  for (const [f, b] of [['ך', 'כ'], ['ם', 'מ'], ['ן', 'נ'], ['ף', 'פ'], ['ץ', 'צ']]) assert.equal(toPaleoHebrew(f!), toPaleoHebrew(b!), f);
+  assert.throws(() => toPaleoHebrew('A'));
+});
+
+test('the inscription: נצחן העם (defective, no vav), in logical right-to-left order, word separator between', () => {
+  assert.equal(VICTORY_OF_THE_PEOPLE.hebrew, 'נצחן העם');
+  const s = toPaleoHebrew(VICTORY_OF_THE_PEOPLE.hebrew);
+  // nun tsade het nun · he ayin mem
+  assert.deepEqual(cp(s), ['1090D', '10911', '10907', '1090D', '1091F', '10904', '1090F', '1090C']);
+  assert.ok(s.includes(PHOENICIAN_WORD_SEPARATOR));
+  assert.ok(!s.includes('\u{10905}'), 'no vav');
+});
+
+test('fonts are local subsets, each with its OFL licence; no CDN', () => {
+  const dir = path.join(import.meta.dirname, '../src/client/features/okkin-loft/fonts');
+  for (const [font, lic] of [['cinzel-okkin.ttf', 'OFL-Cinzel.txt'], ['yuji-syuku-nikko.ttf', 'OFL-YujiSyuku.txt'], ['noto-sans-phoenician.ttf', 'OFL-NotoSansPhoenician.txt']]) {
+    assert.ok(statSync(path.join(dir, font!)).size < 20_000, `${font} is a small subset`);
+    assert.match(readFileSync(path.join(dir, lic!), 'utf8'), /SIL Open Font License, Version 1\.1/);
+  }
+  const src = readFileSync(path.join(import.meta.dirname, '../src/client/features/okkin-loft/regalia.ts'), 'utf8');
+  assert.doesNotMatch(src, /https?:\/\/(fonts\.|cdn|unpkg|jsdelivr)/);
+  assert.ok(existsSync(path.join(import.meta.dirname, '../docs/okkin-loft-regalia.md')));
+});
+
+type Box = { minX: number; maxX: number; minZ: number; maxZ: number };
+const ov = (a: Box, b: Box) => a.minX < b.maxX && a.maxX > b.minX && a.minZ < b.maxZ && a.maxZ > b.minZ;
+const pedestal: Box = OKKIN_PEDESTAL;
+const scroll: Box = { minX: OKKIN_SCROLL.x - 0.25, maxX: OKKIN_SCROLL.x + 0.25, minZ: OKKIN_SCROLL.z - OKKIN_SCROLL.width / 2, maxZ: OKKIN_SCROLL.z + OKKIN_SCROLL.width / 2 };
+const desks: Box[] = DESKS.map((d) => ({ minX: d.x - DESK_SIZE.width / 2 - 0.2, maxX: d.x + DESK_SIZE.width / 2 + 0.2, minZ: d.z - DESK_SIZE.depth / 2 - 1, maxZ: d.z + DESK_SIZE.depth / 2 + 1 }));
+const stairsFoot: Box = { minX: STAIRS.fromX - 1.6, maxX: STAIRS.toX, minZ: STAIRS.minZ - 1, maxZ: STAIRS.maxZ };
+
+test('pedestal is 0.3–0.6 m, inside the room, clear of the stairs (1 m strip) and every desk zone', () => {
+  assert.ok(OKKIN_PEDESTAL.height >= 0.3 && OKKIN_PEDESTAL.height <= 0.6);
+  assert.ok(pedestal.minX >= FLOOR.minX && pedestal.maxX <= FLOOR.maxX && pedestal.minZ >= FLOOR.minZ && pedestal.maxZ <= FLOOR.maxZ);
+  for (const b of [pedestal, scroll]) {
+    assert.equal(ov(b, stairsFoot), false);
+    for (const d of desks) assert.equal(ov(b, d), false);
+  }
+  assert.equal(ov(pedestal, scroll), false);
+});
+
+test('console stays reachable: in front of the pedestal with a gap, and a clear walk to it from where you stand', () => {
+  const c: Box = { minX: OKKIN_CONSOLE.x - OKKIN_CONSOLE.depth / 2, maxX: OKKIN_CONSOLE.x + OKKIN_CONSOLE.depth / 2, minZ: OKKIN_CONSOLE.z - OKKIN_CONSOLE.width / 2, maxZ: OKKIN_CONSOLE.z + OKKIN_CONSOLE.width / 2 };
+  assert.ok(pedestal.minX - c.maxX >= 0.15, 'gap between console and pedestal');
+  const walk: Box = { minX: OKKIN_LOFT_SPOT.x, maxX: c.minX - 0.01, minZ: OKKIN_CONSOLE.z - 0.4, maxZ: OKKIN_CONSOLE.z + 0.4 };
+  for (const b of [pedestal, scroll, ...desks]) assert.equal(ov(walk, b), false);
+});
+
+test('the sign hangs under the ceiling', () => {
+  assert.ok(OKKIN_SIGN.y + OKKIN_SIGN.height / 2 < WALL_HEIGHT - 0.3);
+});
