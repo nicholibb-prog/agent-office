@@ -129,6 +129,9 @@ parts.player.view = parts.settings.view;
 parts.hands = new Hands(store.profile.color, parts.me.skinColor);
 parts.you = installYou(ctx);
 parts.reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+parts.hands.reduceMotion = parts.reduceMotion.matches;
+parts.reduceMotion.addEventListener?.('change', (e) => { parts.hands.reduceMotion = e.matches; });
+for (const ev of ['keydown', 'pointerdown', 'wheel', 'touchstart'] as const) window.addEventListener(ev, () => parts.hands.poke(), { passive: true });
 ({ smoke: parts.smoke, puff: parts.puff } = makeSmoke(ctx));
 parts.sound = makeSound(parts.settings);
 

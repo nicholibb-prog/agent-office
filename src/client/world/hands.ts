@@ -1,3 +1,4 @@
+import { ARMS_IDLE_AFTER, armsHideStep } from './hands-idle';
 import * as THREE from 'three';
 import { EMOTE_BY_ID, type Emote, type EmoteId } from '../../shared/emotes';
 import type { CarriedIssue, Theme } from '../../shared/protocol';
@@ -49,6 +50,10 @@ interface Arm {
  * a cleared depth buffer, so they never poke through desks or walls. Camera space: -z is forward.
  */
 export class Hands {
+  private idleT = 0;
+  private hideK = 0;
+  reduceMotion = false; // prefers-reduced-motion
+  poke() { this.idleT = 0; } // any input: arms back
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(55, 1, 0.01, 5);
   private sleeve: THREE.MeshToonMaterial;
@@ -372,6 +377,11 @@ export class Hands {
       this.sway.x += (tx - this.sway.x) * Math.min(1, dt * 10);
       this.sway.y += (ty - this.sway.y) * Math.min(1, dt * 10);
     }
+    if (this.last && (s.walking || s.airborne || s.grip || s.yaw !== this.last.yaw || s.pitch !== this.last.pitch)) this.idleT = 0;
+    else this.idleT += dt;
+    this.hideK = armsHideStep(this.hideK, this.idleT > ARMS_IDLE_AFTER, dt, this.reduceMotion);
+    this.scene.position.y = -0.45 * this.hideK;
+    this.scene.visible = this.hideK < 0.99;
     this.last = { yaw: s.yaw, pitch: s.pitch };
     this.air += ((s.airborne && !s.grip ? 1 : 0) - this.air) * Math.min(1, dt * 8);
     this.ladderK += ((s.grip === 'ladder' ? 1 : 0) - this.ladderK) * Math.min(1, dt * 10);

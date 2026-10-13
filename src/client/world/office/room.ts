@@ -176,7 +176,8 @@ export const plants: Fixture<'plants'> = (site) => {
 /** Ceiling lamps (cartoon pendants), hung on long cords down from the high ceiling. */
 export const lamps: Fixture = (site) => {
   const night = site.get('night');
-  const lampY = 4.05;
+  // AUD-16: hung higher on shorter cords so they don't dangle across the boards' sightline.
+  const lampY = 4.6;
   for (const [x, z] of [
     [-10.5, -4],
     [-1.5, -4],
