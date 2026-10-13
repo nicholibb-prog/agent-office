@@ -1,3 +1,4 @@
+import { KAVI_HOME, KAVI_PATROL } from '../../../shared/kavi-office';
 import * as THREE from 'three';
 import { mesh, roundedBox, toon } from '../../world/toon';
 import type { Collider } from '../../world/types';
@@ -6,17 +7,8 @@ import { stepToward, type Body } from '../../player/collide';
 import { FACE_PX, FACE_SRC, paintFace } from './picture';
 
 /** Face-computer NPC. No desk. Patrols the office. */
-const HOME = { x: -8.9, z: 5.55 } as const;
-
-/** Aisle-ish waypoints — each step still resolved against office colliders. */
-const PATROL: { x: number; z: number }[] = [
-  { x: -8.9, z: 5.55 },
-  { x: -2.0, z: 5.0 },
-  { x: 4.0, z: 2.0 },
-  { x: 2.0, z: -6.0 },
-  { x: -10.0, z: -6.0 },
-  { x: -12.0, z: 1.0 },
-];
+const HOME = KAVI_HOME;
+const PATROL = KAVI_PATROL;
 
 export interface KaviKarenNpc {
   group: THREE.Group;
@@ -31,7 +23,7 @@ export interface KaviKarenNpc {
 export function buildKaviKaren(officeColliders: Collider[]): KaviKarenNpc {
   const group = new THREE.Group();
   group.position.set(HOME.x, 0, HOME.z);
-  group.rotation.y = Math.PI;
+  group.rotation.y = HOME.rotY;
 
   const chassis = toon('#2b2d42');
   const accent = toon('#ef476f');
@@ -40,7 +32,6 @@ export function buildKaviKaren(officeColliders: Collider[]): KaviKarenNpc {
   group.add(mesh(roundedBox(0.22, 0.55, 0.22, 0.04), stand, 0, 0.28, 0));
   group.add(mesh(roundedBox(0.5, 0.06, 0.35, 0.03), stand, 0, 0.03, 0));
   group.add(mesh(roundedBox(0.85, 0.7, 0.12, 0.04), chassis, 0, 1.05, 0));
-  group.add(mesh(roundedBox(0.5, 0.06, 0.04, 0.02), accent, 0, 0.78, 0.07));
 
   // The face: a still picture of Kavi framed like a video-call view (see picture.ts). The picture is
   // loaded once and painted into the screen's canvas when it arrives; nothing is redrawn per frame.

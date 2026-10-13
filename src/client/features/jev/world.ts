@@ -21,9 +21,10 @@ export interface JevLeaderboardWhiteboard {
 }
 
 export function buildJevLeaderboard(): JevLeaderboardWhiteboard {
-  const { x, z, width, height, bottom } = JEV_BOARD;
+  const { x, z, rotY, width, height, bottom } = JEV_BOARD;
   const group = new THREE.Group();
   group.position.set(x, 0, z);
+  group.rotation.y = rotY;
   const frame = toon(FRAME);
   const leg = toon(LEG);
   const mid = bottom + height / 2;
@@ -49,7 +50,7 @@ export function buildJevLeaderboard(): JevLeaderboardWhiteboard {
   }
 
   const colliders: Collider[] = [{ minX: x - width / 2 - 0.1, maxX: x + width / 2 + 0.1, minZ: z - 0.2, maxZ: z + 0.2, top: bottom + height + 0.1 }];
-  const interactable: Interactable = { kind: 'jev', x, z: z + 1.4, radius: 2.2 };
+  const interactable: Interactable = { kind: 'jev', x: x + Math.sin(rotY) * 1.4, z: z + Math.cos(rotY) * 1.4, radius: 2.2 };
 
   const show = (board: JevBoard) => {
     const W = canvas.width;
@@ -71,10 +72,10 @@ export function buildJevLeaderboard(): JevLeaderboardWhiteboard {
       g.fillText('No scores yet', W / 2, H * 0.5);
     } else {
       rows.forEach((row, i) => {
-        const y = H * (0.32 + i * 0.1);
+        const y = H * (0.3 + i * 0.12);
         g.textAlign = 'left';
         g.fillStyle = i === 0 ? '#ef476f' : '#2b2d42';
-        g.font = `800 ${Math.round(H * 0.055)}px ${FONT}`;
+        g.font = `800 ${Math.round(H * 0.075)}px ${FONT}`;
         g.fillText(`${row.rank}. ${row.name}`, W * 0.08, y);
         g.textAlign = 'right';
         g.fillStyle = '#118ab2';

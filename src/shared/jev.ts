@@ -47,10 +47,11 @@ export function inBreakroom(x: number, z: number): boolean {
 }
 
 /**
- * The Jev board in the central aisle, south of the plant at (-6, 0), facing +z.
+ * The Jev board against the south wall, between the window at x 1 and the loft (x 9), facing into
+ * the room (-z, rotY PI). Clear of every desk, chair and aisle (tests/office-placement.test.ts).
  * `width` and `height` are the writing face; `bottom` is how high that face starts.
  */
-export const JEV_BOARD = { x: -6, z: 2.15, width: 2.6, height: 1.55, bottom: 1 } as const;
+export const JEV_BOARD = { x: 5.5, z: 12.7, rotY: Math.PI, width: 2.6, height: 1.55, bottom: 1 } as const;
 
 const NAME_MAX = 24;
 const SLUG = /^[a-z0-9-]{1,24}$/;
