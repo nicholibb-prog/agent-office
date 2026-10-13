@@ -22,6 +22,8 @@ export interface HandsInput {
 }
 
 /** Where the hands rest for holding, throwing, a drag or an emote (see classic): out wider than at rest. */
+/** How big your own arms are drawn in first person. */
+export const ARM_SCALE = 0.72;
 const CLASSIC = { x: 0.25, y: -0.185, z: -0.44, rx: 0.2, ry: 0.22, rz: -0.25 } as const;
 
 /** Lifting the mug for a sip and lowering it again, in seconds. */
@@ -208,7 +210,7 @@ export class Hands {
       for (const m of arm.mitten) m.visible = !warlock;
       // A mitten's fluffy cuff.
       arm.cuff.visible = theme === 'christmas';
-      arm.cuff.scale.set(1.3, 1.3, 1.9);
+      arm.cuff.scale.set(1, 1, 1);
       if (!warlock) continue;
       const g = new THREE.Group();
       g.add(warlockHand(arm.side, this.skin), raggedCuff(this.rags));
@@ -331,10 +333,12 @@ export class Hands {
       group.add(finger);
     }
     // Out from the bottom corners of the view, the sleeves angled in toward the hands.
-    const base = new THREE.Vector3(side * 0.18, -0.17, -0.5);
+    // Low in the corners and smaller, so they frame the view rather than fill it.
+    const base = new THREE.Vector3(side * 0.21, -0.29, -0.6);
     const baseRot = new THREE.Euler(0.45, side * 0.55, side * -0.2);
     group.position.copy(base);
     group.rotation.copy(baseRot);
+    group.scale.setScalar(ARM_SCALE);
     this.scene.add(group);
     return { group, base, baseRot, side, cuff, mitten: [palm], finger, dressed: null, fire: null };
   }
