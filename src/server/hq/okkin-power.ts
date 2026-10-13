@@ -32,7 +32,13 @@ export function parseAction(value: unknown): PowerAction | null {
 function argvOk(argv: unknown): argv is string[] {
   if (!Array.isArray(argv) || argv.length === 0 || argv.length > 16) return false;
   for (const a of argv) if (typeof a !== 'string' || !a.trim() || a.length > 400) return false;
-  const prog = path.basename(String(argv[0])).toLowerCase();
+  const prog = path.win32.basename(path.basename(String(argv[0]))).toLowerCase();
+  // One narrow shape for a PowerShell stop script: -NoProfile -File <absolute .ps1>, nothing else.
+  // No -Command, no -EncodedCommand, no extra args. Still only usable once Dan passes the script.
+  if (/^(powershell|pwsh)(\.exe)?$/.test(prog)) {
+    const a = argv as string[];
+    return a.length === 4 && a[1] === '-NoProfile' && a[2] === '-File' && /^([a-zA-Z]:\\|\/)[^<>|&;`$\n\r"]+\.ps1$/.test(a[3]!) && !/runas/i.test(a[3]!);
+  }
   if (FORBIDDEN.test(prog)) return false;
   for (const a of argv as string[]) {
     if (/^<.*>$/.test(a.trim()) || a.includes('<') || a.includes('>')) return false; // placeholder or redirection
