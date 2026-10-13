@@ -207,7 +207,7 @@ export function bridgeGate(ctx: Ctx, req: http.IncomingMessage, res: http.Server
 }
 
 /** Routes that speak or set presence: a seat token only. Returns the caller's seat. */
-function seatGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): string | null {
+export function seatGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): string | null {
   const c = bridgeCaller(ctx, req, res);
   if (!c) return null;
   if (c.kind !== 'seat') {

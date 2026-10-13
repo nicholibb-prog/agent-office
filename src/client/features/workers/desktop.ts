@@ -6,6 +6,7 @@
 import type { WorkerStatus } from '../../../shared/protocol';
 import { isAsleep } from '../../../shared/status';
 import type { ScreenState } from '../../state/store';
+import { liveFor, type LiveImage } from './live-feed';
 
 /** Working (blink, scroll, bars) or sitting still. `attention` blinks for a worker that needs you. */
 export type DeskPace = 'working' | 'attention' | 'calm';
@@ -25,6 +26,11 @@ export interface DeskFace {
   lines: string[];
   /** prefers-reduced-motion: one pose, so working and idle still read differently. */
   still?: boolean;
+  /**
+   * WORKING only: the bot's own pushed VM-desktop frame, or 'none' when it sends none ("no live
+   * feed"). Undefined leaves the painted desktop exactly as before.
+   */
+  live?: LiveImage | 'none';
 }
 
 /**
@@ -85,6 +91,10 @@ export function paintDesk(ctx: CanvasRenderingContext2D, w: number, h: number, f
     paintEmptyDesk(ctx, w, h);
     return;
   }
+  if (face.pace === 'working' && face.live && face.live !== 'none') {
+    paintLiveFrame(ctx, w, h, face, face.live);
+    return;
+  }
   const t = face.still ? 0 : face.now;
   const live = face.pace === 'working' && !face.still;
   ctx.save();
@@ -125,6 +135,36 @@ export function paintDesk(ctx: CanvasRenderingContext2D, w: number, h: number, f
     ctx, sideX, top + filesH + gap, sideW, h - (top + filesH + gap) - gap, 'activity', face, t,
     (x, y, ww, hh) => paintActivity(ctx, x, y, ww, hh, face, t, live),
   );
+  if (face.pace === 'working' && face.live === 'none') {
+    const label = 'no live feed';
+    ctx.font = `700 ${Math.round(h / 30)}px ${FONT}`;
+    const lw = label.length * Math.round(h / 52) + 24;
+    ctx.fillStyle = 'rgba(14,16,24,0.9)';
+    ctx.fillRect(w - lw - 16, h - 44, lw, 30);
+    ctx.fillStyle = '#9aa0b8';
+    ctx.fillText(label, w - lw - 4, h - 38);
+  }
+  ctx.restore();
+}
+
+/** The bot's real desktop, aspect kept (1:1 pixels when it fits), with a LIVE badge and its name. */
+export function paintLiveFrame(ctx: CanvasRenderingContext2D, w: number, h: number, face: DeskFace, f: LiveImage) {
+  ctx.save();
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+  const k = Math.min(w / f.w, h / f.h);
+  const dw = f.w * k;
+  const dh = f.h * k;
+  ctx.drawImage(f.img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.font = `800 ${Math.round(h / 30)}px ${FONT}`;
+  const tag = `● LIVE  ${face.name.slice(0, 18)}`;
+  const tw = tag.length * Math.round(h / 50) + 20;
+  ctx.fillStyle = 'rgba(200,30,50,0.92)';
+  ctx.fillRect(10, 10, tw, 30);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(tag, 20, 16);
   ctx.restore();
 }
 
@@ -245,6 +285,7 @@ function paintActivity(
 
 /** What the laptop shows before its terminal has printed a line. */
 export interface DeskWorker {
+  id?: string;
   status: WorkerStatus;
   name: string;
   activity?: string;
@@ -276,5 +317,6 @@ export function workerDesktop(w: DeskWorker, screen: ScreenState | undefined, an
     activity: w.activity,
     lines: lines.length ? lines : [laptopPlaceholder(w)],
     still,
+    live: liveFor(w.name, w.status === 'working', Date.now(), w.id),
   };
 }

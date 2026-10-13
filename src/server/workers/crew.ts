@@ -23,6 +23,16 @@ import { newWorker } from './worker.js';
 
 /** Shells have no agent hooks: after this much quiet since last real input, return to idle (roam/asleep). */
 const SHELL_IDLE_MS = 12_000;
+/**
+ * How long a sticky WORKING lasts with no fresh bridge push before it times out.
+ * Default WORKING_LEASE_MS (15 min). Override with AO_WORKING_TIMEOUT_MS, clamped to 10 s … 6 h.
+ */
+export function workingTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.AO_WORKING_TIMEOUT_MS);
+  if (!Number.isFinite(n) || n <= 0) return WORKING_LEASE_MS;
+  return Math.min(6 * 3600_000, Math.max(10_000, Math.round(n)));
+}
+
 /** How often quiet shells are forced idle, and how often the crew-status file is read. */
 const SHELL_TICK_MS = 3_000;
 const CREW_FILE_MS = 4_000;
@@ -129,7 +139,7 @@ export function writeCrewPush(dataDir: string, patch: Record<string, string>, so
  */
 export function applyCrewPresence(host: CrewHost, crew: Record<string, string>, opts: CrewApplyOpts = {}): { applied: string[] } {
   const now = opts.now ?? Date.now();
-  const lease = opts.leaseMs ?? WORKING_LEASE_MS;
+  const lease = opts.leaseMs ?? workingTimeoutMs();
   const applied: string[] = [];
   for (const [key, value] of Object.entries(crew || {})) {
     if (!isSeatId(key) || key === OKKIN_SEAT) continue;
@@ -148,12 +158,23 @@ export function applyCrewPresence(host: CrewHost, crew: Record<string, string>, 
         continue;
       }
       if (beat === 'working' && fresh) {
-        w.info.lastInput = { by: 'crew-status', at: seenAt ?? now };
+        const at = seenAt ?? now;
+        const newer = !w.sticky || at > w.sticky.at;
         if (w.info.status !== 'working') host.setStatus(w, 'working');
-        else host.emitUpdate(w);
+        // Sticky: only a real idle/done push or the timeout ends it (see tickWorkingLease).
+        w.sticky = { since: w.sticky?.since ?? now, at: Math.max(at, w.sticky?.at ?? 0) };
+        if (newer) {
+          w.info.lastInput = { by: 'crew-status', at };
+          host.emitUpdate(w);
+        }
         applied.push(w.info.name + '=working');
         continue;
       }
+      if (beat === 'working' && w.sticky && now - w.sticky.at < lease) {
+        applied.push(w.info.name + '=working');
+        continue;
+      }
+      w.sticky = undefined;
       if (w.info.status === 'working' || w.info.status === 'starting' || (w.info.status === 'needs_input' && fromCrew)) host.setStatus(w, 'idle');
       applied.push(w.info.name + '=idle');
     }
@@ -209,10 +230,20 @@ async function syncOkkin(host: CrewHost, hq: HqLocal, dataDir: string) {
  * WORKING lease. Bridge heartbeats use `leaseMs`. Quiet shells keep their own shorter idle.
  * Never clears needs_input. Crew seats are not shells, so a shell's own output cannot refresh a crew lease.
  */
-export function tickWorkingLease(host: CrewHost, opts: { shellIdleMs: number; leaseMs: number }): void {
-  const now = Date.now();
+export function tickWorkingLease(
+  host: CrewHost,
+  opts: { shellIdleMs: number; leaseMs: number; stickyMs?: number },
+  now = Date.now(),
+): void {
   for (const w of host.workers.values()) {
     if (w.info.status === 'needs_input') continue;
+    if (w.sticky) {
+      // Sticky WORKING ends on a real idle/done (commitStatus) or here, on the timeout.
+      if (w.info.status === 'working' && now - w.sticky.at < (opts.stickyMs ?? opts.leaseMs)) continue;
+      w.sticky = undefined;
+      if (w.info.status === 'working') host.setStatus(w, 'idle');
+      continue;
+    }
     if (w.info.status !== 'working' && w.info.status !== 'starting') continue;
     const at = w.info.lastInput?.at ?? 0;
     const fromBridge = w.info.lastInput?.by === 'crew-status' || w.info.lastInput?.by === 'okkin-request';
@@ -228,6 +259,7 @@ export function tickWorkingLease(host: CrewHost, opts: { shellIdleMs: number; le
  */
 export function settleQuietShell(w: Worker, now = Date.now()): void {
   if (w.info.kind !== 'shell' || w.info.status !== 'working') return;
+  if (w.sticky) return;
   const at = w.info.lastInput?.at ?? 0;
   if (at && now - at < SHELL_IDLE_MS) return;
   clockWork(w.info, 'idle', now);
@@ -255,7 +287,7 @@ export function createCrewWatch(
   return {
     start() {
       // Shells: force idle when quiet so a desk is only for WORKING. The file is the bridge's push.
-      shellIdleTick = setInterval(() => tickWorkingLease(host, { shellIdleMs: SHELL_IDLE_MS, leaseMs: WORKING_LEASE_MS }), SHELL_TICK_MS);
+      shellIdleTick = setInterval(() => tickWorkingLease(host, { shellIdleMs: SHELL_IDLE_MS, leaseMs: WORKING_LEASE_MS, stickyMs: workingTimeoutMs() }), SHELL_TICK_MS);
       crewStatusTick = setInterval(() => tickCrewStatusFile(host, statePath), CREW_FILE_MS);
       tickCrewStatusFile(host, statePath);
     },
