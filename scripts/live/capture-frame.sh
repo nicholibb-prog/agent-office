@@ -19,7 +19,11 @@ command -v import >/dev/null && command -v convert >/dev/null || { echo "skip: I
 command -v xdotool >/dev/null || { echo "skip: xdotool missing" >&2; exit 3; }
 
 # Sensitive-page check from the active window title. Unknown title = skip.
-title="$(DISPLAY="$disp" timeout 3 xdotool getactivewindow getwindowname 2>/dev/null || true)"
+win_title() {  # active window (EWMH), else the focused window (no window manager). Empty = unknown.
+  DISPLAY="$disp" timeout 3 xdotool getactivewindow getwindowname 2>/dev/null \
+    || DISPLAY="$disp" timeout 3 xdotool getwindowfocus getwindowname 2>/dev/null || true
+}
+title="$(win_title)"
 [[ -n "$title" ]] || { echo "skip: no active window title" >&2; exit 3; }
 if grep -Eiq 'sign[ -]?in|log[ -]?in|password|passcode|2-?step|verif|otp|one[- ]time|auth|oauth|account|credential|token|secret|api key|card|payment|checkout|billing|wallet|bank|paypal|stripe|1password|bitwarden|keychain|major files' <<<"$title"; then
   echo "skip: sensitive window" >&2; exit 3
@@ -35,7 +39,7 @@ for size in 1280x800 1024x640 800x500; do
 done
 [[ $(stat -c %s "$tmp/f.jpg") -le $MAX ]] || { echo "skip: frame over 400 KB" >&2; exit 3; }
 # Re-check the title after capture: if it changed to something sensitive, drop the frame.
-title2="$(DISPLAY="$disp" timeout 3 xdotool getactivewindow getwindowname 2>/dev/null || true)"
+title2="$(win_title)"
 [[ "$title2" == "$title" ]] || { echo "skip: window changed during capture" >&2; exit 3; }
 
 out="${AO_LIVE_OUTBOX:-/workspace/live-outbox}"; mkdir -p "$out"
