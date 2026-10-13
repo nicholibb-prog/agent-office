@@ -28,5 +28,5 @@ p.fillText('TEST PATTERN 1280×800', 640, 420);
 
 draw('calm', { pace: 'calm', chip: 'idle' });
 draw('none', { pace: 'working', chip: 'WORKING', live: 'none' });
-draw('live', { pace: 'working', chip: 'WORKING', live: { img: pat, w: pat.width, h: pat.height, at: t } });
+draw('live', { pace: 'working', chip: 'WORKING', live: { img: pat, w: pat.width, h: pat.height, at: Date.now() - 12_000, near: true } });
 ready({ desk: 'idle / working no feed / working live' });
