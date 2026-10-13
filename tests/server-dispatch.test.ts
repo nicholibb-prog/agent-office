@@ -391,6 +391,9 @@ test('settings, accounts, sign-ins and the boards answer as before', async () =>
   const told = async (start: string) => (await a.take('toast', (m) => m.level === 'info' && m.text.startsWith(start))).text;
 
   a.send({ t: 'theme.set', pick: 'nope' });
+  a.send({ t: 'theme.set', pick: 'halloween' });
+  assert.equal((await a.take('theme')).state.pick, 'halloween');
+  assert.equal(await told('🎃 Eve'), '🎃 Eve dressed the office up for Halloween');
   a.send({ t: 'theme.set', pick: 'off' });
   assert.equal((await a.take('theme')).state.pick, 'off');
   assert.equal(await told('Eve took'), 'Eve took the holiday decorations down');
