@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import * as THREE from 'three';
-import { FACE_CAPTION, FACE_NAME, FACE_PX, FACE_SRC, paintFace, type FacePen } from '../src/client/features/kavi-board/picture.js';
+import { FACE_NAME, FACE_PX, FACE_SRC, paintFace, type FacePen } from '../src/client/features/kavi-board/picture.js';
 
 const root = path.join(import.meta.dirname, '..');
 const feature = path.join(root, 'src/client/features/kavi-board');
@@ -28,17 +28,15 @@ function recorder() {
   return { pen, calls, texts: () => calls.filter((c) => c.op === 'fillText').map((c) => String(c.args[0])) };
 }
 
-test('the screen says it is a picture, not a live call, with Kavi\'s name tag', () => {
-  assert.equal(FACE_CAPTION, 'Picture · not a live call');
+test('the screen shows only her picture: no caption, name tag or strip over it once it loads', () => {
   assert.equal(FACE_NAME, 'Kavi');
-  // "live" only ever as "not a live call".
-  assert.equal(FACE_CAPTION.toLowerCase().replaceAll('not a live call', '').includes('live'), false);
-  for (const picture of [null, { width: 488, height: 368 } as unknown as CanvasImageSource]) {
-    const r = recorder();
-    paintFace(r.pen, picture);
-    assert.ok(r.texts().includes(FACE_CAPTION), 'caption painted');
-    assert.ok(r.texts().includes(FACE_NAME), 'name tag painted');
-  }
+  const loaded = recorder();
+  paintFace(loaded.pen, { width: 488, height: 368 } as unknown as CanvasImageSource);
+  assert.deepEqual(loaded.texts(), [], 'no text over the picture');
+  assert.ok(loaded.calls.some((c) => c.op === 'drawImage'));
+  const card = recorder();
+  paintFace(card.pen, null);
+  assert.deepEqual(card.texts(), [FACE_NAME], 'just her name on the card while it loads');
 });
 
 test('nothing on the screen pretends to be a call: no connected state, timer, or mic, camera or hang-up controls', () => {
@@ -49,7 +47,7 @@ test('nothing on the screen pretends to be a call: no connected state, timer, or
   }
   const r = recorder();
   paintFace(r.pen, null);
-  for (const t of r.texts()) assert.equal(/live|connected|\d:\d\d/i.test(t.replace(/not a live call/i, '')), false, t);
+  for (const t of r.texts()) assert.equal(/live|connected|\d:\d\d/i.test(t), false, t);
 });
 
 test('the picture is a small asset sized for the screen, not the full-size original', () => {
@@ -98,7 +96,7 @@ test('the NPC\'s face material shows the picture texture: loaded once, sRGB, pai
     assert.equal(images.length, 1);
     assert.equal(images[0].src, FACE_SRC);
     const pen = pens[0];
-    assert.ok(pen.texts().includes(FACE_CAPTION));
+    assert.deepEqual(pen.texts(), [FACE_NAME]);
     assert.equal(pen.calls.some((c) => c.op === 'drawImage'), false, 'no picture before it has loaded');
     const version = map.version;
     images[0].onload!();

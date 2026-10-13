@@ -2,26 +2,24 @@ import * as THREE from 'three';
 import { mesh, roundedBox, toon } from '../../world/toon';
 import type { Collider } from '../../world/types';
 import type { Fixture } from '../../world/office/fixture';
+import { KAVI_BOARD } from '../../../shared/kavi-office';
 
-/** Standing bridge title board beside/behind Jev. Titles only — no file bodies. */
-const POS = { x: -8.9, z: 4.35, width: 2.2, height: 1.55, bottom: 1 } as const;
+/** Kavi's Bridge title board, on the west wall (see KAVI_BOARD). Titles only, from the live feed. */
+const POS = KAVI_BOARD;
 const FRAME = '#1d3557';
 const LEG = '#8d99ae';
 const PX = 420;
 const FONT = 'Nunito, ui-rounded, system-ui, sans-serif';
 
-const TITLES: string[] = [
-  'office-access-options',
-  'open-item-answer',
-  'dolby-routed',
-  'agent-office-access',
-  'open-item-question',
-  'dolby-atmos-speakers',
-  'bridge-1000-check',
-  'archive-drill-done',
-  'daily-changes',
-  'status-sample-MOVED',
-];
+/** A wall board's floor footprint, turned with it (a quarter turn swaps its x and z extents). */
+export function boardFootprint(b: { x: number; z: number; rotY: number; width: number; height: number; bottom: number }): Collider {
+  const across = Math.abs(Math.cos(b.rotY)) > 0.5;
+  const hw = b.width / 2 + 0.1;
+  const hd = 0.2;
+  return across
+    ? { minX: b.x - hw, maxX: b.x + hw, minZ: b.z - hd, maxZ: b.z + hd, top: b.bottom + b.height + 0.1 }
+    : { minX: b.x - hd, maxX: b.x + hd, minZ: b.z - hw, maxZ: b.z + hw, top: b.bottom + b.height + 0.1 };
+}
 
 export interface KaviBridgeBoard {
   group: THREE.Group;
@@ -30,9 +28,10 @@ export interface KaviBridgeBoard {
 }
 
 export function buildKaviBridgeBoard(): KaviBridgeBoard {
-  const { x, z, width, height, bottom } = POS;
+  const { x, z, rotY, width, height, bottom } = POS;
   const group = new THREE.Group();
   group.position.set(x, 0, z);
+  group.rotation.y = rotY;
   const frame = toon(FRAME);
   const leg = toon(LEG);
   const mid = bottom + height / 2;
@@ -69,30 +68,28 @@ export function buildKaviBridgeBoard(): KaviBridgeBoard {
     g.textBaseline = 'middle';
     g.font = `800 ${Math.round(H * 0.08)}px ${FONT}`;
     g.fillText('Bridge board', W / 2, H * 0.1);
-    g.font = `700 ${Math.round(H * 0.04)}px ${FONT}`;
-    g.fillStyle = '#a8dadc';
-    g.fillText('titles only · Drive list', W / 2, H * 0.18);
-    const rows = titles.slice(0, 8);
+    const rows = titles.slice(0, 6);
     if (!rows.length) {
       g.fillStyle = '#8d99ae';
       g.font = `700 ${Math.round(H * 0.055)}px ${FONT}`;
       g.fillText('No Bridge files yet', W / 2, H * 0.5);
     } else {
       rows.forEach((title, i) => {
-        const y = H * (0.28 + i * 0.08);
+        const y = H * (0.26 + i * 0.12);
         g.textAlign = 'left';
         g.fillStyle = '#edf2f4';
-        g.font = `700 ${Math.round(H * 0.045)}px ${FONT}`;
-        const cut = title.length > 28 ? title.slice(0, 27) + '…' : title;
+        g.font = `700 ${Math.round(H * 0.07)}px ${FONT}`;
+        const cut = title.length > 22 ? title.slice(0, 21) + '…' : title;
         g.fillText(`• ${cut}`, W * 0.06, y);
       });
     }
     texture.needsUpdate = true;
   };
-  show(TITLES);
+  // Empty until the real Bridge feed arrives (index.ts): no sample titles painted.
+  show([]);
 
   const colliders: Collider[] = [
-    { minX: x - width / 2 - 0.1, maxX: x + width / 2 + 0.1, minZ: z - 0.15, maxZ: z + 0.15, top: bottom + height + 0.1 },
+    boardFootprint(POS),
   ];
 
   return { group, colliders, show };
