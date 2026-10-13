@@ -1,4 +1,4 @@
-// Nick -> Kavi through the Bridge folder's to-kavi path. Fake data and temp folders only.
+// Owner -> Kavi through the Bridge folder's to-kavi path. Fake data and temp folders only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, request, type Server } from 'node:http';
@@ -38,7 +38,7 @@ test('read-back shows only the folder id and lists nothing', () => {
   const rb = readBack(r) as unknown as Record<string, unknown>;
   assert.deepEqual(Object.keys(rb).sort(), ['configured', 'folderId', 'live', 'verified']);
   assert.ok(!JSON.stringify(rb).includes('secret-reply'));
-  assert.ok(!JSON.stringify(rb).includes('nick-to-kavi'));
+  assert.ok(!JSON.stringify(rb).includes('owner-to-kavi'));
   rmSync(r, { recursive: true, force: true });
 });
 
@@ -87,9 +87,9 @@ test('size cap and file-type allowlist', () => {
 });
 
 test('Major Files is refused and never read', () => {
-  assert.equal(isMajorFiles('C:\\Users\\nick\\Documents\\Major Files\\x'), true);
-  assert.equal(isMajorFiles('/home/n/documents/major files'), true);
-  assert.equal(isMajorFiles('/home/n/Documents/Bridge'), false);
+  assert.equal(isMajorFiles('C:\\Users\\owner\\Documents\\Major Files\\x'), true);
+  assert.equal(isMajorFiles('/home/owner/documents/major files'), true);
+  assert.equal(isMajorFiles('/home/owner/Documents/Bridge'), false);
   const root = path.join(tmpdir(), 'ao-mf-' + process.pid, 'Documents', 'Major Files', 'bridge');
   mkdirSync(path.join(root, 'to-kavi'), { recursive: true });
   writeFileSync(path.join(root, BRIDGE_ID_MARKER), KAVI_BRIDGE_FOLDER_ID);
@@ -116,8 +116,8 @@ async function withServer(fn: (port: number) => Promise<void>) {
     cfg: { port: 4600, tailnet: undefined, dataDir: tmpdir() },
     services: { lookup: () => undefined },
     auth: {
-      fromRequest: (req: { headers: { cookie?: string } }) => (req.headers.cookie === 'ao=nick' ? {} : undefined),
-      fromAnyCookie: (req: { headers: { cookie?: string } }) => req.headers.cookie === 'ao=nick',
+      fromRequest: (req: { headers: { cookie?: string } }) => (req.headers.cookie === 'ao=owner' ? {} : undefined),
+      fromAnyCookie: (req: { headers: { cookie?: string } }) => req.headers.cookie === 'ao=owner',
     },
   } as never;
   const srv: Server = createServer(requestHandler(ctx, [kaviSendRoutes.bridge, kaviSendRoutes.message, kaviSendRoutes.file]));
@@ -150,16 +150,16 @@ test('session gating: only an office session sends; bridge, seat or shared token
       const json = { 'content-type': 'application/json' };
       assert.equal((await call(port, '/api/kavi/message', { ...json, 'x-bridge-token': 'a'.repeat(64) }, body)).status, 401);
       assert.equal((await call(port, '/api/kavi/message', { ...json, authorization: 'Bearer ' + 'b'.repeat(64) }, body)).status, 401);
-      assert.equal((await call(port, '/api/kavi/message', { ...json, cookie: 'ao=nick', 'x-bridge-token': 'a'.repeat(64) }, body)).status, 403);
-      assert.equal((await call(port, '/api/kavi/message', { ...json, cookie: 'ao=nick', origin: 'http://evil.example' }, body)).status, 403);
+      assert.equal((await call(port, '/api/kavi/message', { ...json, cookie: 'ao=owner', 'x-bridge-token': 'a'.repeat(64) }, body)).status, 403);
+      assert.equal((await call(port, '/api/kavi/message', { ...json, cookie: 'ao=owner', origin: 'http://evil.example' }, body)).status, 403);
       assert.deepEqual(files(r), []);
-      const ok = await call(port, '/api/kavi/message', { ...json, cookie: 'ao=nick' }, body);
+      const ok = await call(port, '/api/kavi/message', { ...json, cookie: 'ao=owner' }, body);
       assert.equal(ok.status, 200);
       assert.equal(ok.json.folderId, KAVI_BRIDGE_FOLDER_ID);
-      const up = await call(port, '/api/kavi/file', { cookie: 'ao=nick', 'content-type': 'application/octet-stream', 'x-file-name': encodeURIComponent('a b.txt') }, 'fake');
+      const up = await call(port, '/api/kavi/file', { cookie: 'ao=owner', 'content-type': 'application/octet-stream', 'x-file-name': encodeURIComponent('a b.txt') }, 'fake');
       assert.equal(up.status, 200);
       assert.equal(up.json.name, 'a b.txt');
-      const rb = await call(port, '/api/kavi/bridge', { cookie: 'ao=nick' });
+      const rb = await call(port, '/api/kavi/bridge', { cookie: 'ao=owner' });
       assert.equal(rb.json.folderId, KAVI_BRIDGE_FOLDER_ID);
     });
     assert.equal(files(r).length, 2);
@@ -168,4 +168,26 @@ test('session gating: only an office session sends; bridge, seat or shared token
     else process.env.AGENT_OFFICE_KAVI_BRIDGE_DIR = prev;
     rmSync(r, { recursive: true, force: true });
   }
+});
+
+test('Windows reserved names and trailing dot or space are refused', () => {
+  const r = bridge();
+  for (const bad of ['CON', 'con.txt', 'Prn.pdf', 'aux.md', 'NUL.tar.txt', 'com1.txt', 'COM9.png', 'lpt1', 'Lpt9.csv', 'notes.txt.', 'notes.txt ', 'a. ']) {
+    assert.throws(() => sendFile(r, bad, Buffer.from('x')), /bad file name/, JSON.stringify(bad));
+  }
+  for (const ok of ['console.txt', 'com10.txt', 'lpt.txt', 'nully.md', 'auxiliary.pdf']) assert.equal(safeName(ok), ok);
+  assert.deepEqual(files(r), []);
+  rmSync(r, { recursive: true, force: true });
+});
+
+test('owner wording: file prefix and header say owner, never a personal name', () => {
+  const r = bridge();
+  const out = sendMessage(r, 'hello');
+  assert.match(out.name, /^owner-to-kavi-/);
+  const doc = readFileSync(path.join(r, 'to-kavi', out.name), 'utf8');
+  assert.match(doc, /^# From the owner/);
+  for (const f of ['src/server/kavi-send.ts', 'src/server/kavi-desk.ts', 'src/server/http/routes/kavi-send.ts', 'src/client/features/kavi-board/send-panel.ts']) {
+    assert.ok(!/nick/i.test(readFileSync(path.join(process.cwd(), f), 'utf8')), f);
+  }
+  rmSync(r, { recursive: true, force: true });
 });

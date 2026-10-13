@@ -1,4 +1,4 @@
-// Nick -> Kavi through the Kavi-George Bridge folder that Google Drive for desktop syncs on this
+// Owner -> Kavi through the Kavi-George Bridge folder that Google Drive for desktop syncs on this
 // machine. The office holds no Google credential: it only creates files in <bridge>/to-kavi and
 // Drive sync uploads them. Create only: no overwrite, no delete, no listing. Kavi answers async.
 import { closeSync, lstatSync, openSync, readFileSync, realpathSync, writeSync } from 'node:fs';
@@ -80,6 +80,9 @@ export function readBack(dir: string | undefined): BridgeReadBack {
   }
 }
 
+/** Windows device names, with or without an extension, any case. */
+export const WIN_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.[^.]*)*$/i;
+
 /** A safe base name, or an error. No separators, no dots-only, no leading dot, no control chars. */
 export function safeName(raw: string): string {
   const name = String(raw || '').normalize('NFC');
@@ -87,6 +90,7 @@ export function safeName(raw: string): string {
   if (/[\\/:\x00-\x1f\x7f]/.test(name) || name.startsWith('.') || name === '..' || path.isAbsolute(name)) {
     throw new KaviSendError(400, 'bad file name');
   }
+  if (/[. ]$/.test(name) || WIN_RESERVED.test(name)) throw new KaviSendError(400, 'bad file name');
   if (isMajorFiles(name)) throw new KaviSendError(403, 'refused: Major Files is off limits');
   return name;
 }
@@ -145,7 +149,7 @@ export function sendMessage(dir: string | undefined, text: string, now = new Dat
   if (body.length > MAX_MESSAGE_CHARS) throw new KaviSendError(413, 'message too long');
   const b = verifiedBridge(dir);
   const stamp = now.toISOString().replace(/[:.]/g, '-');
-  const name = `nick-to-kavi-${stamp}-${randomBytes(3).toString('hex')}.md`;
-  const doc = `# From Nick (agent office)\n\n${body}\n\n_Sent ${now.toISOString()}. Not a live call: Kavi answers through the Bridge folder._\n`;
+  const name = `owner-to-kavi-${stamp}-${randomBytes(3).toString('hex')}.md`;
+  const doc = `# From the owner (agent office)\n\n${body}\n\n_Sent ${now.toISOString()}. Not a live call: Kavi answers through the Bridge folder._\n`;
   return { ok: true, name: createUnique(b.toKavi, name, Buffer.from(doc, 'utf8')), folderId: b.folderId, live: false };
 }

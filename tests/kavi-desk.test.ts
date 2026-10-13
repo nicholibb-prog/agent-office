@@ -1,7 +1,7 @@
 // Kavi's desk is a read-only activity twin of a local bridge folder. Fake data only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, utimesSync, rmSync, readdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, utimesSync, rmSync, readdirSync, readFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { readKaviDesk } from '../src/server/kavi-desk.js';
@@ -77,4 +77,21 @@ test('module has no network, write, delete, or token code', () => {
   for (const bad of ['fetch(', 'http', 'writeFile', 'unlink', 'rmSync', 'rename', 'token', 'googleapis', 'spawn', 'exec']) {
     assert.ok(!src.includes(bad), 'kavi-desk.ts must not contain ' + bad);
   }
+});
+
+test('Major Files is never listed: checked on the path and on its realpath', () => {
+  const base = path.join(tmpdir(), 'ao-kdmf-' + process.pid + '-' + Math.random().toString(36).slice(2));
+  const mf = path.join(base, 'Documents', 'Major Files', 'bridge');
+  mkdirSync(path.join(mf, 'in'), { recursive: true });
+  mkdirSync(path.join(mf, 'out'), { recursive: true });
+  put(path.join(mf, 'in', 'p.md'), 1_000_000);
+  const direct = readKaviDesk(mf);
+  assert.equal(direct.state, 'unreachable');
+  assert.equal(direct.inCount, 0);
+  const link = path.join(base, 'innocent-link');
+  symlinkSync(mf, link);
+  const viaLink = readKaviDesk(link);
+  assert.equal(viaLink.state, 'unreachable');
+  assert.equal(viaLink.inCount, 0);
+  rmSync(base, { recursive: true, force: true });
 });

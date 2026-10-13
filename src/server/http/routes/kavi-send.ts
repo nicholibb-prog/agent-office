@@ -1,4 +1,4 @@
-// Nick -> Kavi sends. Office session only: a bridge, shared or seat token is refused outright.
+// Owner -> Kavi sends. Office session only: a bridge, shared or seat token is refused outright.
 import type http from 'node:http';
 import type { Ctx } from '../../office/context.js';
 import { send } from '../util.js';
@@ -9,7 +9,7 @@ import type { Route } from '../router.js';
 
 const bridgeDir = () => process.env.AGENT_OFFICE_KAVI_BRIDGE_DIR || undefined;
 
-/** Loopback Host, same-origin, and no bridge/seat token at all: sends are Nick's own session. */
+/** Loopback Host, same-origin, and no bridge/seat token at all: sends are the owner's own session. */
 export function kaviSessionGate(req: http.IncomingMessage, res: http.ServerResponse): boolean {
   if (!hostOk(req)) return send(res, 403, { error: 'host not allowed' }), false;
   if (!originOk(req)) return send(res, 403, { error: 'origin not allowed' }), false;

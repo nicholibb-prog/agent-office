@@ -1,7 +1,8 @@
 // Kavi's desk: a read-only activity twin of the local Kavi-George bridge folder.
 // It only stats packet files in <dir>/in and <dir>/out. It never reads packet text,
 // never returns file names or paths, never writes, and never calls any service.
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync, realpathSync, statSync } from 'node:fs';
+import { isMajorFiles } from './kavi-send.js';
 import path from 'node:path';
 
 export type KaviDeskState = 'unconfigured' | 'unreachable' | 'quiet' | 'waiting' | 'answered';
@@ -43,6 +44,13 @@ function scan(dir: string): { count: number; newest: number } | null {
 export function readKaviDesk(dir: string | undefined, now = Date.now()): KaviDesk {
   const base = { live: false as const, inCount: 0, outCount: 0, lastIn: null, lastOut: null, checkedAt: new Date(now).toISOString() };
   if (!dir) return { ...base, state: 'unconfigured' };
+  // Major Files is never listed: check the configured path and where it really points.
+  if (isMajorFiles(dir)) return { ...base, state: 'unreachable' };
+  try {
+    if (isMajorFiles(realpathSync(dir))) return { ...base, state: 'unreachable' };
+  } catch {
+    return { ...base, state: 'unreachable' };
+  }
   const inn = scan(path.join(dir, 'in'));
   const out = scan(path.join(dir, 'out'));
   if (!inn || !out) return { ...base, state: 'unreachable' };
