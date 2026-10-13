@@ -9,13 +9,14 @@
       body { display: flex; gap: 12px; padding: 12px; }
       figure { margin: 0; }
       figcaption { margin-bottom: 6px; }
-      canvas { width: 560px; height: 372px; background: #000; display: block; }
+      canvas { width: 420px; height: 279px; background: #000; display: block; }
     </style>
   </head>
   <body>
     <figure><figcaption>idle (unchanged)</figcaption><canvas id="calm" width="1024" height="680"></canvas></figure>
     <figure><figcaption>WORKING, no frame pushed</figcaption><canvas id="none" width="1024" height="680"></canvas></figure>
     <figure><figcaption>WORKING, near-live Drive frame (test pattern)</figcaption><canvas id="live" width="1024" height="680"></canvas></figure>
+    <figure><figcaption>crossfade, halfway (old frame under new)</figcaption><canvas id="fade" width="1024" height="680"></canvas></figure>
     <script type="module" src="./live.ts"></script>
   </body>
 </html>

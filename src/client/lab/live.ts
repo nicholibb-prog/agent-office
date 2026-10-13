@@ -29,4 +29,21 @@ p.fillText('TEST PATTERN 1280×800', 640, 420);
 draw('calm', { pace: 'calm', chip: 'idle' });
 draw('none', { pace: 'working', chip: 'WORKING', live: 'none' });
 draw('live', { pace: 'working', chip: 'WORKING', live: { img: pat, w: pat.width, h: pat.height, at: Date.now() - 12_000, near: true } });
-ready({ desk: 'idle / working no feed / working live' });
+// A second pattern, so the crossfade can be caught halfway: dark frame fading in over the bars.
+const pat2 = document.createElement('canvas');
+pat2.width = 1280;
+pat2.height = 800;
+const q = pat2.getContext('2d')!;
+q.fillStyle = '#1b1e2b';
+q.fillRect(0, 0, 1280, 800);
+q.fillStyle = '#fff';
+q.font = '700 56px ui-monospace, monospace';
+q.textAlign = 'center';
+q.fillText('NEXT FRAME', 640, 420);
+const near = (img: HTMLCanvasElement) => ({ img, w: 1280, h: 800, at: Date.now() - 4_000, near: true });
+draw('fade', { pace: 'working', chip: 'WORKING', live: near(pat) });
+draw('fade', { pace: 'working', chip: 'WORKING', live: near(pat2) });
+setTimeout(() => {
+  draw('fade', { pace: 'working', chip: 'WORKING', live: near(pat2) });
+  ready({ desk: 'idle / working no feed / near-live / crossfade' });
+}, 225);

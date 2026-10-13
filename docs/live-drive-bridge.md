@@ -18,7 +18,7 @@
   - changed during the capture
 - The frame is scaled down to 1280×800 or less and saved as a JPEG of at most 400 KB. A frame that can't be made small enough is skipped.
 - Output: it atomically replaces `AO_LIVE_OUTBOX/<seat>.jpg`, one file per seat. The bot's own Google Drive connector call then overwrites `Bridge/live/<seat>.jpg` in place, using the existing file id. Never create one file per frame.
-- It needs ImageMagick (`import`, `convert`) and `xdotool`. ImageMagick is **not installed on the box today**, so the script exits 3 ("skip").
+- It needs ImageMagick (`import`, `convert`) and `xdotool`. ImageMagick is now installed on the box (apt). The script reads the active window, or the focused window when there is no window manager; no title means skip.
 - There is no tunnel and no HTTP transport. Never share the folder or link to it, and never capture the ProArt.
 
 ## What blocks automatic Drive upload
