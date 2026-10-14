@@ -198,17 +198,26 @@ export const hqRoutes = {
     path: '/api/bridge/talk',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res, url }: { req: http.IncomingMessage; res: http.ServerResponse; url: URL }) {
-      if (!bridgeGate(ctx, req, res)) return;
       const seat = url.searchParams.get('seat') || '';
+      // Okkin's Ask thread is the owner's private conversation: never through the bot bridge.
+      if (seat === 'okkin') {
+        const bot = botCredential(req);
+        if (bot) {
+          logOkkinRefusal(ctx.cfg.dataDir, { route: 'GET /api/bridge/talk (okkin)', caller: bot });
+          return send(res, 403, { error: 'owner only' });
+        }
+        if (!sessionOnly(ctx, req, res)) return;
+        const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
+        const owner = okkinCaller(req, { touch: false }).kind === 'owner';
+        const okkin = okkinClient(await probeOkkin(envOf(process.env), hq, undefined, { dataDir: ctx.cfg.dataDir }));
+        return send(res, 200, { seat, name: seatDisplayName('okkin', hq.names), messages: owner ? okkinThread() : [], okkin, chip: okkin.chip });
+      }
+      if (!bridgeGate(ctx, req, res)) return;
       if (!isSeatId(seat)) return send(res, 400, { error: 'unknown seat' });
       ingestInbox(ctx.cfg.dataDir);
       const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
       const name = seatDisplayName(seat as SeatId, hq.names);
-      const messages = seat === 'okkin' ? okkinThread() : readThread(ctx.cfg.dataDir, seat as SeatId);
-      if (seat === 'okkin') {
-        const okkin = okkinClient(await probeOkkin(envOf(process.env), hq, undefined, { dataDir: ctx.cfg.dataDir }));
-        return send(res, 200, { seat, name, messages, okkin, chip: okkin.chip });
-      }
+      const messages = readThread(ctx.cfg.dataDir, seat as SeatId);
       const file = readCrewFile(ctx.cfg.dataDir);
       const chip = rosterChip(beats(file?.seen ?? {}, file?.crew ?? {}, Date.now())[seat], Date.now());
       return send(res, 200, { seat, name, chip, messages });
