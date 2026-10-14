@@ -4,7 +4,7 @@
 // ScanBlocked (types only, never values); nothing is redacted and nothing is retried trimmed.
 import { httpChat, listOpenRouterModels, type ListFetch, type ProviderFetch, type ProviderReply } from './provider-clients.js';
 import { keyEnvFor, type RouterEnv, type RouterFlags } from './flags.js';
-import { presendScan, scanPayload, serialize, type ScanContext } from './presend-scan.js';
+import { denyStoreUsable, presendScan, scanPayload, serialize, type ScanContext } from './presend-scan.js';
 import { isCloud, isHttpProvider, type CloudProvider, type CrewProvider, type Label, type ScanHit, type WirePayload } from './types.js';
 
 export type { ProviderReply, ProviderFetch, ListFetch } from './provider-clients.js';
@@ -25,7 +25,8 @@ export class SendRefused extends Error {
 export interface CloudSendDeps {
   label: Label;
   flags: RouterFlags;
-  scan: ScanContext;
+  /** null: no usable deny-hash store (unset, unreadable, or no owner_name hashes). All cloud sends are refused. */
+  scan: ScanContext | null;
   env?: RouterEnv;
   fetchImpl?: ProviderFetch;
   /** How the office hands a payload to a crew seat (bridge outbox). Absent: crew sends are refused. */
@@ -36,7 +37,10 @@ export interface CloudSendDeps {
 
 const defaultFetch: ProviderFetch = (url, init) => fetch(url, init) as never;
 
-/** Public data only; DeepSeek and Poolside always public-only. C1 (default OFF) is the one exception. */
+/**
+ * Public data only; DeepSeek and Poolside always public-only. C1 (default OFF) lets a secret-labelled
+ * task reach the Grok crew past this label gate only: its payload must still pass the scan.
+ */
 function labelAllows(provider: CloudProvider, label: Label, flags: RouterFlags): boolean {
   if (label === 'public') return true;
   return label === 'secret' && provider === 'grok-crew' && flags.c1SecretToGrokCrew;
@@ -45,6 +49,8 @@ function labelAllows(provider: CloudProvider, label: Label, flags: RouterFlags):
 export async function cloudSend(provider: CloudProvider, payload: WirePayload, deps: CloudSendDeps): Promise<ProviderReply> {
   if (!isCloud(provider)) throw new SendRefused('not-cloud');
   if (!labelAllows(provider, deps.label, deps.flags)) throw new SendRefused('label');
+  // Fail closed: without the owner's deny hashes the scan can't see private literals.
+  if (!deps.scan || !denyStoreUsable(deps.scan.deny)) throw new SendRefused('disabled');
   const env = deps.env ?? process.env;
   let key = '';
   if (isHttpProvider(provider)) {
@@ -56,13 +62,13 @@ export async function cloudSend(provider: CloudProvider, payload: WirePayload, d
   }
   // Scan the payload and the exact HTTP body that will go on the wire (after templating).
   const body = isHttpProvider(provider) ? JSON.stringify({ model: payload.model, messages: messagesOf(payload) }) : '';
-  const first = scanPayload(payload, deps.scan);
-  const onWire = body ? presendScan(body, deps.scan) : { ok: true, hits: [] };
+  const scan = deps.scan;
+  const first = scanPayload(payload, scan);
+  const onWire = body ? presendScan(body, scan) : { ok: true, hits: [] };
   const result = { ok: first.ok && onWire.ok, hits: [...first.hits, ...onWire.hits.filter((h) => !first.hits.some((f) => f.type === h.type && f.sha8 === h.sha8))] };
   deps.onScan?.(result.hits);
-  // C1 trusted exception: a secret task to the Grok crew is scanned and logged but not blocked.
-  const trusted = provider === 'grok-crew' && deps.label === 'secret' && deps.flags.c1SecretToGrokCrew;
-  if (!result.ok && !trusted) throw new ScanBlocked(result.hits);
+  // Every hit blocks, for every destination. C1 relaxes the label gate only, never the scan (Dan).
+  if (!result.ok) throw new ScanBlocked(result.hits);
   const wire = serialize(payload);
   if (isHttpProvider(provider)) {
     return httpChat(provider, key, body, deps.fetchImpl ?? defaultFetch);
