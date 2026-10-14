@@ -135,15 +135,28 @@ export function buildHero() {
   const bladeH = (TOWER.height - 0.36) / BLADE_ROWS;
   const span = TOWER.width - FAN_BANK - 0.3;
   const spanZ0 = -TOWER.width / 2 + 0.1;
-  const blades = new THREE.InstancedMesh(new THREE.BoxGeometry(0.32, bladeH * 0.62, span / COLS - 0.05), new THREE.MeshBasicMaterial({ color: '#ffffff' }), towersZ.length * COLS * BLADE_ROWS);
+  const blades = new THREE.InstancedMesh(new THREE.BoxGeometry(0.3, bladeH * 0.5, span / COLS - 0.07), new THREE.MeshBasicMaterial({ color: '#ffffff' }), towersZ.length * COLS * BLADE_ROWS);
   blades.name = 'okkin-blades';
+  // A thin rim light along each blade's top edge, and an inset faceplate on its front: depth, not blinds.
+  const rims = new THREE.InstancedMesh(new THREE.BoxGeometry(0.012, 0.008, span / COLS - 0.08), new THREE.MeshBasicMaterial({ color: '#ffffff' }), towersZ.length * COLS * BLADE_ROWS);
+  rims.name = 'okkin-blade-rims';
+  const plates = new THREE.InstancedMesh(new THREE.BoxGeometry(0.01, bladeH * 0.32, span / COLS - 0.16), new THREE.MeshBasicMaterial({ color: '#0a1324' }), towersZ.length * COLS * BLADE_ROWS);
+  plates.name = 'okkin-blade-faceplates';
+  g.add(rims, plates);
   const rowOf: number[] = [];
   const m4 = new THREE.Matrix4();
   let n = 0;
   for (const z of towersZ) for (let c = 0; c < COLS; c++) for (let r = 0; r < BLADE_ROWS; r++) {
-    m4.makeTranslation(front + 0.2, PH + 0.2 + (r + 0.5) * bladeH, z + spanZ0 + (c + 0.5) * (span / COLS));
+    // Staggered depth: alternate blades sit a little deeper in the bay, so the rows read as hardware.
+    const depth = ((r + c) % 2) * 0.05;
+    m4.makeTranslation(front + 0.2 + depth, PH + 0.2 + (r + 0.5) * bladeH, z + spanZ0 + (c + 0.5) * (span / COLS));
     blades.setMatrixAt(n, m4);
+    m4.makeTranslation(front + 0.05 + depth, PH + 0.2 + (r + 0.5) * bladeH + bladeH * 0.25, z + spanZ0 + (c + 0.5) * (span / COLS));
+    rims.setMatrixAt(n, m4);
+    m4.makeTranslation(front + 0.045 + depth, PH + 0.2 + (r + 0.5) * bladeH, z + spanZ0 + (c + 0.5) * (span / COLS));
+    plates.setMatrixAt(n, m4);
     blades.setColorAt(n, new THREE.Color('#0a1022'));
+    rims.setColorAt(n, new THREE.Color('#0a1022'));
     rowOf.push(r);
     n++;
   }
@@ -183,10 +196,10 @@ export function buildHero() {
     cardTex = new THREE.CanvasTexture(cardCanvas);
     cardTex.colorSpace = THREE.SRGBColorSpace;
   }
-  const cardMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 0.45), new THREE.MeshBasicMaterial({ map: cardTex, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+  const cardMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.66), new THREE.MeshBasicMaterial({ map: cardTex, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
   cardMesh.name = 'okkin-hologram-card';
   cardMesh.rotation.y = -Math.PI / 2;
-  cardMesh.position.set(-0.05, 0.62, 0);
+  cardMesh.position.set(-0.05, 0.42, 0);
   holo.add(cardMesh);
   g.add(holo);
   let cardKey = '';
@@ -209,9 +222,9 @@ export function buildHero() {
     c.fillStyle = LOFT_PALETTE.goldLight;
     c.textAlign = 'center';
     c.font = '700 74px -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif';
-    c.fillText(lines.top, 256, 92);
-    c.font = '500 34px -apple-system, "SF Pro Text", "Helvetica Neue", Arial, sans-serif';
-    c.fillText(lines.bottom.length > 26 ? `${lines.bottom.slice(0, 25)}…` : lines.bottom, 256, 150);
+    c.fillText(lines.top, 256, 86);
+    c.font = '700 44px -apple-system, "SF Pro Text", "Helvetica Neue", Arial, sans-serif';
+    c.fillText(lines.bottom.length > 20 ? `${lines.bottom.slice(0, 19)}…` : lines.bottom, 256, 148);
     if (lines.mock) {
       c.fillStyle = LOFT_PALETTE.gold;
       c.fillRect(196, 162, 120, 34);
@@ -230,8 +243,11 @@ export function buildHero() {
   let near = true;
   let acc = 0;
   const base = new THREE.Color(LOFT_PALETTE.blue);
-  const lit = new THREE.Color('#5d8cff');
+  // Navy like the console's top, lifting to a deep blue when lit: never the pale 'blinds' of before.
+  const lit = new THREE.Color('#2c4f96');
+  const rimLit = new THREE.Color('#9cc0ff');
   const tmp = new THREE.Color();
+  const tmp2 = new THREE.Color();
   const accent = new THREE.Color();
   const goldHot = new THREE.Color(LOFT_PALETTE.goldLight);
   const spineHot = new THREE.Color('#fff3c4');
@@ -248,12 +264,14 @@ export function buildHero() {
         level = inSeq.kind === 'on' ? OFF_LEVEL + (level - OFF_LEVEL) * p : OFF_LEVEL + (0.45 - OFF_LEVEL) * (1 - p);
       }
       levels[i] = level;
-      tmp.copy(base).lerp(lit, level).multiplyScalar(0.25 + level * 1.1);
+      tmp.copy(base).lerp(lit, level).multiplyScalar(0.3 + level * 0.75);
       if (sweep !== null) tmp.lerp(accent, sweepBand(t - sweep, r));
       else if (mode !== 'off') tmp.lerp(accent, 0.12 * level);
       blades.setColorAt(i, tmp);
+      rims.setColorAt(i, tmp2.copy(base).lerp(rimLit, Math.min(1, 0.15 + level)));
     }
     if (blades.instanceColor) blades.instanceColor.needsUpdate = true;
+    if (rims.instanceColor) rims.instanceColor.needsUpdate = true;
     const hl = haloLevel(mode, t);
     haloMat.color.copy(accent).lerp(lit, 0.5);
     haloMat.opacity = near ? hl * 0.5 : 0;

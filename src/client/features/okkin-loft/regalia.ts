@@ -6,7 +6,7 @@ import cinzelUrl from './fonts/cinzel-okkin.ttf?url';
 import yujiUrl from './fonts/yuji-syuku-nikko.ttf?url';
 import phoenicianUrl from './fonts/noto-sans-phoenician.ttf?url';
 import { OKKIN_PEDESTAL, OKKIN_SCROLL, OKKIN_SIGN } from '../../../shared/okkin-loft';
-import { VICTORY_OF_THE_PEOPLE, toPaleoHebrew } from '../../../shared/paleo-hebrew';
+import { VICTORY_OF_THE_PEOPLE, toPaleoHebrew, engravingText } from '../../../shared/paleo-hebrew';
 
 /** One palette for the loft: marble and stone, gold leaf, deep blue. */
 export const LOFT_PALETTE = { marble: '#ece8e1', marbleVein: '#c9c3b8', stone: '#b9b2a6', stoneDark: '#8f887c', gold: '#c9a227', goldLight: '#f3d77a', blue: '#14284b', lacquer: '#16110e' } as const;
@@ -232,11 +232,12 @@ export function buildPedestal(): { group: THREE.Group; inscription: string } {
   const g = new THREE.Group();
   g.name = 'okkin-pedestal';
   const w = P.maxX - P.minX, d = P.maxZ - P.minZ;
-  const inscription = toPaleoHebrew(VICTORY_OF_THE_PEOPLE.hebrew);
-  const stoneTex = canvasTex(1024, 180, (c, cw, ch) => {
+  const inscription = engravingText(VICTORY_OF_THE_PEOPLE.hebrew);
+  // 1024×272 matches the die face's aspect, so the letters aren't stretched.
+  const stoneTex = canvasTex(1024, 272, (c, cw, ch) => {
     marble(c, cw, ch, LOFT_PALETTE.stone);
     // Chiselled: each letter cut as a dark V-groove with a lit lower lip, right to left.
-    c.font = `76px "OKL Phoenician", "Noto Sans Phoenician", serif`;
+    c.font = `96px "OKL Phoenician", "Noto Sans Phoenician", serif`;
     c.direction = 'rtl';
     c.textAlign = 'center';
     c.textBaseline = 'middle';

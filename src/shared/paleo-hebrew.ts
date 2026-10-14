@@ -27,3 +27,8 @@ export function toPaleoHebrew(hebrew: string): string {
  * the -ōn ending. Modern spelling would be ניצחון העם. Letter for letter into Paleo-Hebrew.
  */
 export const VICTORY_OF_THE_PEOPLE = { hebrew: 'נצחון העם', modern: 'ניצחון העם' } as const;
+
+/** What is cut into the plinth: each word in Paleo-Hebrew, with clear space around the word divider. */
+export function engravingText(hebrew: string = VICTORY_OF_THE_PEOPLE.hebrew): string {
+  return hebrew.split(' ').map(toPaleoHebrew).join(`\u2003${PHOENICIAN_WORD_SEPARATOR}\u2003`);
+}
