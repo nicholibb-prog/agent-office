@@ -65,6 +65,8 @@ export interface RouterCtx {
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
   costOf?: (provider: Provider, tokensIn: number, tokensOut: number) => number;
+  /** Per-model scoreboard (#35): false drops a model from this level. */
+  scoreOk?: (model: string, level: number) => boolean;
 }
 
 /** DeepSeek list price per token, as a starting default (the owner can change it). */
@@ -92,6 +94,7 @@ export function rotation(task: Task, ctx: RouterCtx, exclude: ReadonlySet<string
     if (exclude.has(`${c.provider}:${c.model}`) || exclude.has(c.provider)) continue;
     if (!providerEnabled(c.provider, ctx.flags, ctx.env)) continue;
     if (!ctx.breaker.ok(c.provider)) continue;
+    if (ctx.scoreOk && !ctx.scoreOk(c.model, task.level)) continue;
     if (!sizeAllows(c.provider, c.model, tokens)) continue;
     if (!ctx.ledger.available(c.provider, tokens)) continue;
     if (c.provider === 'deepseek' && (deepseekPeak(now) || !ctx.budget.allowed({ danSecurity: task.danSecurity }))) continue;

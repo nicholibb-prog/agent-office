@@ -16,6 +16,7 @@ import { officeRoutes } from './office.js';
 import { hqRoutes } from './hq.js';
 import { poolRoutes } from './pool.js';
 import { liveRoutes } from './live.js';
+import { routerBoardRoutes } from './router-board.js';
 
 export const routes: readonly Route[] = [
   // Anyone.
@@ -36,6 +37,7 @@ export const routes: readonly Route[] = [
   hqRoutes.roster,
   hqRoutes.talk,
   hqRoutes.talkGet,
+  routerBoardRoutes.board,
   hqRoutes.desk,
   hqRoutes.deskGet,
   hqRoutes.okkinModel,
