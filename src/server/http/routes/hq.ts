@@ -315,8 +315,9 @@ export const hqRoutes = {
         speed: loadedSpeed(loadedNow, bench),
         bench: benchByTag(bench),
         jobs: okkinJobs(),
-        // The CRT: Okkin's latest reply from the in-memory Ask thread (never invented), not for bot credentials.
-        crt: botCredential(req) ? null : latestOkkinOutput(),
+        // The CRT: Okkin's latest reply from the in-memory Ask thread (never invented). Private like the
+        // thread itself: only the unlocked owner gets it; everyone else (bots included) gets null.
+        crt: !botCredential(req) && okkinCaller(req, { touch: false }).kind === 'owner' ? latestOkkinOutput() : null,
         pool: null,
         gpu,
         pick: best?.tag ?? null,
