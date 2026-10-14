@@ -82,8 +82,11 @@ function messagesOf(p: WirePayload): { role: string; content: string }[] {
   return out;
 }
 
-/** The live free-model list for the weekly drift check (#34). Only when the OpenRouter route is on. */
+/**
+ * The live free-model list for the weekly drift check (#34). New egress (the public OpenRouter model list), so it
+ * needs its own flag (ROUTER_DRIFT_FETCH, default OFF) as well as the OpenRouter route.
+ */
 export async function liveFreeModels(flags: RouterFlags, fetchImpl?: ListFetch): Promise<string[]> {
-  if (!flags.openrouter) return [];
+  if (!flags.openrouter || !flags.driftFetch) return [];
   return listOpenRouterModels(fetchImpl ?? ((url, init) => fetch(url, init) as never));
 }

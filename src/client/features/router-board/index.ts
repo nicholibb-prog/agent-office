@@ -1,33 +1,49 @@
-// Router board HUD card (funnel #19): spend vs cap, % free, caps left, failures and the queue.
-// Read-only; refreshes every minute; hidden when the board is unavailable.
-import { boardLines, type RouterBoard } from '../../../shared/router-board';
+// Model use today (funnel #19): a read-only HUD card for the owner only. Spend vs cap, % free,
+// caps left, failures and the queue; "Model routing is off" while the router is off; hidden for
+// anyone not unlocked as owner. Refreshes every minute and when the owner state changes.
+import './ui.css';
+import type { RouterBoardReply } from '../../../shared/router-board';
 import type { Ctx } from '../../core/context';
 import { $ } from '../../ui/dom';
+import { onOwner } from '../../ui/owner-state';
+import { cardView } from './view';
 
 const REFRESH_MS = 60_000;
 
 export function installRouterBoard(_ctx: Ctx) {
   const card = document.createElement('div');
   card.className = 'router-board';
-  card.setAttribute('aria-label', 'Router board');
-  card.style.cssText = 'position:fixed;right:12px;bottom:12px;max-width:340px;padding:8px 10px;border-radius:8px;background:rgba(14,22,44,.86);color:#f3e7c4;font:12px/1.4 system-ui,sans-serif;display:none;z-index:5;pointer-events:none';
+  card.hidden = true;
+  card.setAttribute('aria-label', 'Model use today');
   $('hud').appendChild(card);
   async function refresh() {
+    let status = 0;
+    let body: RouterBoardReply | null = null;
     try {
       const res = await fetch('/api/router/board', { credentials: 'same-origin', cache: 'no-store' });
-      if (!res.ok) { card.style.display = 'none'; return; }
-      const b = (await res.json()) as RouterBoard;
-      card.replaceChildren(...['Router', ...boardLines(b)].map((t, i) => {
-        const d = document.createElement('div');
-        d.textContent = t;
-        if (i === 0) d.style.fontWeight = '600';
-        return d;
-      }));
-      card.style.display = '';
+      status = res.status;
+      if (res.ok) body = (await res.json()) as RouterBoardReply;
     } catch {
-      card.style.display = 'none';
+      status = 0;
     }
+    const v = cardView(status, body);
+    if (v.hidden) {
+      card.hidden = true;
+      card.replaceChildren();
+      return;
+    }
+    const title = document.createElement('div');
+    title.className = 'router-board__title';
+    title.textContent = v.title;
+    card.replaceChildren(title, ...v.lines.map((t) => {
+      const d = document.createElement('div');
+      if (v.note) d.className = 'router-board__note';
+      d.textContent = t;
+      return d;
+    }));
+    card.hidden = false;
   }
   void refresh();
+  onOwner(() => void refresh());
   setInterval(() => void refresh(), REFRESH_MS);
 }

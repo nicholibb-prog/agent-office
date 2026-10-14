@@ -13,7 +13,10 @@ import { Scoreboard } from '../src/server/router/scoreboard.js';
 import { AlertGate, PROVIDER_DOWN_MS } from '../src/server/router/alerts.js';
 import { routingLogger } from '../src/server/router/routing-log.js';
 import { route } from '../src/server/router/router.js';
-import { boardLines } from '../src/shared/router-board.js';
+import { boardLines, capLine } from '../src/shared/router-board.js';
+import { cardView } from '../src/client/features/router-board/view.js';
+import { OKKIN_REFUSALS_LOG } from '../src/server/hq/okkin-owner.js';
+import { testOwner } from './support/okkin-owner.js';
 import { requestHandler } from '../src/server/http/router.js';
 import { routerBoardRoutes } from '../src/server/http/routes/router-board.js';
 import { readRouterFlags } from '../src/server/router/flags.js';
@@ -58,31 +61,83 @@ test('#19 board: spend vs cap, % free, caps left, failures, scan blocks, queue (
     assert.equal(b.capsLeft.groq, 1000 - 3);
     assert.equal(b.capsLeft.nim, null);
     assert.deepEqual(boardLines(b)[0], 'Paid today $0.25 of $3.00');
+    assert.ok(boardLines(b).includes('NVIDIA: — limit unknown'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('#19 board route: office session only; bot credentials refused', async () => {
+test('#19 board route: owner only like #60; bots a logged 403; non-owners no spend; off says off', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'ao-board-r-'));
   const has = (req: { headers: { cookie?: string } }) => /(^|;\s*)ao=session(;|$)/.test(req.headers.cookie || '');
   const ctx = { cfg: { port: 4600, dataDir: dir }, services: { lookup: () => undefined }, auth: { fromRequest: (r: never) => (has(r) ? {} : undefined), fromAnyCookie: (r: never) => has(r), sessionFromAnyCookie: (r: never) => (has(r) ? {} : undefined) } } as never;
   const srv: Server = createServer(requestHandler(ctx, [routerBoardRoutes.board]));
   await new Promise<void>((ok) => srv.listen(0, '127.0.0.1', ok));
   const port = (srv.address() as { port: number }).port;
-  const get = (headers: Record<string, string>) => new Promise<number>((ok, bad) => {
-    const rq = request({ host: '127.0.0.1', port, path: '/api/router/board', headers: { host: '127.0.0.1:4600', ...headers } }, (res) => { res.resume(); ok(res.statusCode || 0); });
+  const get = (headers: Record<string, string>) => new Promise<{ status: number; body: string }>((ok, bad) => {
+    const rq = request({ host: '127.0.0.1', port, path: '/api/router/board', headers: { host: '127.0.0.1:4600', ...headers } }, (res) => {
+      let b = '';
+      res.on('data', (c) => (b += c));
+      res.on('end', () => ok({ status: res.statusCode || 0, body: b }));
+    });
     rq.on('error', bad);
     rq.end();
   });
+  const prev = process.env.ROUTER_ON;
+  const { cookie } = await testOwner();
   try {
-    assert.equal(await get({ cookie: 'ao=session' }), 200);
-    assert.equal(await get({}), 401);
-    for (const bot of [{ 'x-bridge-token': 'b'.repeat(64) }, { authorization: 'Bearer ' + 'c'.repeat(40) }, { 'x-pool-caller': 'x' }]) assert.equal(await get({ ...bot, cookie: 'ao=session' }), 403);
+    routingLogger(dir)({ task_id: 'a', provider: 'deepseek', result: 'ok', cost_usd: 0.5 });
+    const owner = `ao=session; ${cookie()}`;
+    assert.equal((await get({})).status, 401);
+    // Non-owner office session: 200 private, no spend data.
+    const pw = await get({ cookie: 'ao=session' });
+    assert.equal(pw.status, 200);
+    assert.deepEqual(JSON.parse(pw.body), { private: true });
+    // Bot credentials, even with an owner cookie: logged 403.
+    for (const bot of [{ 'x-bridge-token': 'b'.repeat(64) }, { authorization: 'Bearer ' + 'c'.repeat(40) }, { 'x-pool-caller': 'x' }]) {
+      const r = await get({ ...bot, cookie: owner });
+      assert.equal(r.status, 403);
+      assert.ok(!r.body.includes('spent'));
+    }
+    const log = readFileSync(path.join(dir, OKKIN_REFUSALS_LOG), 'utf8');
+    assert.ok(log.includes('GET /api/router/board') && log.includes('bridge-token') && log.includes('pool-caller'));
+    assert.ok(!log.includes('b'.repeat(64)));
+    // Owner, router off (default): an honest off reply, no numbers.
+    delete process.env.ROUTER_ON;
+    assert.deepEqual(JSON.parse((await get({ cookie: owner })).body), { on: false });
+    process.env.ROUTER_ON = '1';
+    const on = JSON.parse((await get({ cookie: owner })).body);
+    assert.equal(on.on, true);
+    assert.equal(on.spentUsd, 0.5);
   } finally {
+    if (prev === undefined) delete process.env.ROUTER_ON;
+    else process.env.ROUTER_ON = prev;
     srv.close();
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('#19 card view: hidden for non-owners/errors, "Model routing is off", friendly names, no ∞', () => {
+  assert.deepEqual(cardView(200, { private: true }), { hidden: true });
+  assert.deepEqual(cardView(403, null), { hidden: true });
+  assert.deepEqual(cardView(0, null), { hidden: true });
+  assert.deepEqual(cardView(200, { on: false }), { hidden: false, title: 'Model use today', lines: ['Model routing is off'], note: true });
+  const v = cardView(200, { on: true, day: '2026-10-14', spentUsd: 0, capUsd: 3, pctFree: null, capsLeft: { groq: 997, nim: null, deepseek: null, openrouter: 50 }, failures: 0, scanBlocks: 0, queued: 0 });
+  assert.equal(v.hidden, false);
+  const text = (v as { lines: string[] }).lines.join('\n');
+  assert.ok(!text.includes('∞'));
+  assert.ok(!/\b(groq|nim|deepseek|openrouter)\b/.test(text), text);
+  assert.match(text, /Groq: 997 left/);
+  assert.match(text, /NVIDIA: — limit unknown/);
+  assert.match(text, /Routed free: nothing routed yet today/);
+  assert.equal(capLine('mystery', 3), 'mystery: 3 left');
+});
+
+test('router flags ROUTER_ON and ROUTER_DRIFT_FETCH default OFF', () => {
+  assert.equal(readRouterFlags({}).routerOn, false);
+  assert.equal(readRouterFlags({}).driftFetch, false);
+  assert.equal(readRouterFlags({ ROUTER_ON: 'yes' }).routerOn, false);
+  assert.equal(readRouterFlags({ ROUTER_ON: '1', ROUTER_DRIFT_FETCH: '1' }).driftFetch, true);
 });
 
 test('#34 weekly drift: dead free models are removed, new ones only reported; a bad fetch never empties the list', async () => {
@@ -97,8 +152,12 @@ test('#34 weekly drift: dead free models are removed, new ones only reported; a 
   let calls = 0;
   const fetchImpl = async () => (calls++, { status: 200, text: async () => JSON.stringify({ data: [{ id: 'a:free' }, { id: 'bad id;' }] }) });
   assert.deepEqual(await liveFreeModels(flagsOff, fetchImpl), []);
+  // OpenRouter on but the drift-fetch flag OFF (default): no GET to openrouter.ai.
+  assert.deepEqual(await liveFreeModels(readRouterFlags({ ROUTER_OPENROUTER_CREDIT: '1', OPENROUTER_API_KEY: 'x' }), fetchImpl), []);
+  assert.deepEqual(await liveFreeModels(readRouterFlags({ ROUTER_DRIFT_FETCH: '1' }), fetchImpl), [], 'drift flag alone is not enough');
   assert.equal(calls, 0);
-  assert.deepEqual(await liveFreeModels(readRouterFlags({ ROUTER_OPENROUTER_CREDIT: '1', OPENROUTER_API_KEY: 'x' }), fetchImpl), ['a:free']);
+  assert.deepEqual(await liveFreeModels(readRouterFlags({ ROUTER_OPENROUTER_CREDIT: '1', OPENROUTER_API_KEY: 'x', ROUTER_DRIFT_FETCH: '1' }), fetchImpl), ['a:free']);
+  assert.equal(calls, 1);
 });
 
 test('#35 scoreboard: per model and level per month; under 60% at a level drops the model there', () => {
