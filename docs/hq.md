@@ -144,3 +144,22 @@ TODO: a passkey (WebAuthn) for the owner, instead of or alongside the passphrase
 
 A locked switch always says why in the panel, e.g. on Windows until the ACL is verified:
 "Power switch locked: operator must verify okkin-power.json ACL and set AO_OKKIN_POWER_WINDOWS_ACL_OK=1".
+
+### Seat map (`.agent-office/seat-map.json`)
+
+Seat-provider turns (a desk or the meeting room sending to the bridge outbox) belong to no crew seat until this gitignored file names one. The committed `.agent-office/seat-map.example.json` shows the shape with placeholder ids only:
+
+```json
+{
+  "floor-1:desk-1": "seat-1",
+  "floor-1:desk-2": "seat-2",
+  "floor-1:meeting-room": "seat-1"
+}
+```
+
+Each key is `<floorId>:<deskOrMeetingId>`, the same pair as the item title `seat:<floorId>:<deskOrMeetingId>` in the owner's outbox view. Each value must be a crew seat id (`seat-1` … `seat-9`, `okkin`); anything else is ignored. Copy the example to `seat-map.json` and replace the ids. An unmapped turn is stamped `seat: null`: no seat token sees it, and the owner's Kavi outbox board labels it **not mapped to a crew seat**.
+
+### What a non-owner sees
+
+A session that has not unlocked owner gets neutral grey notes, not errors: the crew talk thread says *Crew threads are private — unlock owner to see them.*, the talk input is disabled and says *Unlock owner to talk* (a 403 on send shows the same text), and the Kavi outbox board (roster → **Kavi outbox**) says *The Kavi outbox is private — unlock owner to see it.*
+
