@@ -511,6 +511,7 @@ test('a bot line is the text posted to the authenticated inbox route', async () 
   const dataDir = dir('inbox');
   const { ctx, token } = ctxOf(dataDir);
   const seat1 = issueSeatToken(dataDir, 'seat-1');
+  const seat2 = issueSeatToken(dataDir, 'seat-2');
   const post = async (tok: string | undefined, body: unknown) => {
     const r = resOf();
     const headers: Record<string, string> = { host: '127.0.0.1:4600', 'content-type': 'application/json' };
@@ -521,7 +522,7 @@ test('a bot line is the text posted to the authenticated inbox route', async () 
   const talk = async (seat: string) => {
     const got = resOf();
     await hqRoutes.talkGet.handle(ctx, {
-      req: reqOf('GET', { host: '127.0.0.1:4600', 'x-bridge-token': token }),
+      req: reqOf('GET', { host: '127.0.0.1:4600', 'x-bridge-token': seat === 'seat-1' ? seat1 : seat2 }),
       res: got.res,
       url: new URL('http://127.0.0.1:4600/api/bridge/talk?seat=' + seat),
     });
@@ -895,11 +896,19 @@ test('a member cookie from another port logs guest, and an unknown cookie is ref
   const memberDir = dir('cookie-member');
   const memberAuth = officeAuth([{ id: 'member-1', role: 'member' }]);
   const member = ctxAuth(memberDir, memberAuth);
+  // A signed-in member who has not unlocked owner cannot talk to any seat (owner only).
+  const notOwner = resOf();
+  await hqRoutes.talk.handle(member.ctx, {
+    req: reqOf('POST', { host: '127.0.0.1:4600', 'content-type': 'application/json', cookie: `ao_session_4600=${memberAuth.issue('member-1')}` }, JSON.stringify({ seat: 'seat-1', text: 'not owner' })),
+    res: notOwner.res,
+  });
+  assert.equal(notOwner.status, 403);
+  assert.equal(existsSync(outboxPath(memberDir)), false);
   const viaDev = resOf();
   await hqRoutes.talk.handle(member.ctx, {
     req: reqOf(
       'POST',
-      { host: '127.0.0.1:5173', 'content-type': 'application/json', cookie: `ao_session_4600=${memberAuth.issue('member-1')}` },
+      { host: '127.0.0.1:5173', 'content-type': 'application/json', cookie: `ao_session_4600=${memberAuth.issue('member-1')}; ${owner.cookie()}` },
       JSON.stringify({ seat: 'seat-1', text: 'from the dev port' }),
     ),
     res: viaDev.res,
@@ -944,7 +953,7 @@ test('a member cookie from another port logs guest, and an unknown cookie is ref
   await hqRoutes.talk.handle(admin.ctx, {
     req: reqOf(
       'POST',
-      { host: '127.0.0.1:4600', 'content-type': 'application/json', cookie: `ao_session_4600=${adminAuth.issue('admin-1')}` },
+      { host: '127.0.0.1:4600', 'content-type': 'application/json', cookie: `ao_session_4600=${adminAuth.issue('admin-1')}; ${owner.cookie()}` },
       JSON.stringify({ seat: 'seat-1', text: 'from admin' }),
     ),
     res: said.res,
@@ -964,7 +973,7 @@ test('a member cookie from another port logs guest, and an unknown cookie is ref
   await hqRoutes.talk.handle(shared.ctx, {
     req: reqOf(
       'POST',
-      { host: '127.0.0.1:4600', 'content-type': 'application/json', cookie: `ao_session_4600=${sharedAuth.issue()}` },
+      { host: '127.0.0.1:4600', 'content-type': 'application/json', cookie: `ao_session_4600=${sharedAuth.issue()}; ${owner.cookie()}` },
       JSON.stringify({ seat: 'seat-1', text: 'shared' }),
     ),
     res: sharedSaid.res,

@@ -7,7 +7,7 @@ import type { Ctx } from '../../office/context.js';
 import { send } from '../util.js';
 import { BodyTooLarge, closeTooLarge, readJsonBody } from '../read-body.js';
 import type { Route } from '../router.js';
-import { bridgeGate, pushCrew, sessionOnly } from './bridge.js';
+import { bridgeCaller, bridgeGate, pushCrew, seatPrivateCaller, sessionOnly } from './bridge.js';
 import { botCredential, pinOwnerIntegrity, checkOwnerPassphrase, clearOwnerCookieHeader, cookieOf, endOwnerSession, logOkkinRefusal, noteUnlockFailure, okkinCaller, ownerCookieHeader, ownerFile, ownerState, startOwnerSession, unlockLocked } from '../../hq/okkin-owner.js';
 import { clientIp, isSecure } from '../util.js';
 import { activeSeatMap, CREW_SEATS, ageLabel, isSeatId, liveDesk, offlineQueuedNotice, rosterChip, seatDisplayName, type BridgeBeat, type SeatId } from '../../../shared/hq.js';
@@ -171,7 +171,8 @@ export const hqRoutes = {
       if (!isSeatId(seat)) return send(res, 400, { error: 'unknown seat' });
       const text = String(body.text || '').slice(0, 500).trim();
       if (!text) return send(res, 400, { error: 'empty text' });
-      if (isOkkinSeat(seat) && !okkinOwnerOnly(ctx, req, res, 'POST /api/bridge/talk (okkin)')) return;
+      // Every seat's thread is the owner's: a non-owner session is refused (logged), Okkin's or not.
+      if (!okkinOwnerOnly(ctx, req, res, isOkkinSeat(seat) ? 'POST /api/bridge/talk (okkin)' : 'POST /api/bridge/talk')) return;
       const who = speaker(ctx, req);
       if (talkLimited(who.key)) return send(res, 429, { error: 'slow down' });
       const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
@@ -212,15 +213,21 @@ export const hqRoutes = {
         const okkin = okkinClient(await probeOkkin(envOf(process.env), hq, undefined, { dataDir: ctx.cfg.dataDir }));
         return send(res, 200, { seat, name: seatDisplayName('okkin', hq.names), messages: owner ? okkinThread() : [], private: !owner, okkin, chip: okkin.chip });
       }
-      if (!bridgeGate(ctx, req, res)) return;
+      const caller = seatPrivateCaller(ctx, req, res, 'GET /api/bridge/talk');
+      if (!caller) return;
       if (!isSeatId(seat)) return send(res, 400, { error: 'unknown seat' });
+      if (caller.kind === 'seat' && caller.seat !== seat) {
+        logOkkinRefusal(ctx.cfg.dataDir, { route: 'GET /api/bridge/talk (other seat)', caller: 'seat-token' });
+        return send(res, 403, { error: 'a seat token reads its own seat only' });
+      }
       ingestInbox(ctx.cfg.dataDir);
       const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
       const name = seatDisplayName(seat as SeatId, hq.names);
-      const messages = readThread(ctx.cfg.dataDir, seat as SeatId);
+      const priv = caller.kind === 'session';
+      const messages = priv ? [] : readThread(ctx.cfg.dataDir, seat as SeatId);
       const file = readCrewFile(ctx.cfg.dataDir);
       const chip = rosterChip(beats(file?.seen ?? {}, file?.crew ?? {}, Date.now())[seat], Date.now());
-      return send(res, 200, { seat, name, chip, messages });
+      return send(res, 200, { seat, name, chip, messages, private: priv });
     },
   },
   desk: {
@@ -228,10 +235,24 @@ export const hqRoutes = {
     path: '/api/bridge/desk',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!bridgeGate(ctx, req, res)) return;
+      const c = bridgeCaller(ctx, req, res);
+      if (!c) return;
+      if (c.kind === 'session' && okkinCaller(req, { touch: false }).kind !== 'owner') {
+        logOkkinRefusal(ctx.cfg.dataDir, { route: 'POST /api/bridge/desk', caller: 'not-owner' });
+        return send(res, 403, { error: 'owner only' });
+      }
+      if (c.kind === 'shared') return send(res, 403, { error: 'shared bridge token is read-only; use a seat token' });
       const body = await readJson<{ seat?: string }>(req, res);
       if (!body) return;
-      const seat = String(body.seat || '');
+      let seat = String(body.seat || '');
+      if (c.kind === 'seat') {
+        // A seat token writes its own desk. Naming another seat is a spoof: refused and logged.
+        if (seat && seat !== c.seat) {
+          logOkkinRefusal(ctx.cfg.dataDir, { route: 'POST /api/bridge/desk (other seat)', caller: 'seat-token' });
+          return send(res, 403, { error: 'a seat token writes its own seat only' });
+        }
+        seat = c.seat;
+      }
       if (!isSeatId(seat)) return send(res, 400, { error: 'unknown seat' });
       const card = writeCard(ctx.cfg.dataDir, seat, body);
       return send(res, 200, { ok: true, seat, card });

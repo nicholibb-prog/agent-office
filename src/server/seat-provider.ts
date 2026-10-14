@@ -120,7 +120,7 @@ export class SeatBoard {
     const clean = text.trim().slice(0, 4000);
     if (!clean) return false;
     try {
-      appendOutboxItem(this.outboxFile, { title: seatTurnTitle(floorId, seatId), text: clean, at: new Date().toISOString() });
+      appendOutboxItem(this.outboxFile, { title: seatTurnTitle(floorId, seatId), text: clean, at: new Date().toISOString(), seat: seatId });
       return true;
     } catch {
       this.bridgeUp = false;
