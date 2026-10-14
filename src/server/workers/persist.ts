@@ -58,11 +58,14 @@ export function saveWorkers(file: string, workers: Iterable<Worker>, stopping: b
   }
 }
 
-/** Takes back the workers saved in `file` into `workers`, each at its desk (while it is free), all of them offline. */
-export function restoreWorkers(file: string, workers: Map<string, Worker>, defaultProvider: AgentProvider, deskOccupied: (deskId: string) => boolean) {
-  if (!existsSync(file)) return;
+/** Takes back the workers saved in `file` into `workers`, each at its desk (while it is free), all of them offline.
+ * Returns { legacyToken: true } when the file held a plaintext hookToken, so the caller re-saves it hashed. */
+export function restoreWorkers(file: string, workers: Map<string, Worker>, defaultProvider: AgentProvider, deskOccupied: (deskId: string) => boolean): { legacyToken: boolean } {
+  let legacyToken = false;
+  if (!existsSync(file)) return { legacyToken };
   try {
     const saved = JSON.parse(readFileSync(file, 'utf8')) as (Partial<WorkerInfo> & { owner?: unknown; tracker?: unknown; hookToken?: unknown; hookTokenHash?: unknown; pty?: any; midTurn?: unknown } & Record<string, unknown>)[];
+    legacyToken = saved.some((s) => s && typeof s === 'object' && 'hookToken' in s);
     for (const s of saved) {
       if (!s.id || !s.deskId || !DESK_BY_ID.has(s.deskId) || deskOccupied(s.deskId)) continue;
       const tracker = restoreTracker(s.tracker);
@@ -122,6 +125,7 @@ export function restoreWorkers(file: string, workers: Map<string, Worker>, defau
   } catch {
     // corrupt state file: start fresh
   }
+  return { legacyToken };
 }
 
 function validTask(t: unknown): WorkerTask | undefined {

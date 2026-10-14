@@ -166,7 +166,7 @@ export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): K
         lastOwnerItems = t.items || [];
         paint(lastOwnerItems);
       })
-      .catch((e: { status?: number }) => setStatus(loadFailNote(e?.status, 'Could not load the thread.'), true));
+      .catch((e: { status?: number }) => setStatus(loadFailNote(e?.status, 'Could not load the thread.'), e?.status === 401 ? 'priv' : true));
   const done = (r: Response) =>
     r.json().then((j: { name?: string; folderId?: string; error?: string }) => {
       if (r.ok && j.folderId) {
@@ -180,7 +180,8 @@ export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): K
         setStatus(KAVI_SEND_LOCKED_NOTE, 'priv');
         return false;
       }
-      setStatus(r.status === 401 ? loadFailNote(401, '') : `Not sent: ${j.error || r.status}`, true);
+      if (r.status === 401) setStatus(loadFailNote(401, ''), 'priv');
+      else setStatus(`Not sent: ${j.error || r.status}`, true);
       return false;
     });
 

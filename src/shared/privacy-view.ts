@@ -1,9 +1,9 @@
 // Pure view rules for the owner-only windows (crew talk, Kavi thread, Kavi outbox). No DOM here.
 import { DESK_BY_ID } from './layout.js';
-import { OKKIN_SEAT, UNMAPPED_SEAT_LABEL, type OutboxRow } from './hq.js';
+import { OKKIN_SEAT, UNMAPPED_SEAT_LABEL, emptySeatLabel, type OutboxRow } from './hq.js';
 import { MEETING_SEAT } from './seat-provider.js';
 
-export const SESSION_EXPIRED_NOTE = 'Session expired, sign in again';
+export const SESSION_EXPIRED_NOTE = 'Session expired, unlock owner again';
 export const KAVI_PRIVATE_NOTE = 'The Kavi thread is private — unlock owner to see it.';
 export const KAVI_SENT_PRIVATE_NOTE = 'Sent. Only the owner can see the thread';
 export const UNLOCK_OWNER_LABEL = 'Unlock owner';
@@ -20,7 +20,17 @@ export function crewName(seat: string | null | undefined, names: Readonly<Record
   if (!seat) return UNMAPPED_SEAT_LABEL;
   const n = names[seat]?.trim();
   if (n) return n;
-  return seat === OKKIN_SEAT ? 'Okkin' : seat;
+  return seat === OKKIN_SEAT ? 'Okkin' : emptySeatLabel(seat);
+}
+
+/** The seat a decision/unblock row names, for people: crew name, else its desk ("Desk 3"), else "Empty desk N". */
+export function blockSeatName(seat: string, names: Readonly<Record<string, string | undefined>> = {}, desks: Readonly<Record<string, string | undefined>> = {}): string {
+  const n = names[seat]?.trim();
+  if (n) return n;
+  if (seat === OKKIN_SEAT) return 'Okkin';
+  const desk = desks[seat];
+  if (desk && /^seat-[1-9]$/.test(seat)) return deskName(desk);
+  return emptySeatLabel(seat);
 }
 
 /** Desk or meeting id → its label in the layout ("Desk 3", "Meeting room"). Unknown ids stay as given. */

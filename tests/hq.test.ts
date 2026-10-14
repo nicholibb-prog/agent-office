@@ -466,18 +466,18 @@ test('an offline seat queues the message, adds no bot line, and stays offline', 
   assert.equal(sent.status, 200);
   const body = JSON.parse(sent.body) as { chip: string; name: string; messages: { role: string; text: string }[] };
   assert.equal(body.chip, 'offline');
-  assert.equal(body.name, 'seat-1');
+  assert.equal(body.name, 'Empty desk 1');
   assert.equal(body.messages.filter((m) => m.role === 'bot').length, 0);
   assert.ok(body.messages.some((m) => m.role === 'player' && m.text === 'hello seat'));
-  assert.equal(body.messages.find((m) => m.role === 'office')?.text, offlineQueuedNotice('seat-1'));
+  assert.equal(body.messages.find((m) => m.role === 'office')?.text, offlineQueuedNotice('Empty desk 1'));
   assert.equal(offlineQueuedNotice('seat-1'), 'offline \u2014 message queued for seat-1');
   assert.equal(existsSync(path.join(dataDir, 'crew-status.json')), false);
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-test('public labels stay seat-N, and a gitignored names map supplies a local display name', async () => {
-  assert.equal(seatDisplayName('seat-1', {}), 'seat-1');
-  assert.equal(seatDisplayName('seat-9', undefined), 'seat-9');
+test('public seat ids stay seat-N (unnamed ones read "Empty desk N"), and a gitignored names map supplies a local display name', async () => {
+  assert.equal(seatDisplayName('seat-1', {}), 'Empty desk 1');
+  assert.equal(seatDisplayName('seat-9', undefined), 'Empty desk 9');
   assert.equal(seatDisplayName('okkin', {}), 'Okkin');
   assert.deepEqual(sanitizeNames({ 'seat-1': 'Pat Example', 'seat-2': 'hidden/name', 'seat-4': '   ' }), { 'seat-1': 'Pat Example' });
   const dataDir = dir('names');
@@ -502,7 +502,7 @@ test('public labels stay seat-N, and a gitignored names map supplies a local dis
   });
   const rows = JSON.parse(roster.body) as { seats: { seat: string; name: string; chip: string }[] };
   assert.equal(rows.seats.find((s) => s.seat === 'seat-1')?.name, 'Pat Example');
-  assert.equal(rows.seats.find((s) => s.seat === 'seat-2')?.name, 'seat-2');
+  assert.equal(rows.seats.find((s) => s.seat === 'seat-2')?.name, 'Empty desk 2');
   assert.equal(rows.seats.find((s) => s.seat === 'seat-1')?.chip, 'offline');
   rmSync(dataDir, { recursive: true, force: true });
 });
@@ -534,7 +534,7 @@ test('a bot line is the text posted to the authenticated inbox route', async () 
   assert.equal((JSON.parse(posted.body) as { seat: string }).seat, 'seat-1');
   const body = await talk('seat-1');
   assert.equal(body.chip, 'offline');
-  assert.equal(body.name, 'seat-1');
+  assert.equal(body.name, 'Empty desk 1');
   assert.equal(body.messages.filter((m) => m.role === 'bot').length, 1);
   assert.equal(body.messages.find((m) => m.role === 'bot')?.text, 'At the desk.');
   assert.equal(existsSync(path.join(dataDir, 'crew-status.json')), false);
