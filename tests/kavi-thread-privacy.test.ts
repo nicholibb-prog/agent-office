@@ -120,3 +120,40 @@ test('kavi thread privacy: every caller type', async () => {
     rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+test('kavi thread fs-spy: a non-owner GET reads nothing from the bridge folder; the owner does', async () => {
+  const { threadFs } = await import('../src/server/kavi-thread.js');
+  const r = bridge();
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'ao-kpriv-spy-'));
+  const prev = process.env.AGENT_OFFICE_KAVI_BRIDGE_DIR;
+  process.env.AGENT_OFFICE_KAVI_BRIDGE_DIR = r;
+  const { cookie } = await testOwner();
+  const owner = cookie();
+  const orig = { ...threadFs };
+  const calls: string[] = [];
+  threadFs.realpathSync = (p: string) => (calls.push('realpath:' + p), orig.realpathSync(p));
+  threadFs.listNames = (p: string, max: number) => (calls.push('list:' + p), orig.listNames(p, max));
+  try {
+    await withServer(dataDir, async (port) => {
+      const pw = await get(port, { cookie: 'ao=session' });
+      assert.equal(pw.status, 200);
+      assert.equal(pw.json.private, true);
+      assert.deepEqual(calls, [], 'non-owner must not touch the bridge folder');
+      for (const b of [{ 'x-bridge-token': 'a'.repeat(64) }, { authorization: 'Bearer x' }, { 'x-pool-caller': 'p' }]) {
+        assert.equal((await get(port, { ...b, cookie: `ao=session; ${owner}` })).status, 403);
+      }
+      assert.equal((await get(port, {})).status, 401);
+      assert.deepEqual(calls, [], 'refused callers must not touch the bridge folder');
+      // Positive control: the spy does see the owner's read.
+      const own = await get(port, { cookie: `ao=session; ${owner}` });
+      assert.equal(own.status, 200);
+      assert.ok(calls.some((c) => c.startsWith('realpath:')) && calls.some((c) => c.startsWith('list:')));
+    });
+  } finally {
+    Object.assign(threadFs, orig);
+    if (prev === undefined) delete process.env.AGENT_OFFICE_KAVI_BRIDGE_DIR;
+    else process.env.AGENT_OFFICE_KAVI_BRIDGE_DIR = prev;
+    rmSync(r, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
