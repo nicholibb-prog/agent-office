@@ -11,7 +11,7 @@ const POLL_MS = 20_000;
 export const NOT_LIVE_NOTE = 'Not a live call. Kavi reads the Bridge folder and answers later.';
 
 type Item = { from: 'owner' | 'kavi'; text: string; at: string };
-type Thread = { state: string; items: Item[]; driveLink: string };
+type Thread = { state: string; items: Item[]; driveLink: string; private?: boolean };
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -128,7 +128,8 @@ export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): K
       .then((r) => (r.ok ? (r.json() as Promise<Thread>) : Promise.reject(new Error(String(r.status)))))
       .then((t) => {
         link = t.driveLink || "";
-        if (t.state === 'unconfigured') setStatus('The Bridge folder is not set up on this machine yet.', true);
+        if (t.private) setStatus('The Kavi thread is private — unlock owner to see it.', true);
+        else if (t.state === 'unconfigured') setStatus('The Bridge folder is not set up on this machine yet.', true);
         else if (t.state === 'unreachable') setStatus('The Bridge folder is unreachable.', true);
         paint(t.items || []);
       })

@@ -2,7 +2,8 @@
 import type http from 'node:http';
 import type { Ctx } from '../../office/context.js';
 import { send } from '../util.js';
-import { hostOk, originOk } from './bridge.js';
+import { hostOk, originOk, sessionOnly } from './bridge.js';
+import { botCredential, logOkkinRefusal, okkinCaller } from '../../hq/okkin-owner.js';
 import { BodyTooLarge, closeTooLarge, readJsonBody } from '../read-body.js';
 import { KaviSendError, MAX_FILE_BYTES, readBack, sendFile, sendMessage } from '../../kavi-send.js';
 import { readThread } from '../../kavi-thread.js';
@@ -60,10 +61,24 @@ export const kaviSendRoutes = {
   thread: {
     method: 'GET' as const,
     path: '/api/kavi/thread',
-    auth: 'session' as const,
-    handle(_ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      // The Kavi thread is the owner's private conversation (same gate as Okkin's Ask, #58).
+      // Any bot credential is refused and logged, even alongside an owner cookie.
+      const bot = botCredential(req);
+      if (bot) {
+        logOkkinRefusal(ctx.cfg.dataDir, { route: 'GET /api/kavi/thread', caller: bot });
+        return send(res, 403, { error: 'owner only' });
+      }
       if (!kaviSessionGate(req, res)) return;
-      return send(res, 200, readThread(bridgeDir()));
+      if (!sessionOnly(ctx, req, res)) return;
+      const owner = okkinCaller(req, { touch: false }).kind === 'owner';
+      if (!owner) {
+        // Never read the bridge files for a non-owner: state only, no text.
+        const { items: _items, ...rest } = readThread(undefined);
+        return send(res, 200, { ...rest, state: 'private', items: [], messages: [], private: true });
+      }
+      return send(res, 200, { ...readThread(bridgeDir()), private: false });
     },
   },
   message: {
