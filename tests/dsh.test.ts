@@ -46,6 +46,7 @@ append(log, JSON.stringify({
   cwd: process.cwd(),
   profile: process.env.AGENT_OFFICE_DSH_PROFILE,
   workerId: process.env.AGENT_OFFICE_WORKER_ID,
+  hookToken: process.env.AGENT_OFFICE_HOOK_TOKEN,
 }) + '\n');
 
 const readSessions = () => {
@@ -879,9 +880,11 @@ test('a DSH board agent proves itself with its token, and a second question goes
   await waitFor(() => mgr.get(id)?.status, (s) => s === 'done');
 
   // office-queue authenticates with the token the office handed the child, though there is no PTY.
-  const saved = JSON.parse(readFileSync(path.join(f.data, 'workers.json'), 'utf8')) as { id: string; hookToken?: string }[];
-  const token = saved.find((s) => s.id === id)?.hookToken ?? '';
+  // workers.json keeps only its hash; the token itself reached the child's environment.
+  const raw = readFileSync(path.join(f.data, 'workers.json'), 'utf8');
+  const token = (JSON.parse(readFileSync(f.log, 'utf8').trim().split('\n')[0]) as { hookToken?: string }).hookToken ?? '';
   assert.ok(token);
+  assert.ok(!raw.includes(token), 'workers.json never holds the raw hook token');
   assert.equal(mgr.authenticate(id, token)?.id, id);
   assert.equal(mgr.authenticate(id, 'not-the-token'), undefined);
 

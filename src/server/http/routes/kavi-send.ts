@@ -21,6 +21,29 @@ export function kaviSessionGate(req: http.IncomingMessage, res: http.ServerRespo
   return true;
 }
 
+/**
+ * Owner-only writes (same gate as GET /api/kavi/thread, #60): any bot credential is refused and
+ * logged, even alongside an owner cookie; then loopback/same-origin, an office session, and a live
+ * owner unlock. Anything else is a logged 403 'owner only'. Log lines carry the route and caller
+ * kind only, never a token, cookie or body.
+ */
+export function ownerWriteGate(ctx: Ctx, route: string, req: http.IncomingMessage, res: http.ServerResponse, sessionGate: (req: http.IncomingMessage, res: http.ServerResponse) => boolean = kaviSessionGate): boolean {
+  const bot = botCredential(req);
+  if (bot) {
+    logOkkinRefusal(ctx.cfg.dataDir, { route, caller: bot });
+    return send(res, 403, { error: 'owner only' }), false;
+  }
+  if (!sessionGate(req, res)) return false;
+  // sessionOnly without its JSON-only shape check (file uploads are octet-stream); every token
+  // was already refused above, and Host/Origin by the session gate.
+  if (!ctx.auth.sessionFromAnyCookie(req)) return send(res, 401, { error: 'office session required' }), false;
+  if (okkinCaller(req, { touch: false }).kind !== 'owner') {
+    logOkkinRefusal(ctx.cfg.dataDir, { route, caller: 'not-owner' });
+    return send(res, 403, { error: 'owner only' }), false;
+  }
+  return true;
+}
+
 function fail(res: http.ServerResponse, err: unknown) {
   if (err instanceof KaviSendError) return send(res, err.status, { error: err.message });
   return send(res, 500, { error: 'The office could not complete that' });
@@ -84,9 +107,9 @@ export const kaviSendRoutes = {
   message: {
     method: 'POST' as const,
     path: '/api/kavi/message',
-    auth: 'session' as const,
-    async handle(_ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!kaviSessionGate(req, res)) return;
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!ownerWriteGate(ctx, 'POST /api/kavi/message', req, res)) return;
       if (!String(req.headers['content-type'] || '').toLowerCase().startsWith('application/json')) {
         return send(res, 415, { error: 'Content-Type must be application/json' });
       }
@@ -107,9 +130,9 @@ export const kaviSendRoutes = {
   file: {
     method: 'POST' as const,
     path: '/api/kavi/file',
-    auth: 'session' as const,
-    async handle(_ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!kaviSessionGate(req, res)) return;
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!ownerWriteGate(ctx, 'POST /api/kavi/file', req, res)) return;
       if (!String(req.headers['content-type'] || '').toLowerCase().startsWith('application/octet-stream')) {
         return send(res, 415, { error: 'Content-Type must be application/octet-stream' });
       }

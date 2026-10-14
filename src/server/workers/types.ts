@@ -70,7 +70,13 @@ export interface Worker {
   lastLines: string[];
   leftNeedsInputAt: number;
   keyframeAt: number;
-  hookToken: string;
+  /**
+   * sha256 (hex) of the hook token its terminal was launched with. Only this is ever persisted; a
+   * fresh token is minted on every launch or relaunch, so older ones stop verifying.
+   */
+  hookTokenHash: string;
+  /** The raw token, in memory only, for the launch's environment. Never saved. */
+  hookToken?: string;
   /** Claude never reported SessionStart: it's stuck on a trust/login/onboarding screen. */
   bootBlocked?: boolean;
   /** When a shell last printed (ms). Silence after that sends it back to idle (see presence.ts). */

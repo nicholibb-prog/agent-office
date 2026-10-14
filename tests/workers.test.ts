@@ -250,8 +250,11 @@ test('Claude workers use the configured executable, pass prompts and resume ids,
   assert.ok(secondWorker.args.includes('claude-session-1'));
   assert.equal(secondWorker.args.includes('initial Claude prompt'), false);
 
-  // The Claude hook remains accepted after a resume and updates the activity state.
-  assert.equal(workers.handleHook(worker.id, firstWorker.env.hookToken!, 'UserPromptSubmit', { prompt: 'follow-up' }), true);
+  // A resume is a relaunch: a fresh hook token, and the pre-relaunch one stops working.
+  assert.ok(secondWorker.env.hookToken);
+  assert.notEqual(secondWorker.env.hookToken, firstWorker.env.hookToken);
+  assert.equal(workers.handleHook(worker.id, firstWorker.env.hookToken!, 'UserPromptSubmit', { prompt: 'stale' }), false);
+  assert.equal(workers.handleHook(worker.id, secondWorker.env.hookToken!, 'UserPromptSubmit', { prompt: 'follow-up' }), true);
   assert.equal(workers.get(worker.id)?.activity, 'follow-up');
 
   // Selecting the alternate provider uses its binary with a clean argument set.

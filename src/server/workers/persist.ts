@@ -9,7 +9,7 @@ import { restoreTracker, trackerUsage } from '../usage.js';
 import { workedMs } from './clock.js';
 import { midTurn } from './lifecycle.js';
 import type { Worker } from './types.js';
-import { COLORS, newWorker } from './worker.js';
+import { COLORS, hashHookToken, isHookTokenHash, newWorker } from './worker.js';
 import { validRepos } from './worktree.js';
 
 /** What a worker with a live terminal can be doing. */
@@ -17,7 +17,7 @@ const RUNNING = new Set<unknown>(['starting', 'idle', 'working', 'done', 'needs_
 
 /** Saves every worker; `stopping`: the office is closing for good, so nobody is in the middle of anything. */
 export function saveWorkers(file: string, workers: Iterable<Worker>, stopping: boolean) {
-  const saved = [...workers].map(({ info, owner, tracker, state, hookToken, pty, bootBlocked, interrupted }) => ({
+  const saved = [...workers].map(({ info, owner, tracker, state, hookTokenHash, pty, bootBlocked, interrupted }) => ({
     id: info.id,
     owner,
     kind: info.kind,
@@ -44,7 +44,9 @@ export function saveWorkers(file: string, workers: Iterable<Worker>, stopping: b
     usage: providerAdapter(info.provider)?.usage?.persisted ? info.usage : undefined,
     ...providerAdapter(info.provider)?.usage?.save?.(state),
     // A terminal still running in the host, to pick back up after a restart. Its hooks keep the token.
-    hookToken,
+    // Only the hash: a terminal still running in the host keeps verifying with its token, and
+    // workers.json never holds a usable credential.
+    hookTokenHash,
     pty: pty?.id ? { id: pty.id, status: info.status, acked: info.acked, waitingSince: info.waitingSince } : undefined,
     // In the middle of something: if its terminal doesn't make it through a restart, it carries on after.
     midTurn: !stopping && (!!interrupted || midTurn({ info, bootBlocked })),
@@ -60,7 +62,7 @@ export function saveWorkers(file: string, workers: Iterable<Worker>, stopping: b
 export function restoreWorkers(file: string, workers: Map<string, Worker>, defaultProvider: AgentProvider, deskOccupied: (deskId: string) => boolean) {
   if (!existsSync(file)) return;
   try {
-    const saved = JSON.parse(readFileSync(file, 'utf8')) as (Partial<WorkerInfo> & { owner?: unknown; tracker?: unknown; hookToken?: unknown; pty?: any; midTurn?: unknown } & Record<string, unknown>)[];
+    const saved = JSON.parse(readFileSync(file, 'utf8')) as (Partial<WorkerInfo> & { owner?: unknown; tracker?: unknown; hookToken?: unknown; hookTokenHash?: unknown; pty?: any; midTurn?: unknown } & Record<string, unknown>)[];
     for (const s of saved) {
       if (!s.id || !s.deskId || !DESK_BY_ID.has(s.deskId) || deskOccupied(s.deskId)) continue;
       const tracker = restoreTracker(s.tracker);
@@ -103,7 +105,7 @@ export function restoreWorkers(file: string, workers: Map<string, Worker>, defau
         meeting: typeof s.meeting === 'string' && DESK_BY_ID.get(s.deskId)?.room ? s.meeting : undefined,
         workedMs: typeof s.workedMs === 'number' && Number.isFinite(s.workedMs) && s.workedMs > 0 ? s.workedMs : undefined,
       };
-      const w = newWorker(info, tracker, typeof s.hookToken === 'string' && s.hookToken ? s.hookToken : undefined);
+      const w = newWorker(info, tracker, isHookTokenHash(s.hookTokenHash) ? s.hookTokenHash : typeof s.hookToken === 'string' && s.hookToken ? hashHookToken(s.hookToken) : undefined);
       if (typeof s.owner === 'string' && s.owner) w.owner = s.owner;
       usage?.restore?.(w.state, s);
       w.screenDirty = false;
