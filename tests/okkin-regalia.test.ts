@@ -82,3 +82,14 @@ test('the plinth is stepped like a temple base: two steps and a die, with fluted
   const rise = PEDESTAL_STEPS.reduce((a, s) => a + s.rise, 0);
   assert.ok(OKKIN_PEDESTAL.height - rise >= 0.25, 'the die is tall enough to carry the engraving');
 });
+
+test('the engraving glyph sequence: נצחון העם, word by word in logical (right-to-left) order, final forms to base letters, no yod, spaced divider', async () => {
+  const { engravingText, PHOENICIAN_WORD_SEPARATOR: SEP } = await import('../src/shared/paleo-hebrew.js');
+  const s = engravingText();
+  const seq = [...s].map((ch) => ch.codePointAt(0)!.toString(16).toUpperCase());
+  // nun tsade het vav nun(final) · he ayin mem(final)
+  assert.deepEqual(seq, ['1090D', '10911', '10907', '10905', '1090D', '2003', SEP.codePointAt(0)!.toString(16).toUpperCase(), '2003', '10904', '1090F', '1090C']);
+  assert.ok(!seq.includes('10909'), 'no yod (U+10909)');
+  // Every letter is in the right-to-left Phoenician block, so the renderer (direction rtl) draws it right to left.
+  for (const cp of seq.filter((c) => c !== '2003')) assert.ok(parseInt(cp, 16) >= 0x10900 && parseInt(cp, 16) <= 0x1091f);
+});

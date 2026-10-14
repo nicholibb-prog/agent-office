@@ -74,7 +74,7 @@ body:has([aria-modal="true"]:not([hidden])) :is(.since-close, #project) { visibi
 .okl-power-reason[data-locked="yes"] { color: #8a5a00; font-weight: 600; }
 .okl-signin { display: inline-block; margin-top: 8px; text-decoration: none; }
 /* The pill sits up top, clear of the console and your hands. */
-.okl-pill { bottom: auto; top: 84px; display: inline-flex; align-items: center; gap: 8px; }
+.okl-pill { bottom: auto; top: 76px; left: auto; right: 16px; transform: none; display: inline-flex; align-items: center; gap: 8px; }
 .okl-light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #8e8e93; margin-right: 6px; vertical-align: middle; flex: none; }
 .okl-light[data-light="on"] { background: #34c759; }
 .okl-light[data-light="setup"] { background: #ff9f0a; }
