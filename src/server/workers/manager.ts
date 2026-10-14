@@ -27,8 +27,8 @@ import { CARRY_ON_PROMPT, WorkerTasks } from './tasks.js';
 import { commitStatus, noteShellOutput, syncViewerList, tickWorkers } from './presence.js';
 import { fullScreens, newTerm, offlineBanner, type HeadlessTerminal } from './terminal.js';
 import type { HookEnv, OpenedPr, RepoSource, RunAs, Worker, WorkerContext, WorkerEvents, WorkerHandle } from './types.js';
-import { clamp, safeEq, truncate } from './util.js';
-import { COLORS, NAMES, newWorker } from './worker.js';
+import { clamp, truncate } from './util.js';
+import { COLORS, NAMES, hookTokenOk, mintHookToken, newWorker } from './worker.js';
 import { WorkerTrees, lostMessage } from './worktree.js';
 import { bindCrewDesks, createCrewWatch, settleQuietShell, type CrewApplyOpts, type CrewWatch } from './crew.js';
 import { workerHandle } from './handle.js';
@@ -364,7 +364,7 @@ export class WorkerManager {
   /** The worker whose terminal holds this hook token: how a worker proves it's asking for itself. */
   authenticate(id: string, token: string): WorkerInfo | undefined {
     const w = this.workers.get(id);
-    return (w?.pty || w?.dsh) && token && safeEq(token, w.hookToken) ? w.info : undefined;
+    return (w?.pty || w?.dsh) && token && hookTokenOk(w, token) ? w.info : undefined;
   }
 
   /** Starts every worker that isn't running: nobody should be found asleep at their desk. */
@@ -597,7 +597,7 @@ export class WorkerManager {
     const hook = providerAdapter(route)?.hook;
     const w = this.workers.get(workerId);
     const own = w && providerAdapter(w.info.provider);
-    if (!hook || !w || !w.pty || w.info.kind !== 'agent' || !own || (own.hooksAs ?? own.id) !== route || !safeEq(token, w.hookToken)) return false;
+    if (!hook || !w || !w.pty || w.info.kind !== 'agent' || !own || (own.hooksAs ?? own.id) !== route || !hookTokenOk(w, token)) return false;
     return hook.handle(this.handleOf(w), event, payload);
   }
 
@@ -678,14 +678,15 @@ export class WorkerManager {
     // Its provider's command line, and anything it sets for this run (see ProviderAdapter.launch).
     const plan: LaunchPlan = adapter ? adapter.launch({ h: this.handleOf(w), args: base, prompt, resumeSessionId, station: DESK_BY_ID.get(info.deskId)?.station, cwd, setup: this.setups[adapter.id] }) : { args: base };
     const { args } = plan;
-    if (plan.rotateToken) w.hookToken = randomBytes(16).toString('hex');
+    // Every launch or relaunch gets a fresh token; the previous one stops verifying.
+    const hookToken = mintHookToken(w);
     const env = childEnv();
     Object.assign(env, {
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
       AGENT_OFFICE_WORKER_ID: info.id,
       AGENT_OFFICE_HOOK_URL: this.hook.url,
-      AGENT_OFFICE_HOOK_TOKEN: w.hookToken,
+      AGENT_OFFICE_HOOK_TOKEN: hookToken,
     });
     Object.assign(env, plan.env);
     // Whichever agent it runs, a worker reaches the office's workers with office-workers, and a board

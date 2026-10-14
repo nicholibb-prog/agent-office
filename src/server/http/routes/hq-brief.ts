@@ -11,6 +11,8 @@ import { answerKey, liveBlock, liveFromInfo, titleHash, type LiveTask, type Live
 import { answerBlock, loadBook, markSeen, readBlocks, readBrief, saveBlocks, saveItems } from '../../hq/brief.js';
 import { send, readBody } from '../util.js';
 import { bridgeGate, bridgeShape, seatGate } from './bridge.js';
+import { ownerWriteGate } from './kavi-send.js';
+import { botCredential } from '../../hq/okkin-owner.js';
 import type { Route } from '../router.js';
 
 const INTERNAL = 'internal error';
@@ -145,10 +147,12 @@ export const hqBriefRoutes = {
   answer: {
     method: 'POST' as const,
     path: '/api/bridge/unblock/answer',
-    auth: 'session' as const,
-    async handle(ctx: Ctx, { req, res, session }: { req: http.IncomingMessage; res: http.ServerResponse; session: Session }) {
-      if (!bridgeShape(req, res)) return;
-      if (presentedToken(req)) return send(res, 403, { error: 'bridge token cannot approve' });
+    // 'public' so a bot with no session still gets the logged 403; ownerWriteGate requires the session.
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      // Owner only (Dan, bf64a4c0 sweep): typing Yes/No into a desk is the owner's own call.
+      if (presentedToken(req) && !botCredential(req)) return send(res, 403, { error: 'bridge token cannot approve' });
+      if (!ownerWriteGate(ctx, 'POST /api/bridge/unblock/answer', req, res, (rq, rs) => bridgeShape(rq, rs))) return;
       const body = await jsonBody(req, res);
       if (!body) return;
       const answer = body.answer === 'yes' || body.answer === 'no' ? body.answer : undefined;
@@ -168,7 +172,8 @@ export const hqBriefRoutes = {
       const at = typeof body.at === 'number' && Number.isFinite(body.at) ? body.at : undefined;
       const hash = typeof body.titleHash === 'string' ? body.titleHash : '';
       if (at !== live.at || hash !== titleHash(live.title)) return send(res, 409, { error: 'stale' });
-      const who = session.account?.id ?? '';
+      const session: Session | undefined = ctx.auth.sessionFromAnyCookie(req);
+      const who = session?.account?.id ?? '';
       try {
         desk.write(answerKey(answer), who || 'session');
         answerBlock(ctx.cfg.dataDir, id, answer, Date.now(), who);

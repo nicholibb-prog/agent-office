@@ -10,6 +10,7 @@ import {
 } from '../src/server/kavi-send.js';
 import { requestHandler } from '../src/server/http/router.js';
 import { kaviSendRoutes } from '../src/server/http/routes/kavi-send.js';
+import { testOwner } from './support/okkin-owner.js';
 
 // Obviously fake Bridge folder id for tests; the real one lives only in the machine's environment.
 const KAVI_BRIDGE_FOLDER_ID = 'FAKE_folder_id_for_tests_0001';
@@ -115,13 +116,15 @@ test('create only: an existing name gets a unique name, nothing is overwritten',
 });
 
 // Session gating through the real router.
-async function withServer(fn: (port: number) => Promise<void>) {
+const hasSession = (req: { headers: { cookie?: string } }) => /(^|;\s*)ao=owner(;|$)/.test(req.headers.cookie || '');
+async function withServer(fn: (port: number) => Promise<void>, dataDir = tmpdir()) {
   const ctx = {
-    cfg: { port: 4600, tailnet: undefined, dataDir: tmpdir() },
+    cfg: { port: 4600, tailnet: undefined, dataDir },
     services: { lookup: () => undefined },
     auth: {
-      fromRequest: (req: { headers: { cookie?: string } }) => (req.headers.cookie === 'ao=owner' ? {} : undefined),
-      fromAnyCookie: (req: { headers: { cookie?: string } }) => req.headers.cookie === 'ao=owner',
+      fromRequest: (req: { headers: { cookie?: string } }) => (hasSession(req) ? {} : undefined),
+      fromAnyCookie: (req: { headers: { cookie?: string } }) => hasSession(req),
+      sessionFromAnyCookie: (req: { headers: { cookie?: string } }) => (hasSession(req) ? {} : undefined),
     },
   } as never;
   const srv: Server = createServer(requestHandler(ctx, [kaviSendRoutes.bridge, kaviSendRoutes.message, kaviSendRoutes.file]));
@@ -152,15 +155,16 @@ test('session gating: only an office session sends; bridge, seat or shared token
     await withServer(async (port) => {
       const body = JSON.stringify({ text: 'hi' });
       const json = { 'content-type': 'application/json' };
-      assert.equal((await call(port, '/api/kavi/message', { ...json, 'x-bridge-token': 'a'.repeat(64) }, body)).status, 401);
-      assert.equal((await call(port, '/api/kavi/message', { ...json, authorization: 'Bearer ' + 'b'.repeat(64) }, body)).status, 401);
-      assert.equal((await call(port, '/api/kavi/message', { ...json, cookie: 'ao=owner', 'x-bridge-token': 'a'.repeat(64) }, body)).status, 403);
-      assert.equal((await call(port, '/api/kavi/message', { ...json, cookie: 'ao=owner', origin: 'http://evil.example' }, body)).status, 403);
+      const owner = `ao=owner; ${(await testOwner()).cookie()}`;
+      assert.equal((await call(port, '/api/kavi/message', { ...json, 'x-bridge-token': 'a'.repeat(64) }, body)).status, 403);
+      assert.equal((await call(port, '/api/kavi/message', { ...json, authorization: 'Bearer ' + 'b'.repeat(64) }, body)).status, 403);
+      assert.equal((await call(port, '/api/kavi/message', { ...json, cookie: owner, 'x-bridge-token': 'a'.repeat(64) }, body)).status, 403);
+      assert.equal((await call(port, '/api/kavi/message', { ...json, cookie: owner, origin: 'http://evil.example' }, body)).status, 403);
       assert.deepEqual(files(r), []);
-      const ok = await call(port, '/api/kavi/message', { ...json, cookie: 'ao=owner' }, body);
+      const ok = await call(port, '/api/kavi/message', { ...json, cookie: owner }, body);
       assert.equal(ok.status, 200);
       assert.equal(ok.json.folderId, KAVI_BRIDGE_FOLDER_ID);
-      const up = await call(port, '/api/kavi/file', { cookie: 'ao=owner', 'content-type': 'application/octet-stream', 'x-file-name': encodeURIComponent('a b.txt') }, 'fake');
+      const up = await call(port, '/api/kavi/file', { cookie: owner, 'content-type': 'application/octet-stream', 'x-file-name': encodeURIComponent('a b.txt') }, 'fake');
       assert.equal(up.status, 200);
       assert.equal(up.json.name, 'a b.txt');
       const rb = await call(port, '/api/kavi/bridge', { cookie: 'ao=owner' });
