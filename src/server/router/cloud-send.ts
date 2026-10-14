@@ -7,6 +7,8 @@ import { keyEnvFor, type RouterEnv, type RouterFlags } from './flags.js';
 import { presendScan, scanPayload, serialize, type ScanContext } from './presend-scan.js';
 import { isCloud, isHttpProvider, type CloudProvider, type CrewProvider, type Label, type ScanHit, type WirePayload } from './types.js';
 
+export type { ProviderReply, ProviderFetch } from './provider-clients.js';
+
 export class ScanBlocked extends Error {
   constructor(readonly hits: ScanHit[]) {
     super(`pre-send scan blocked: ${[...new Set(hits.map((h) => h.type))].join(', ')}`);
