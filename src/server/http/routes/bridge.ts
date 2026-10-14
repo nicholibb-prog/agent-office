@@ -14,6 +14,7 @@ import type { Route } from '../router.js';
 import { appendInbox, ingestInbox } from '../../hq/relay.js';
 import { loadHqLocal, writeCrewPush } from '../../workers/crew.js';
 import { writePrivate } from '../../private-file.js';
+import { logOkkinRefusal, okkinCaller } from '../../hq/okkin-owner.js';
 
 const OFFICE_ERROR = 'The office could not complete that';
 
@@ -213,6 +214,47 @@ export function bridgeCaller(ctx: Ctx, req: http.IncomingMessage, res: http.Serv
   if (ctx.auth.fromRequest(req) || ctx.auth.fromAnyCookie(req)) return { kind: 'session' };
   send(res, 401, { error: 'bridge token or office session required' });
   return null;
+}
+
+export type SeatPrivateCaller = { kind: 'seat'; seat: string } | { kind: 'owner' } | { kind: 'session' };
+
+/**
+ * Reads of a seat's private text (thread, outbox). A seat token is that seat only; the shared
+ * bridge token and x-pool-caller get a logged 403; a session is 'owner' or plain 'session'.
+ * Logs carry the route and caller kind only, never a token. Sends the error and returns null on failure.
+ */
+export function seatPrivateCaller(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse, route: string): SeatPrivateCaller | null {
+  if (!bridgeShape(req, res)) return null;
+  // Any Authorization header is a bot credential here (as botCredential): refused and logged.
+  const auth = req.headers.authorization;
+  if (typeof auth === 'string' && auth.trim()) {
+    logOkkinRefusal(ctx.cfg.dataDir, { route, caller: 'bearer' });
+    send(res, 403, { error: 'Authorization header not accepted; use x-bridge-token' });
+    return null;
+  }
+  const got = tokenFromReq(req);
+  if (got) {
+    const seat = seatForToken(ctx.cfg.dataDir, got);
+    if (seat) return { kind: 'seat', seat };
+    if (safeTokenEq(got, bridgeToken(ctx.cfg.dataDir))) {
+      logOkkinRefusal(ctx.cfg.dataDir, { route, caller: 'shared-bridge-token' });
+      send(res, 403, { error: 'shared bridge token cannot read seat text; use a seat token' });
+      return null;
+    }
+    send(res, 401, { error: 'bridge token not recognised' });
+    return null;
+  }
+  const pool = req.headers['x-pool-caller'];
+  if (typeof pool === 'string' && pool.trim()) {
+    logOkkinRefusal(ctx.cfg.dataDir, { route, caller: 'pool-caller' });
+    send(res, 403, { error: 'owner only' });
+    return null;
+  }
+  if (!(ctx.auth.fromRequest(req) || ctx.auth.fromAnyCookie(req))) {
+    send(res, 401, { error: 'bridge token or office session required' });
+    return null;
+  }
+  return okkinCaller(req, { touch: false }).kind === 'owner' ? { kind: 'owner' } : { kind: 'session' };
 }
 
 /** Bridge auth: Host allowlist + Origin check + (seat token, read-only shared token, or office session). */
@@ -456,11 +498,17 @@ export const bridgeRoutes = {
     path: '/api/bridge/kavi-outbox',
     auth: 'public' as const,
     handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!bridgeGate(ctx, req, res)) return;
+      const caller = seatPrivateCaller(ctx, req, res, 'GET /api/bridge/kavi-outbox');
+      if (!caller) return;
       try {
         const file = path.join(ctx.cfg.dataDir, 'kavi-outbox.json');
-        if (!existsSync(file)) return send(res, 200, { items: [] });
-        return send(res, 200, JSON.parse(readFileSync(file, 'utf8')));
+        if (caller.kind === 'session') return send(res, 200, { items: [], private: true });
+        if (!existsSync(file)) return send(res, 200, { items: [], private: false });
+        const raw = JSON.parse(readFileSync(file, 'utf8')) as { items?: { seat?: string }[]; [k: string]: unknown };
+        const all = Array.isArray(raw.items) ? raw.items : [];
+        // A seat token sees only items stamped with exactly its crew seat. null/missing = owner-only.
+        const items = caller.kind === 'owner' ? all : all.filter((it) => !!it && typeof it.seat === 'string' && it.seat !== '' && it.seat === caller.seat);
+        return send(res, 200, { ...raw, items, private: false });
       } catch {
         return send(res, 500, { error: OFFICE_ERROR });
       }

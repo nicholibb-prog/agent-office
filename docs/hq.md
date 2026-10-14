@@ -48,7 +48,9 @@ A blocked bridge push sets `needs_input` (`lastInput.by` is `crew-status`). A la
 
 Press **Y**. Near a crew desk (about 2.5 m) that opens a thread with that seat. Otherwise it opens the roster: ten rows, each with a chip, an age, a one-line task, and **Go**, **Talk**, and **Desk**. **Desk** is a card (condition, actions, needs, task, milestone, link). **✕** or **Esc** closes it and returns you to mouse-look.
 
-`POST /api/bridge/talk` takes a verified office session. A bridge token or a Bearer header is refused (403), even if a session cookie is sent with it. A cookie from another port of this host counts only when it verifies. An unknown or renamed cookie is 401. An admin account, or the shared office password, writes `role` `player`. Any other account, including a member, writes `guest`. The outbox and the thread record `by` as that account id when there is one. Talk is limited to one line every 3 seconds and 20 lines a minute per account (429). Request bodies over 16 KB are refused (413) and the connection is closed.
+`POST /api/bridge/talk` is owner only, for every seat (crew seats and Okkin): a verified office session that has also unlocked owner. A bridge token, a seat token, a Bearer header or `x-pool-caller` is refused (403, logged to `okkin-refusals.log`), even if a session or owner cookie is sent with it. A session that has not unlocked owner, including an admin or member account, is refused (403, logged). A cookie from another port of this host counts only when it verifies. An unknown or renamed cookie is 401. When the owner is signed in with an admin account or the shared office password, the line is written as `role` `player`; with any other account, including a member, it is `guest`. The outbox and the thread record `by` as that account id when there is one. Talk is limited to one line every 3 seconds and 20 lines a minute per account (429). Request bodies over 16 KB are refused (413) and the connection is closed.
+
+Reading seat text is scoped too. `GET /api/bridge/talk?seat=` (crew seats) and `GET /api/bridge/kavi-outbox`: a seat token reads only its own seat (another seat is 403, logged); the shared bridge token and `x-pool-caller` are refused (403, logged); the owner reads everything; any other session gets 200 with `messages: []` / `items: []` and `private: true`. Outbox items carry the `seat` that queued them; a seat-provider turn is stamped with a crew seat only through the explicit, gitignored `.agent-office/seat-map.json` (`{"<floorId>:<deskOrMeetingId>": "<crewSeatId>"}`, crew seat must be a real seat id); unmapped turns get `seat: null`. A seat token sees only items whose `seat` exactly equals its own; `null` or missing is owner-only. An `Authorization` header is refused here (403, logged); seat tokens use `x-bridge-token`. `POST /api/bridge/desk`: a seat token writes its own seat (a different `body.seat` is 403, logged); a session must be the owner; the shared token is refused. Refusal log lines hold the route and caller kind only, never a token or passphrase.
 
 Player and guest lines are written to `.agent-office/chat-outbox.jsonl`. The file keeps the last 200 lines and is replaced as a whole (mode `0600`). A separate process can sync that file. This repo does not know folder ids or API tokens.
 
@@ -142,3 +144,22 @@ TODO: a passkey (WebAuthn) for the owner, instead of or alongside the passphrase
 
 A locked switch always says why in the panel, e.g. on Windows until the ACL is verified:
 "Power switch locked: operator must verify okkin-power.json ACL and set AO_OKKIN_POWER_WINDOWS_ACL_OK=1".
+
+### Seat map (`.agent-office/seat-map.json`)
+
+Seat-provider turns (a desk or the meeting room sending to the bridge outbox) belong to no crew seat until this gitignored file names one. The committed `.agent-office/seat-map.example.json` shows the shape with placeholder ids only:
+
+```json
+{
+  "floor-1:desk-1": "seat-1",
+  "floor-1:desk-2": "seat-2",
+  "floor-1:meeting-room": "seat-1"
+}
+```
+
+Each key is `<floorId>:<deskOrMeetingId>`, the same pair as the item title `seat:<floorId>:<deskOrMeetingId>` in the owner's outbox view. Each value must be a crew seat id (`seat-1` … `seat-9`, `okkin`); anything else is ignored. Copy the example to `seat-map.json` and replace the ids. An unmapped turn is stamped `seat: null`: no seat token sees it, and the owner's Kavi outbox board labels it **not mapped to a crew seat**.
+
+### What a non-owner sees
+
+A session that has not unlocked owner gets neutral grey notes, not errors: the crew talk thread says *Crew threads are private — unlock owner to see them.*, the talk input is disabled and says *Unlock owner to talk* (a 403 on send shows the same text), and the Kavi outbox board (roster → **Kavi outbox**) says *The Kavi outbox is private — unlock owner to see it.*
+

@@ -1,6 +1,7 @@
 node_modules
 dist
-.agent-office/
+.agent-office/*
+!.agent-office/seat-map.example.json
 *.log
 vite-err.log
 .DS_Store

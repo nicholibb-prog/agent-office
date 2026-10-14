@@ -22,6 +22,7 @@ import type { OllamaClientView, SeatFace } from '../shared/protocol/huddle.js';
 import { officeCliBins } from './cli-presence.js';
 import { createOllamaClient, loadOllamaFile, type OllamaClient, type OllamaFetch } from './ollama.js';
 import { appendOutboxItem, readOutboxFile } from './outbox.js';
+import { crewSeatFor } from './seat-map.js';
 
 export type SeatDecision =
   | { action: 'blocked'; message: string }
@@ -120,7 +121,7 @@ export class SeatBoard {
     const clean = text.trim().slice(0, 4000);
     if (!clean) return false;
     try {
-      appendOutboxItem(this.outboxFile, { title: seatTurnTitle(floorId, seatId), text: clean, at: new Date().toISOString() });
+      appendOutboxItem(this.outboxFile, { title: seatTurnTitle(floorId, seatId), text: clean, at: new Date().toISOString(), seat: crewSeatFor(this.dataDir, floorId, seatId) });
       return true;
     } catch {
       this.bridgeUp = false;

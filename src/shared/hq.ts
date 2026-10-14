@@ -298,3 +298,42 @@ export const ASK_PRIVATE_NOTE = 'Ask history is private — unlock owner to see 
 export function askPrivateNote(r: { messages?: readonly unknown[] | null; private?: boolean | null } | null | undefined): string | null {
   return r?.private === true && !(r.messages?.length) ? ASK_PRIVATE_NOTE : null;
 }
+
+
+/** Non-owner notes for the crew talk thread, the talk input, and the Kavi outbox board (neutral, not errors). */
+export const CREW_PRIVATE_NOTE = 'Crew threads are private — unlock owner to see them.';
+export const TALK_LOCKED_NOTE = 'Unlock owner to talk';
+export const OUTBOX_PRIVATE_NOTE = 'The Kavi outbox is private — unlock owner to see it.';
+export const OUTBOX_EMPTY_NOTE = 'Nothing in the outbox.';
+export const UNMAPPED_SEAT_LABEL = 'not mapped to a crew seat';
+
+type PrivateShape = { messages?: readonly unknown[] | null; items?: readonly unknown[] | null; private?: boolean | null } | null | undefined;
+
+/** The note a talk thread shows instead of a blank log: Okkin's Ask note, or the crew note. */
+export function threadPrivateNote(seat: string, r: PrivateShape): string | null {
+  if (r?.private !== true || r.messages?.length) return null;
+  return seat === OKKIN_SEAT ? ASK_PRIVATE_NOTE : CREW_PRIVATE_NOTE;
+}
+
+/** Whether the talk input should be locked: the server said this caller is not the owner. */
+export function talkLocked(r: PrivateShape): boolean {
+  return r?.private === true;
+}
+
+/** What a failed talk send shows. A 403 is the owner lock, never a bare status code. */
+export function talkSendError(status: number, error?: string): string {
+  if (status === 403) return TALK_LOCKED_NOTE;
+  return error ? `Not sent: ${error}` : `Not sent (${status})`;
+}
+
+export type OutboxRow = { title: string; text: string; at: string; seat: string; mapped: boolean };
+
+/** Rows for the Kavi outbox board. A null or missing seat is shown as unmapped (owner view only). */
+export function outboxView(r: { items?: readonly { title?: unknown; text?: unknown; at?: unknown; seat?: unknown }[] | null; private?: boolean | null } | null | undefined): { note: string | null; rows: OutboxRow[] } {
+  if (r?.private === true) return { note: OUTBOX_PRIVATE_NOTE, rows: [] };
+  const rows = (r?.items ?? []).map((it) => {
+    const seat = typeof it.seat === 'string' && it.seat ? it.seat : '';
+    return { title: String(it.title ?? ''), text: String(it.text ?? ''), at: String(it.at ?? ''), seat: seat || UNMAPPED_SEAT_LABEL, mapped: !!seat };
+  });
+  return { note: rows.length ? null : OUTBOX_EMPTY_NOTE, rows };
+}

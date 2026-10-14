@@ -65,8 +65,11 @@ export interface OutboxItem {
   title: string;
   text: string;
   at: string;
-  /** Seat token that queued it, when it came over the bridge. */
-  seat?: string;
+  /**
+   * Crew seat this item belongs to: the seat token that queued it, or for a seat-provider turn the
+   * crew seat named in the explicit server map (.agent-office/seat-map.json). null = owner-only.
+   */
+  seat?: string | null;
 }
 
 export function seatTurnTitle(floorId: string, seatId: string): string {

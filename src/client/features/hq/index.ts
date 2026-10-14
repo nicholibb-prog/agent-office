@@ -1,12 +1,12 @@
 // Local crew: a fixed roster, a talk thread, a desk card, and idle-only movement.
 import type * as THREE from 'three';
 import { DESK_BY_ID } from '../../../shared/layout.js';
-import { askPrivateNote, chooseAgency } from '../../../shared/hq.js';
+import { chooseAgency, talkLocked, talkSendError, threadPrivateNote } from '../../../shared/hq.js';
 import type { Ctx } from '../../core/context';
 import { modalOpen } from '../../ui/dom';
 import { store } from '../../state';
 import { placeCrew } from './agency';
-import { getJson, openDesk, openRoster, openTalk, postJson, seatLabel, type DeskCardView, type SeatRow, type TalkLine } from './ui';
+import { getJson, openDesk, openOutbox, openRoster, openTalk, postJson, seatLabel, type DeskCardView, type SeatRow, type TalkLine } from './ui';
 
 export interface HqDeps {
   workerViews: ReadonlyMap<string, { deskId: string; model: { root: THREE.Object3D } }>;
@@ -51,10 +51,12 @@ export function installHq(ctx: Ctx, deps: HqDeps) {
     let name = seatLabel(row);
     let chip = row.chip;
     let note: string | null = null;
+    let locked = false;
     try {
       const data = await getJson<{ messages: TalkLine[]; private?: boolean; name?: string; chip?: string; okkin?: { chip: string } }>(`/api/bridge/talk?seat=${encodeURIComponent(row.seat)}`);
       lines = data.messages;
-      note = askPrivateNote(data);
+      note = threadPrivateNote(row.seat, data);
+      locked = talkLocked(data);
       if (data.name) name = data.name;
       chip = data.okkin?.chip ?? data.chip ?? chip;
     } catch {
@@ -62,12 +64,14 @@ export function installHq(ctx: Ctx, deps: HqDeps) {
     }
     closeRoster();
     const panel = openTalk(row.seat, lines, chip, (text) => {
-      void postJson<{ messages?: TalkLine[]; chip?: string; okkin?: { chip: string } }>('/api/bridge/talk', { seat: row.seat, text }).then((res) => {
+      void postJson<{ messages?: TalkLine[]; chip?: string; okkin?: { chip: string }; error?: string }>('/api/bridge/talk', { seat: row.seat, text }).then((res) => {
+        if (res.status === 403) return panel.lock(talkSendError(403));
+        if (res.status !== 200) return panel.say(talkSendError(res.status, res.body.error));
         const nextChip = res.body.okkin?.chip ?? res.body.chip ?? chip;
         panel.paint(res.body.messages ?? lines, nextChip);
         void loadRoster().catch(() => undefined);
       });
-    }, () => talking.delete(row.seat), name, note);
+    }, () => talking.delete(row.seat), name, note, locked);
     panel.focus();
   }
 
@@ -92,6 +96,12 @@ export function installHq(ctx: Ctx, deps: HqDeps) {
       go,
       talk: (row) => void talk(row),
       desk: (row) => void desk(row),
+      outbox: () => {
+        closeRoster();
+        void getJson<{ items?: { title?: string; text?: string; at?: string; seat?: string | null }[]; private?: boolean }>('/api/bridge/kavi-outbox')
+          .then((data) => openOutbox(data))
+          .catch(() => openOutbox(null, true));
+      },
       switchModel: (name) => {
         void postJson('/api/bridge/okkin/model', { model: name }).then(() => loadRoster().catch(() => undefined));
       },
