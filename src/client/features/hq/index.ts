@@ -1,12 +1,14 @@
 // Local crew: a fixed roster, a talk thread, a desk card, and idle-only movement.
 import type * as THREE from 'three';
 import { DESK_BY_ID } from '../../../shared/layout.js';
-import { chooseAgency, talkLocked, talkSendError, threadPrivateNote } from '../../../shared/hq.js';
+import { CREW_PRIVATE_NOTE, chooseAgency, talkLocked, talkSendError, threadPrivateNote } from '../../../shared/hq.js';
+import { keepOnLock, loadFailNote } from '../../../shared/privacy-view.js';
+import { noteOwner } from '../../ui/owner-state.js';
 import type { Ctx } from '../../core/context';
 import { modalOpen } from '../../ui/dom';
 import { store } from '../../state';
 import { placeCrew } from './agency';
-import { getJson, openDesk, openOutbox, openRoster, openTalk, postJson, seatLabel, type DeskCardView, type SeatRow, type TalkLine } from './ui';
+import { HttpError, getJson, openDesk, openOutbox, openRoster, openTalk, postJson, seatLabel, type DeskCardView, type SeatRow, type TalkLine } from './ui';
 
 export interface HqDeps {
   workerViews: ReadonlyMap<string, { deskId: string; model: { root: THREE.Object3D } }>;
@@ -52,26 +54,54 @@ export function installHq(ctx: Ctx, deps: HqDeps) {
     let chip = row.chip;
     let note: string | null = null;
     let locked = false;
+    type TalkGet = { messages: TalkLine[]; private?: boolean; name?: string; chip?: string; okkin?: { chip: string } };
+    const fetchThread = () => getJson<TalkGet>(`/api/bridge/talk?seat=${encodeURIComponent(row.seat)}`);
     try {
-      const data = await getJson<{ messages: TalkLine[]; private?: boolean; name?: string; chip?: string; okkin?: { chip: string } }>(`/api/bridge/talk?seat=${encodeURIComponent(row.seat)}`);
+      const data = await fetchThread();
       lines = data.messages;
       note = threadPrivateNote(row.seat, data);
       locked = talkLocked(data);
+      noteOwner({ private: data.private === true });
       if (data.name) name = data.name;
       chip = data.okkin?.chip ?? data.chip ?? chip;
-    } catch {
+    } catch (err) {
       lines = [];
+      note = loadFailNote(err instanceof HttpError ? err.status : undefined, 'Could not load the thread.');
     }
     closeRoster();
+    let poll = 0;
+    /** Reload: after an unlock, or every 20 s; an idle-timeout lock keeps the last lines under the note. */
+    const reload = () =>
+      fetchThread()
+        .then((data) => {
+          const privateNote = threadPrivateNote(row.seat, { messages: [], private: true }) ?? CREW_PRIVATE_NOTE;
+          const view = keepOnLock(lines, { private: data.private, items: data.messages }, privateNote);
+          lines = view.items;
+          chip = data.okkin?.chip ?? data.chip ?? chip;
+          panel.paint(lines, chip, view.note);
+          noteOwner({ private: data.private === true });
+          if (talkLocked(data)) panel.lock();
+          else panel.unlock();
+        })
+        .catch((err) => panel.paint(lines, chip, loadFailNote(err instanceof HttpError ? err.status : undefined, 'Could not load the thread.')));
     const panel = openTalk(row.seat, lines, chip, (text) => {
       void postJson<{ messages?: TalkLine[]; chip?: string; okkin?: { chip: string }; error?: string }>('/api/bridge/talk', { seat: row.seat, text }).then((res) => {
-        if (res.status === 403) return panel.lock(talkSendError(403));
+        if (res.status === 403) {
+          noteOwner({ status: 403 });
+          return panel.lock(talkSendError(403));
+        }
+        if (res.status === 401) return panel.say(loadFailNote(401, ''));
         if (res.status !== 200) return panel.say(talkSendError(res.status, res.body.error));
         const nextChip = res.body.okkin?.chip ?? res.body.chip ?? chip;
-        panel.paint(res.body.messages ?? lines, nextChip);
+        lines = res.body.messages ?? lines;
+        panel.paint(lines, nextChip, null);
         void loadRoster().catch(() => undefined);
       });
-    }, () => talking.delete(row.seat), name, note, locked);
+    }, () => {
+      talking.delete(row.seat);
+      clearInterval(poll);
+    }, name, note, locked, { onUnlock: () => void reload() });
+    poll = window.setInterval(() => void reload(), 20_000);
     panel.focus();
   }
 
@@ -98,9 +128,15 @@ export function installHq(ctx: Ctx, deps: HqDeps) {
       desk: (row) => void desk(row),
       outbox: () => {
         closeRoster();
-        void getJson<{ items?: { title?: string; text?: string; at?: string; seat?: string | null }[]; private?: boolean }>('/api/bridge/kavi-outbox')
-          .then((data) => openOutbox(data))
-          .catch(() => openOutbox(null, true));
+        const names = Object.fromEntries(rows.map((r) => [r.seat, r.name]));
+        const show = () =>
+          void getJson<{ items?: { title?: string; text?: string; at?: string; seat?: string | null }[]; private?: boolean }>('/api/bridge/kavi-outbox')
+            .then((data) => {
+              noteOwner({ private: data.private === true });
+              openOutbox(data, { names, onUnlock: show });
+            })
+            .catch((err) => openOutbox(null, { failNote: loadFailNote(err instanceof HttpError ? err.status : undefined, 'Could not load the outbox.') }));
+        show();
       },
       switchModel: (name) => {
         void postJson('/api/bridge/okkin/model', { model: name }).then(() => loadRoster().catch(() => undefined));

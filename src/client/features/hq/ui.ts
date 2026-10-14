@@ -1,6 +1,8 @@
 // Roster, talk thread, and the desk card. Every window has a ✕; Esc is the modal's own.
 import { h, openModal } from '../../ui/dom.js';
 import { TALK_LOCKED_NOTE, outboxView } from '../../../shared/hq.js';
+import { friendlyOutbox } from '../../../shared/privacy-view.js';
+import { unlockOwnerControl } from '../../ui/owner-unlock.js';
 import './ui.css';
 
 export type SeatRow = {
@@ -51,9 +53,16 @@ export function seatLabel(row: { seat: string; name?: string }): string {
   return row.seat === 'okkin' ? 'Okkin' : row.seat;
 }
 
+/** A failed GET: carries the HTTP status so a 401 can say "Session expired, sign in again". */
+export class HttpError extends Error {
+  constructor(readonly status: number, text: string) {
+    super(text);
+  }
+}
+
 export async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { cache: 'no-store' });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new HttpError(res.status, await res.text());
   return (await res.json()) as T;
 }
 
@@ -104,35 +113,50 @@ function modelPick(row: SeatRow, onSwitch: (name: string) => void) {
   return h('div.hq-switch', {}, select, button);
 }
 
-export function openTalk(seat: string, lines: TalkLine[], chip: string, send: (text: string) => void, onClose?: () => void, name?: string, note?: string | null, locked = false) {
+export function openTalk(seat: string, lines: TalkLine[], chip: string, send: (text: string) => void, onClose?: () => void, name?: string, note?: string | null, locked = false, extras: { onUnlock?: () => void } = {}) {
   const log = h('div.hq-log');
-  const paint = (next: TalkLine[], nextChip: string) => {
+  let curNote = note ?? null;
+  const who = (line: TalkLine) => (line.role === 'player' ? 'You' : line.role === 'guest' ? 'Guest' : line.role === 'bot' ? seatLabel({ seat, name }) : 'Office');
+  /** Lines stay on screen when the thread goes private (idle timeout); the note sits above them. */
+  const paint = (next: TalkLine[], nextChip: string, nextNote: string | null = curNote) => {
+    curNote = nextNote;
     chipEl.textContent = chipLabel(nextChip);
     chipEl.dataset.chip = nextChip;
-    log.replaceChildren(
-      ...(!next.length && note ? [h('p', { class: 'hq-line hq-private', role: 'note' }, note)] : (next.length ? next : [{ id: 'empty', role: 'office', text: 'No messages yet.', at: 0 }]).map((line) =>
-        h('p', { class: `hq-line hq-${line.role}` }, `${line.role === 'player' ? 'You' : line.role === 'guest' ? 'Guest' : line.role === 'bot' ? seatLabel({ seat, name }) : 'Office'}: ${line.text}`),
-      )),
-    );
+    const noteEl = curNote ? [h('p', { class: 'hq-line hq-private', role: 'note' }, curNote)] : [];
+    const body = next.length
+      ? next.map((line) => h('p', { class: `hq-line hq-${line.role}${curNote ? ' hq-stale' : ''}` }, `${who(line)}: ${line.text}`))
+      : curNote ? [] : [h('p', { class: 'hq-line hq-office' }, 'Office: No messages yet.')];
+    log.replaceChildren(...noteEl, ...body);
     log.scrollTop = log.scrollHeight;
   };
   const chipEl = h('span.hq-chip', { 'data-chip': chip }, chipLabel(chip));
   const input = h('input', { type: 'text', maxlength: 500, placeholder: 'Say something', 'aria-label': 'Message' }) as HTMLInputElement;
   const sendBtn = h('button.btn.primary', { type: 'submit' }, 'Send') as HTMLButtonElement;
   const status = h('p.hq-private.hq-lock', { role: 'note', hidden: true }) as HTMLParagraphElement;
+  const unlockSlot = h('div.hq-unlock');
   const form = h(
     'form.modal.hq-talk',
-    { role: 'dialog', 'aria-label': `Talk to ${seat === 'okkin' ? 'Okkin' : seat}` },
+    { role: 'dialog', 'aria-label': `Talk to ${seatLabel({ seat, name })}` },
     h('header', {}, h('h2', {}, `Talk to ${seatLabel({ seat, name })}`), chipEl),
-    h('div.body', {}, log, status),
+    h('div.body', {}, log, status, unlockSlot),
     h('footer', {}, input, sendBtn),
   ) as HTMLFormElement;
-  // Not the owner: the input is locked with a plain note, so a send never ends in a bare 403.
+  // Not the owner: the input is greyed and disabled with a plain note, so a send never ends in a bare 403.
   const lock = (text = TALK_LOCKED_NOTE) => {
     input.disabled = true;
     sendBtn.disabled = true;
     input.placeholder = text;
     input.title = text;
+    form.dataset.locked = 'yes';
+    if (extras.onUnlock && !unlockSlot.childElementCount) unlockSlot.append(unlockOwnerControl(() => extras.onUnlock?.()));
+  };
+  const unlock = () => {
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.placeholder = 'Say something';
+    input.title = '';
+    form.dataset.locked = 'no';
+    unlockSlot.replaceChildren();
   };
   if (locked) lock();
   paint(lines, chip);
@@ -149,16 +173,18 @@ export function openTalk(seat: string, lines: TalkLine[], chip: string, send: (t
     status.textContent = text;
     status.hidden = false;
   };
-  return { close: () => modal.close(), paint, lock, say, focus: () => input.focus() };
+  return { close: () => modal.close(), paint, lock, unlock, say, focus: () => input.focus() };
 }
 
-/** The Kavi outbox board: owner sees every item (unmapped ones say so); others see a neutral note. */
-export function openOutbox(data: Parameters<typeof outboxView>[0], failed = false) {
-  const view = failed ? { note: 'Could not load the outbox.', rows: [] } : outboxView(data);
+/** The Kavi outbox board: owner sees every item with friendly desk and crew names; others a neutral note and Unlock owner. */
+export function openOutbox(data: Parameters<typeof outboxView>[0], opts: { failNote?: string; names?: Record<string, string | undefined>; onUnlock?: () => void } = {}) {
+  const view = opts.failNote ? { note: opts.failNote, rows: [] } : outboxView(data);
+  const rows = friendlyOutbox(view.rows, opts.names);
+  const unlock = data?.private === true && opts.onUnlock ? [unlockOwnerControl(() => { modal.close(); opts.onUnlock?.(); })] : [];
   const body = view.note
-    ? [h('p', { class: 'hq-line hq-private', role: 'note' }, view.note)]
-    : view.rows.map((r) =>
-        h('article.hq-row', {}, h('div.hq-who', {}, h('strong', {}, r.title), h('span', { class: r.mapped ? 'hq-chip' : 'hq-chip hq-unmapped' }, r.seat)), h('p.hq-task', {}, r.text)),
+    ? [h('p', { class: 'hq-line hq-private', role: 'note' }, view.note), ...unlock]
+    : rows.map((r) =>
+        h('article.hq-row', {}, h('div.hq-who', {}, h('strong', { title: r.raw }, r.label), h('span', { class: r.mapped ? 'hq-chip' : 'hq-chip hq-unmapped' }, r.who)), h('p.hq-task', {}, r.text)),
       );
   const form = h('form.modal.hq-outbox', { role: 'dialog', 'aria-label': 'Kavi outbox' }, h('header', {}, h('h2', {}, 'Kavi outbox')), h('div.body', {}, ...body)) as HTMLFormElement;
   const modal = openModal(form, { doing: '📤 the Kavi outbox', reading: true });

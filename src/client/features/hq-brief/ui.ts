@@ -1,11 +1,15 @@
 import './ui.css';
 import { ageLabel, digestHasLines, type Digest, type DigestBucket, type Decision } from '../../../shared/hq-brief';
 import { h, openModal } from '../../ui/dom';
+import { UNBLOCK_LOCKED_NOTE } from '../../../shared/privacy-view';
+import { unlockOwnerControl } from '../../ui/owner-unlock';
 
 export type StripHooks = {
   yes(block: Decision): void;
   no(block: Decision): void;
   talk(block: Decision): void;
+  /** After an Unlock owner from the strip. */
+  unlocked?(): void;
 };
 
 /** The loud strip. Color lives only in `.unblock-strip`. Rows are title, seat, age, and one action. */
@@ -13,11 +17,15 @@ export class Strip {
   private readonly el: HTMLElement;
   private readonly list: HTMLElement;
   private readonly head: HTMLElement;
+  private readonly lockRow: HTMLElement;
+  /** Not the owner: Yes/No are greyed and disabled, and the strip offers Unlock owner. */
+  locked = false;
 
   constructor(hud: HTMLElement, private readonly hooks: StripHooks) {
     this.head = h('div.unblock-head', {}, 'Needs a decision');
     this.list = h('div.unblock-list');
-    this.el = h('div.unblock-strip.hidden', { role: 'status', 'aria-live': 'polite' }, this.head, this.list);
+    this.lockRow = h('div.unblock-lock', { hidden: true });
+    this.el = h('div.unblock-strip.hidden', { role: 'status', 'aria-live': 'polite' }, this.head, this.list, this.lockRow);
     hud.append(this.el);
   }
 
@@ -29,6 +37,10 @@ export class Strip {
     }
     this.head.textContent = headline;
     this.list.replaceChildren(...blocks.map((b) => this.row(b, now)));
+    const needs = this.locked && blocks.some((b) => b.kind === 'yesno');
+    this.lockRow.hidden = !needs;
+    if (needs && !this.lockRow.childElementCount) this.lockRow.append(h('span.unblock-locknote', {}, UNBLOCK_LOCKED_NOTE), unlockOwnerControl(() => this.hooks.unlocked?.()));
+    if (!needs) this.lockRow.replaceChildren();
     const hpx = this.el.offsetHeight;
     document.getElementById('hud')?.style.setProperty('--unblock-h', `${hpx + 8}px`);
   }
@@ -37,8 +49,8 @@ export class Strip {
     const actions =
       b.kind === 'yesno'
         ? [
-            h('button.unblock-yes', { type: 'button', onclick: () => this.hooks.yes(b) }, 'Yes'),
-            h('button.unblock-no', { type: 'button', onclick: () => this.hooks.no(b) }, 'No'),
+            h('button.unblock-yes', { type: 'button', disabled: this.locked || undefined, title: this.locked ? UNBLOCK_LOCKED_NOTE : undefined, onclick: () => this.hooks.yes(b) }, 'Yes'),
+            h('button.unblock-no', { type: 'button', disabled: this.locked || undefined, title: this.locked ? UNBLOCK_LOCKED_NOTE : undefined, onclick: () => this.hooks.no(b) }, 'No'),
           ]
         : [h('button.unblock-talk', { type: 'button', onclick: () => this.hooks.talk(b) }, 'Open talk')];
     return h(

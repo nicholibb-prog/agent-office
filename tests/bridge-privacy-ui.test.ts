@@ -65,7 +65,7 @@ test('client wiring: talk passes the lock, 403 locks, roster opens the outbox', 
   const ui = readFileSync(path.join(root, 'ui.ts'), 'utf8');
   const css = readFileSync(path.join(root, 'ui.css'), 'utf8');
   assert.match(idx, /threadPrivateNote\(row\.seat, data\)/);
-  assert.match(idx, /res\.status === 403\) return panel\.lock/);
+  assert.match(idx, /res\.status === 403\) \{[\s\S]*?return panel\.lock/);
   assert.match(idx, /\/api\/bridge\/kavi-outbox/);
   assert.match(ui, /input\.disabled = true/);
   assert.match(css, /\.hq-private \{[^}]*color: #9aa0a6/);

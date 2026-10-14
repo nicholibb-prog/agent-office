@@ -1,4 +1,5 @@
 // Okkin's loft panel: one power control, a model dial, honest readouts. Text only (no innerHTML).
+import { unlockOwner } from '../../ui/owner-unlock.js';
 import { askPrivateNote } from '../../../shared/hq.js';
 import type { Ctx } from '../../core/context';
 import { h } from '../../ui/dom';
@@ -226,8 +227,9 @@ export function installOkkinLoft(ctx: Ctx) {
       return refresh();
     });
   };
-  const unlock = (passphrase: string) => void post('/api/bridge/okkin/owner/unlock', { passphrase }).then((r) => { // Unlocked shows in the Owner section itself; only a refusal needs a note.
-      note = r.status === 200 ? '' : `Unlock: ${r.body.error ?? 'refused'}`; return refresh(); });
+  // Same unlock as the crew talk, Kavi thread and outbox windows (ui/owner-unlock.ts).
+  const unlock = (passphrase: string) => void unlockOwner(passphrase).then((r) => { // Unlocked shows in the Owner section itself; only a refusal needs a note.
+      note = r.ok ? '' : `Unlock: ${r.error ?? 'refused'}`; return refresh(); });
   const lock = () => void post('/api/bridge/okkin/owner/lock', {}).then(() => { note = ''; return refresh(); });
   const toggle = () => {
     const sw = switchView(data, loadError, loadStatus);
