@@ -1,13 +1,13 @@
 // The owner unlock, shared: the same POST /api/bridge/okkin/owner/unlock Okkin's panel uses.
 // The passphrase is never stored in the page. On success the caller reloads its own window.
-import { UNLOCK_OWNER_LABEL } from '../../shared/privacy-view.js';
+import { SESSION_EXPIRED_NOTE, UNLOCK_OWNER_LABEL } from '../../shared/privacy-view.js';
 import { setOwner } from './owner-state.js';
 
 export async function unlockOwner(passphrase: string): Promise<{ ok: boolean; error?: string }> {
   const r = await fetch('/api/bridge/okkin/owner/unlock', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ passphrase }) });
   const body = (await r.json().catch(() => ({}))) as { error?: string };
   if (r.status === 200) setOwner(true);
-  return { ok: r.status === 200, error: r.status === 200 ? undefined : body.error ?? (r.status === 401 ? 'Session expired, sign in again' : 'refused') };
+  return { ok: r.status === 200, error: r.status === 200 ? undefined : r.status === 401 ? SESSION_EXPIRED_NOTE : body.error ?? 'refused' };
 }
 
 const CSS = `.own-unlock{display:flex;gap:6px;align-items:center;flex-wrap:wrap}

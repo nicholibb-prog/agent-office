@@ -2,6 +2,7 @@
 import { h, openModal } from '../../ui/dom.js';
 import { TALK_LOCKED_NOTE, outboxView } from '../../../shared/hq.js';
 import { friendlyOutbox } from '../../../shared/privacy-view.js';
+import { emptySeatLabel } from '../../../shared/hq.js';
 import { unlockOwnerControl } from '../../ui/owner-unlock.js';
 import './ui.css';
 
@@ -50,10 +51,10 @@ function chipLabel(chip: string) {
 export function seatLabel(row: { seat: string; name?: string }): string {
   const name = row.name?.trim();
   if (name) return name;
-  return row.seat === 'okkin' ? 'Okkin' : row.seat;
+  return row.seat === 'okkin' ? 'Okkin' : emptySeatLabel(row.seat);
 }
 
-/** A failed GET: carries the HTTP status so a 401 can say "Session expired, sign in again". */
+/** A failed GET: carries the HTTP status so a 401 can say "Session expired, unlock owner again". */
 export class HttpError extends Error {
   constructor(readonly status: number, text: string) {
     super(text);
@@ -83,7 +84,7 @@ export function openRoster(rows: SeatRow[], actions: { go: (row: SeatRow) => voi
         return h(
           'article.hq-row',
           {},
-          h('div.hq-who', {}, h('strong', {}, name), h('span.hq-chip', { 'data-chip': row.chip }, chipLabel(row.chip)), h('span.hq-age', {}, row.age)),
+          h('div.hq-who', {}, h('strong', {}, name), h('span.hq-chip', { 'data-chip': row.chip }, chipLabel(row.chip)), row.age && row.age !== '—' ? h('span.hq-age', {}, row.age) : null),
           h('p.hq-task', {}, row.task || 'No task yet'),
           model,
           pick,

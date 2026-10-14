@@ -131,7 +131,7 @@ export const hqRoutes = {
             index,
             deskId: map.okkin ?? null,
             chip: okkin.chip,
-            age: okkin.chip === 'offline' ? '—' : 'now',
+            age: okkin.chip === 'offline' ? '' : 'now',
             task: card.task,
             live: liveDesk(card),
             model: okkin.model,
