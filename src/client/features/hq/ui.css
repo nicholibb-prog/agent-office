@@ -111,3 +111,8 @@
 .hq-unlock:empty {
   display: none;
 }
+
+/* Friendly names keep their case in the outbox (the roster chip lowercases states). */
+.hq-outbox .hq-chip {
+  text-transform: none;
+}
