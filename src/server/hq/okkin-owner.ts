@@ -252,6 +252,8 @@ export function cookieOf(req: http.IncomingMessage, name = OWNER_COOKIE): string
 export function ownerCookieHeader(token: string, secure: boolean): string {
   return `${OWNER_COOKIE}=${token}; Path=/api; HttpOnly; SameSite=Strict; Max-Age=${OWNER_MAX_MS / 1000}${secure ? '; Secure' : ''}`;
 }
+/** Clears the pre-#64 owner cookie at its old path (Path=/api/bridge), so it can't linger. */
+export const clearLegacyOwnerCookieHeader = (secure: boolean) => `${OWNER_COOKIE}=; Path=/api/bridge; HttpOnly; SameSite=Strict; Max-Age=0${secure ? '; Secure' : ''}`;
 export const clearOwnerCookieHeader = (secure: boolean) => `${OWNER_COOKIE}=; Path=/api; HttpOnly; SameSite=Strict; Max-Age=0${secure ? '; Secure' : ''}`;
 
 export type OwnerState = 'not-set-up' | 'locked' | 'unlocked' | 'changed';

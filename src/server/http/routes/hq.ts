@@ -8,7 +8,7 @@ import { send } from '../util.js';
 import { BodyTooLarge, closeTooLarge, readJsonBody } from '../read-body.js';
 import type { Route } from '../router.js';
 import { bridgeCaller, bridgeGate, pushCrew, seatPrivateCaller, sessionOnly } from './bridge.js';
-import { botCredential, pinOwnerIntegrity, checkOwnerPassphrase, clearOwnerCookieHeader, cookieOf, endOwnerSession, logOkkinRefusal, noteUnlockFailure, okkinCaller, ownerCookieHeader, ownerFile, ownerState, startOwnerSession, unlockLocked } from '../../hq/okkin-owner.js';
+import { botCredential, pinOwnerIntegrity, checkOwnerPassphrase, clearLegacyOwnerCookieHeader, clearOwnerCookieHeader, cookieOf, endOwnerSession, logOkkinRefusal, noteUnlockFailure, okkinCaller, ownerCookieHeader, ownerFile, ownerState, startOwnerSession, unlockLocked } from '../../hq/okkin-owner.js';
 import { clientIp, isSecure } from '../util.js';
 import { activeSeatMap, CREW_SEATS, ageLabel, isSeatId, liveDesk, offlineQueuedNotice, rosterChip, seatDisplayName, type BridgeBeat, type SeatId } from '../../../shared/hq.js';
 import { loadHqLocal, readCrewFile } from '../../workers/crew.js';
@@ -398,7 +398,7 @@ export const hqRoutes = {
         return send(res, 403, { error: 'wrong passphrase' });
       }
       endOwnerSession(cookieOf(req));
-      return send(res, 200, { ok: true, ownerState: 'unlocked' }, { 'set-cookie': ownerCookieHeader(startOwnerSession(), isSecure(req, ctx.cfg as never)) });
+      return send(res, 200, { ok: true, ownerState: 'unlocked' }, { 'set-cookie': [ownerCookieHeader(startOwnerSession(), isSecure(req, ctx.cfg as never)), clearLegacyOwnerCookieHeader(isSecure(req, ctx.cfg as never))] });
     },
   },
   okkinOwnerLock: {
@@ -414,7 +414,7 @@ export const hqRoutes = {
       // Same checks as every state change here: a session, this office's Host and Origin, JSON.
       if (!sessionOnly(ctx, req, res)) return;
       endOwnerSession(cookieOf(req));
-      return send(res, 200, { ok: true, ownerState: 'locked' }, { 'set-cookie': clearOwnerCookieHeader(isSecure(req, ctx.cfg as never)) });
+      return send(res, 200, { ok: true, ownerState: 'locked' }, { 'set-cookie': [clearOwnerCookieHeader(isSecure(req, ctx.cfg as never)), clearLegacyOwnerCookieHeader(isSecure(req, ctx.cfg as never))] });
     },
   },
 } satisfies Record<string, Route>;

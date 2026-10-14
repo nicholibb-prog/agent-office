@@ -127,3 +127,50 @@ test('owner-only actions (Kavi send, unblock Yes/No): lock rule works with or wi
   // A successful unlock marks the browser as owner everywhere.
   assert.match(src('client', 'ui', 'owner-unlock.ts'), /if \(r\.status === 200\) setOwner\(true\)/);
 });
+
+test('withoutOfficeCookies strips the owner cookie with the office session cookies (relay never forwards it)', async () => {
+  const { withoutOfficeCookies } = await import('../src/server/auth.js');
+  const { OWNER_COOKIE } = await import('../src/server/hq/okkin-owner.js');
+  assert.equal(OWNER_COOKIE, 'ao_okkin_owner');
+  const out = withoutOfficeCookies(`theirs=1; ao_session=s; ao_session_4600=p; ${OWNER_COOKIE}=owner-token; other=2`);
+  assert.equal(out, 'theirs=1; other=2');
+  assert.ok(!String(out).includes('owner-token'));
+  assert.equal(withoutOfficeCookies(`${OWNER_COOKIE}=owner-token`), undefined);
+  assert.equal(withoutOfficeCookies(` ${OWNER_COOKIE}=x;ao_session=y`), undefined);
+  // The relay uses this one definition.
+  assert.match(src('server', 'relay.ts'), /withoutOfficeCookies\(req\.headers\.cookie\)/);
+});
+
+test('Lock and Unlock also clear the old Path=/api/bridge owner cookie (Secure when secure)', async () => {
+  const { clearLegacyOwnerCookieHeader } = await import('../src/server/hq/okkin-owner.js');
+  assert.equal(clearLegacyOwnerCookieHeader(false), 'ao_okkin_owner=; Path=/api/bridge; HttpOnly; SameSite=Strict; Max-Age=0');
+  assert.equal(clearLegacyOwnerCookieHeader(true), 'ao_okkin_owner=; Path=/api/bridge; HttpOnly; SameSite=Strict; Max-Age=0; Secure');
+  const { hqRoutes } = await import('../src/server/http/routes/hq.js');
+  const { testOwner, TEST_PASSPHRASE } = await import('./support/okkin-owner.js');
+  const { Readable } = await import('node:stream');
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  await testOwner();
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'ao-legacy-cookie-'));
+  const ctx = { cfg: { dataDir, port: 4600 }, auth: { fromRequest: () => ({}), fromAnyCookie: () => true, sessionFromAnyCookie: () => ({}) } } as never;
+  const call = async (route: { handle: Function }, body: unknown) => {
+    const raw = JSON.stringify(body);
+    const req = Readable.from([Buffer.from(raw)]) as never as import('node:http').IncomingMessage;
+    req.method = 'POST';
+    req.headers = { host: '127.0.0.1:4600', 'content-type': 'application/json', cookie: 'ao_session_4600=s' };
+    (req as { socket?: unknown }).socket = { remoteAddress: '127.0.0.1' };
+    let status = 0;
+    let headers: Record<string, unknown> = {};
+    const res = { writeHead(s: number, h: Record<string, unknown>) { status = s; headers = h ?? {}; }, end() {} } as never;
+    await route.handle(ctx, { req, res });
+    return { status, cookies: ([] as string[]).concat((headers['set-cookie'] as string[] | string | undefined) ?? []) };
+  };
+  const up = await call(hqRoutes.okkinOwnerUnlock, { passphrase: TEST_PASSPHRASE });
+  assert.equal(up.status, 200);
+  assert.ok(up.cookies.some((c) => /^ao_okkin_owner=[^;]+; Path=\/api;/.test(c)), 'new owner cookie at /api');
+  assert.ok(up.cookies.includes(clearLegacyOwnerCookieHeader(false)), 'unlock clears the old-path cookie');
+  const lock = await call(hqRoutes.okkinOwnerLock, {});
+  assert.equal(lock.status, 200);
+  assert.ok(lock.cookies.some((c) => /^ao_okkin_owner=; Path=\/api;.*Max-Age=0/.test(c)));
+  assert.ok(lock.cookies.includes(clearLegacyOwnerCookieHeader(false)), 'lock clears the old-path cookie');
+});

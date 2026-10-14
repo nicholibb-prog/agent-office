@@ -41,7 +41,11 @@ async function call(route: { handle: (...a: never[]) => unknown }, ctx: never, h
   let status = 0;
   let out = '';
   let hdrs: Record<string, string> = {};
-  const res = { writeHead(s: number, h?: Record<string, string>) { status = s; hdrs = h ?? {}; }, setHeader() {}, end(b?: unknown) { out = String(b ?? ''); } } as unknown as ServerResponse;
+  const res = { writeHead(s: number, h?: Record<string, string | string[]>) {
+    status = s;
+    // Lock/Unlock also send a clear for the old-path cookie; the first Set-Cookie is the owner cookie itself.
+    hdrs = Object.fromEntries(Object.entries(h ?? {}).map(([k, v]) => [k, Array.isArray(v) ? v[0]! : v]));
+  }, setHeader() {}, end(b?: unknown) { out = String(b ?? ''); } } as unknown as ServerResponse;
   const raw = body === undefined ? '' : JSON.stringify(body);
   const req = Readable.from([Buffer.from(raw)]) as unknown as IncomingMessage;
   req.method = body === undefined ? 'GET' : 'POST';
