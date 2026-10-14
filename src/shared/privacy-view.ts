@@ -57,3 +57,24 @@ export function kaviPrivateView<T extends { from: string }>(prevOwnerItems: read
   if (prevOwnerItems.length) return { items: [...prevOwnerItems, ...localSent], note: KAVI_PRIVATE_NOTE };
   return { items: [...localSent], note: localSent.length ? KAVI_SENT_PRIVATE_NOTE : KAVI_PRIVATE_NOTE };
 }
+
+/** Owner-only actions (Kavi sends, unblock Yes/No): the locked text, also what a 403 maps to. */
+export const KAVI_SEND_LOCKED_NOTE = 'Unlock owner to send';
+export const UNBLOCK_LOCKED_NOTE = 'Unlock owner to answer';
+
+/**
+ * Owner state from what the server said, whether or not the owner-only POST PR has landed:
+ * a 403 on an owner-only action, or `private: true` on an owner read, means not the owner;
+ * `private: false` means owner; anything else leaves it as it was (null = not known yet).
+ */
+export function ownerFrom(prev: boolean | null, r: { status?: number; private?: boolean | null }): boolean | null {
+  if (r.status === 403) return false;
+  if (r.private === true) return false;
+  if (r.private === false) return true;
+  return prev;
+}
+
+/** Locked only when we know the caller is not the owner; unknown stays usable (server decides). */
+export function ownerLocked(owner: boolean | null): boolean {
+  return owner === false;
+}

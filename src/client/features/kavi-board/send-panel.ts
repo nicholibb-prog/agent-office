@@ -5,7 +5,8 @@
  * and nothing is shown that has not arrived as a file.
  */
 import { FACE_SRC } from './picture';
-import { KAVI_SENT_PRIVATE_NOTE, PRIVATE_NOTE_GREY, kaviPrivateView, loadFailNote } from '../../../shared/privacy-view.js';
+import { KAVI_SEND_LOCKED_NOTE, KAVI_SENT_PRIVATE_NOTE, PRIVATE_NOTE_GREY, kaviPrivateView, loadFailNote, ownerLocked } from '../../../shared/privacy-view.js';
+import { currentOwner, noteOwner, onOwner, probeOwner } from '../../ui/owner-state.js';
 import { unlockOwnerControl } from '../../ui/owner-unlock.js';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -53,7 +54,8 @@ const CSS = `
 .kavi-compose textarea{flex:1;height:44px;resize:none;border-radius:12px;border:1px solid #445;background:#11161a;color:#eef;padding:8px;font:14px system-ui,sans-serif}
 .kavi-compose textarea::placeholder{font-family:system-ui,sans-serif;color:#8a97a3}
 .kavi-compose button{padding:8px 12px;border-radius:12px;border:0;background:#2f6f6a;color:#fff;cursor:pointer}
-.kavi-compose input[type=file]{display:none}`;
+.kavi-compose input[type=file]{display:none}
+.kavi-compose[data-locked=yes] textarea,.kavi-compose[data-locked=yes] button{background:#2a2f34;color:#7d868f;border-color:#3a4148;cursor:not-allowed}`;
 
 export interface KaviPc {
   open(): void;
@@ -107,6 +109,17 @@ export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): K
   let lastOwnerItems: Item[] = [];
   /** Messages this browser sent; shown only while the thread is private (the owner sees them in the thread). */
   const localSent: Item[] = [];
+  /** Not the owner: compose greyed and disabled with the lock text, plus Unlock owner. */
+  const applyLock = (owner: boolean | null) => {
+    const locked = ownerLocked(owner);
+    compose.dataset.locked = locked ? 'yes' : 'no';
+    text.disabled = locked;
+    sendBtn.disabled = locked;
+    attach.disabled = locked;
+    text.placeholder = locked ? KAVI_SEND_LOCKED_NOTE : 'Write to Kavi';
+    if (locked && !unlockSlot.childElementCount) unlockSlot.append(unlockOwnerControl(() => void load()));
+  };
+  onOwner(applyLock);
 
   const setStatus = (msg: string, err: boolean | 'priv' = false, withLink = false) => {
     status.className = 'kavi-status' + (err === 'priv' ? ' priv' : err ? ' err' : '');
@@ -137,6 +150,7 @@ export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): K
       .then((r) => (r.ok ? (r.json() as Promise<Thread>) : Promise.reject(Object.assign(new Error(String(r.status)), { status: r.status }))))
       .then((t) => {
         link = t.driveLink || "";
+        noteOwner({ private: t.private === true });
         if (t.private) {
           // Not the owner (or the owner's idle timeout): keep what was on screen, note in grey above, Unlock owner.
           const v = kaviPrivateView(lastOwnerItems, [...localFiles, ...localSent], true);
@@ -145,7 +159,7 @@ export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): K
           paint(v.items, lastOwnerItems.length > 0, false);
           return;
         }
-        unlockSlot.replaceChildren();
+        if (!ownerLocked(currentOwner())) unlockSlot.replaceChildren();
         if (t.state === 'unconfigured') setStatus('The Bridge folder is not set up on this machine yet.', true);
         else if (t.state === 'unreachable') setStatus('The Bridge folder is unreachable.', true);
         else if (status.classList.contains('priv')) setStatus('');
@@ -160,6 +174,11 @@ export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): K
         link = `https://drive.google.com/drive/folders/${encodeURIComponent(j.folderId)}`;
         setStatus("Sent to Kavi's Bridge folder.", false, true);
         return true;
+      }
+      if (r.status === 403) {
+        noteOwner({ status: 403 });
+        setStatus(KAVI_SEND_LOCKED_NOTE, 'priv');
+        return false;
       }
       setStatus(r.status === 401 ? loadFailNote(401, '') : `Not sent: ${j.error || r.status}`, true);
       return false;
@@ -186,6 +205,8 @@ export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): K
     back.hidden = false;
     pc.setAttribute('aria-modal', 'true');
     setStatus('');
+    applyLock(currentOwner());
+    void probeOwner();
     void load();
     timer = setInterval(() => void load(), POLL_MS);
     text.focus();

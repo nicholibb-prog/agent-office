@@ -100,3 +100,30 @@ test('owner cookie path reaches /api/kavi/thread as well as /api/bridge (browser
   assert.match(set, /HttpOnly; SameSite=Strict/);
   assert.equal(/Path=([^;]+)/.exec(clearOwnerCookieHeader(false))?.[1], cookiePath);
 });
+
+test('owner-only actions (Kavi send, unblock Yes/No): lock rule works with or without the server PR', async () => {
+  const { ownerFrom, ownerLocked, KAVI_SEND_LOCKED_NOTE, UNBLOCK_LOCKED_NOTE } = await import('../src/shared/privacy-view.js');
+  // Unknown is usable: without the server PR the POST still succeeds and nothing locks.
+  assert.equal(ownerLocked(null), false);
+  assert.equal(ownerFrom(null, { status: 200 }), null);
+  // An owner read says private:true → not owner → locked; private:false → owner.
+  assert.equal(ownerFrom(null, { private: true }), false);
+  assert.equal(ownerFrom(false, { private: false }), true);
+  // With the server PR, a 403 on the POST locks, whatever we thought before.
+  assert.equal(ownerFrom(true, { status: 403 }), false);
+  assert.equal(ownerLocked(false), true);
+  assert.equal(KAVI_SEND_LOCKED_NOTE, 'Unlock owner to send');
+  assert.equal(UNBLOCK_LOCKED_NOTE, 'Unlock owner to answer');
+  const panel = src('client', 'features', 'kavi-board', 'send-panel.ts');
+  assert.match(panel, /text\.disabled = locked;\s*sendBtn\.disabled = locked;\s*attach\.disabled = locked;/);
+  assert.match(panel, /r\.status === 403\) \{\s*noteOwner\(\{ status: 403 \}\);\s*setStatus\(KAVI_SEND_LOCKED_NOTE, 'priv'\)/);
+  assert.match(panel, /\.kavi-compose\[data-locked=yes\] textarea/);
+  const stripUi = src('client', 'features', 'hq-brief', 'ui.ts');
+  assert.match(stripUi, /disabled: this\.locked \|\| undefined/);
+  assert.match(stripUi, /unlockOwnerControl\(\(\) => this\.hooks\.unlocked\?\.\(\)\)/);
+  const brief = src('client', 'features', 'hq-brief', 'index.ts');
+  assert.match(brief, /res\.status === 403\) \{[\s\S]*?noteOwner\(\{ status: 403 \}\);\s*toast\(UNBLOCK_LOCKED_NOTE/);
+  assert.match(src('client', 'features', 'hq-brief', 'ui.css'), /\.unblock-strip button:disabled \{[^}]*cursor: not-allowed/);
+  // A successful unlock marks the browser as owner everywhere.
+  assert.match(src('client', 'ui', 'owner-unlock.ts'), /if \(r\.status === 200\) setOwner\(true\)/);
+});
