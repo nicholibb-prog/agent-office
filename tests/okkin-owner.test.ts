@@ -316,3 +316,46 @@ test('loft GET polling does not extend the owner idle timer', async () => {
   const req = { headers: { cookie } } as unknown as IncomingMessage;
   assert.equal(okkinCaller(req, { now: start + OWNER_IDLE_MS + 1 }).kind, 'owner-expired', 'polling never touched it');
 });
+
+test('privacy: the Okkin Ask thread (GET /api/bridge/talk?seat=okkin) is the owner\'s only; bot credentials get a logged 403, other sessions get []', async () => {
+  const { dataDir, seat, ready } = setup();
+  await ready;
+  const SECRET_PROMPT = 'owner private prompt 7f3a';
+  setOkkinFetchForTests(async (url: string) => {
+    if (url.endsWith('/api/chat')) return { ok: true, status: 200, text: async () => JSON.stringify({ message: { content: 'private reply 9c1e' }, eval_count: 10, eval_duration: 1e9 }) } as never;
+    if (url.endsWith('/api/tags') || url.endsWith('/api/ps')) return { ok: true, status: 200, text: async () => JSON.stringify({ models: [{ name: 'demo:1b' }] }) } as never;
+    return { ok: false, status: 404, text: async () => '' } as never;
+  });
+  const saved = { m: process.env.OKKIN_MODEL, a: process.env.OKKIN_MODEL_ALLOW };
+  process.env.OKKIN_MODEL = 'demo:1b';
+  process.env.OKKIN_MODEL_ALLOW = 'demo:1b';
+  try {
+    const cookie = cookieFrom((await unlock(dataDir, PASS)).headers);
+    fresh();
+    const asked = await call(hqRoutes.talk, office(dataDir), { cookie }, { seat: 'okkin', text: SECRET_PROMPT });
+    assert.equal(asked.status, 200, JSON.stringify(asked.json));
+    const read = (ctx: never, h: Record<string, string>) => call(hqRoutes.talkGet, ctx, h, undefined, '/api/bridge/talk?seat=okkin');
+    const leaks = (j: unknown) => JSON.stringify(j).includes(SECRET_PROMPT) || JSON.stringify(j).includes('private reply 9c1e');
+    for (const [who, h] of [['bridge token', { 'x-bridge-token': BRIDGE }], ['seat token', { 'x-bridge-token': seat }], ['Bearer', { authorization: `Bearer ${BRIDGE}` }], ['pool caller', { 'x-pool-caller': POOL }], ['bridge token + owner cookie', { 'x-bridge-token': BRIDGE, cookie }]] as const) {
+      const r = await read(office(dataDir), { ...h });
+      assert.equal(r.status, 403, who);
+      assert.ok(!leaks(r.json), `${who}: no text`);
+    }
+    for (const [who, ctx] of [['shared-password session', office(dataDir)], ['non-owner account', ctxOf(dataDir, { account: { id: 'acct-2', role: 'member' } })]] as const) {
+      const r = await read(ctx as never, {});
+      assert.equal(r.status, 200, who);
+      assert.deepEqual((r.json as { messages?: unknown[] }).messages, [], who);
+      assert.ok(!leaks(r.json), who);
+    }
+    const mine = await read(office(dataDir), { cookie });
+    assert.equal(mine.status, 200);
+    assert.ok(leaks(mine.json), 'the owner sees the thread');
+    assert.match(readFileSync(path.join(dataDir, OKKIN_REFUSALS_LOG), 'utf8'), /GET \/api\/bridge\/talk \(okkin\)/);
+    assert.ok(!readFileSync(path.join(dataDir, OKKIN_REFUSALS_LOG), 'utf8').includes(SECRET_PROMPT), 'the log never holds Ask text');
+  } finally {
+    process.env.OKKIN_MODEL = saved.m;
+    process.env.OKKIN_MODEL_ALLOW = saved.a;
+    if (saved.m === undefined) delete process.env.OKKIN_MODEL;
+    if (saved.a === undefined) delete process.env.OKKIN_MODEL_ALLOW;
+  }
+});
