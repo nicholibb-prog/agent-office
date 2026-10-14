@@ -8,7 +8,10 @@ export interface RouterFlags {
   openrouter: boolean;
   /** Name of the env var / secret holding the OpenRouter key (never the key itself). */
   openrouterKeyEnv: string;
-  /** (b) C1: secret tasks may go to the Grok crew as a trusted exception (the owner's call). */
+  /**
+   * (b) C1: a secret-labelled task may go to the Grok crew (the owner's call). This relaxes the label
+   * gate only: the pre-send scan still blocks every hit, for the Grok crew too.
+   */
   c1SecretToGrokCrew: boolean;
   /** (c) C6: the owner has supplied student names / Drive IDs into the ProArt store, so student-sourced tasks may route (to Okkin only). */
   c6StudentDrive: boolean;

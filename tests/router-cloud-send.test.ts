@@ -7,6 +7,10 @@ import { readRouterFlags, providerEnabled } from '../src/server/router/flags.js'
 import type { ProviderFetch } from '../src/server/router/provider-clients.js';
 import type { WirePayload } from '../src/server/router/types.js';
 import { FAKE_DRIVE_ID, flagsOff, j, scanCtx } from './support/router-fixtures.js';
+import { emptyDeny, loadDenyHashes, sha256 } from '../src/server/router/presend-scan.js';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 function stub() {
   const calls: { url: string; body: string; auth: string }[] = [];
@@ -107,22 +111,56 @@ test('flag (a) OpenRouter credit route: default OFF blocks it; ON needs the key 
   assert.equal(s.calls.length, 1);
 });
 
-test('flag (b) C1: OFF blocks secret tasks to the Grok crew; ON is the scanned, logged trusted exception', async () => {
+test('flag (b) C1: OFF refuses secret tasks to the Grok crew; ON relaxes the label only, the scan still blocks', async () => {
   assert.equal(readRouterFlags({}).c1SecretToGrokCrew, false);
   const sent: string[] = [];
   const crewSend = async (_to: string, w: string) => (sent.push(w), { text: 'ok' });
-  const secret = { ...clean, prompt: j('rotate ', 'gh', 'p_', 'A1b2C3d4E5f6G7h8J9k0Z') };
-  await assert.rejects(cloudSend('grok-crew', secret, { label: 'secret', flags: flagsOff, scan: scanCtx(), env, crewSend }), SendRefused);
+  const clean2 = { ...clean, prompt: 'Rotate the staging certificate per the runbook.' };
+  await assert.rejects(cloudSend('grok-crew', clean2, { label: 'secret', flags: flagsOff, scan: scanCtx(), env, crewSend }), SendRefused);
   assert.equal(sent.length, 0);
-  const hits: string[] = [];
   const flags = readRouterFlags({ ROUTER_C1_SECRET_TO_GROK_CREW: '1' });
-  await cloudSend('grok-crew', secret, { label: 'secret', flags, scan: scanCtx(), env, crewSend, onScan: (h) => hits.push(...h.map((x) => x.type)) });
+  // A key, a password and a private key are each blocked for the Grok crew under C1=1.
+  for (const prompt of [j('rotate ', 'gh', 'p_', 'A1b2C3d4E5f6G7h8J9k0Z'), j('pass', 'word: ', 'hunter2x'), j('-----BEGIN ', 'OPENSSH PRIVATE', ' KEY-----')]) {
+    const hits: string[] = [];
+    await assert.rejects(cloudSend('grok-crew', { ...clean, prompt }, { label: 'secret', flags, scan: scanCtx(), env, crewSend, onScan: (h) => hits.push(...h.map((x) => x.type)) }), ScanBlocked);
+    assert.ok(hits.length > 0);
+  }
+  assert.equal(sent.length, 0);
+  // A secret-labelled task with a clean payload does pass the label gate under C1.
+  await cloudSend('grok-crew', clean2, { label: 'secret', flags, scan: scanCtx(), env, crewSend });
   assert.equal(sent.length, 1);
-  assert.ok(hits.includes('KEY_PATTERN'), 'still scanned and logged by type');
-  // C1 on never lets a secret go to ForgeL/PolishL, and a public task to the crew is still scan-blocked.
-  await assert.rejects(cloudSend('forgel', secret, { label: 'secret', flags, scan: scanCtx(), env, crewSend }), SendRefused);
-  await assert.rejects(cloudSend('grok-crew', secret, { label: 'public', flags, scan: scanCtx(), env, crewSend }), ScanBlocked);
+  // C1 never covers ForgeL/PolishL or DeepSeek.
+  await assert.rejects(cloudSend('forgel', clean2, { label: 'secret', flags, scan: scanCtx(), env, crewSend }), SendRefused);
   assert.equal(sent.length, 1);
+});
+
+test('deny store unset, unreadable, malformed, or without owner_name hashes: every cloud send is refused', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ao-deny-'));
+  try {
+    const empty = path.join(dir, 'empty.json');
+    writeFileSync(empty, JSON.stringify({ owner_name: [], drive_id: [sha256('x')] }));
+    const good = path.join(dir, 'good.json');
+    writeFileSync(good, JSON.stringify({ owner_name: [sha256('fake-name')] }));
+    const bad = path.join(dir, 'bad.json');
+    writeFileSync(bad, '{"owner_name": ["nope"]}');
+    assert.equal(loadDenyHashes(undefined), null, 'unset');
+    assert.equal(loadDenyHashes(path.join(dir, 'missing.json')), null, 'unreadable');
+    assert.equal(loadDenyHashes(bad), null, 'malformed');
+    assert.equal(loadDenyHashes(empty), null, 'owner_name empty');
+    assert.ok(loadDenyHashes(good));
+    for (const deny of [null, emptyDeny(), loadDenyHashes(empty)]) {
+      const s = stub();
+      const scan = deny ? { ...scanCtx(), deny } : null;
+      for (const p of ['groq', 'deepseek', 'nim'] as const) {
+        await assert.rejects(cloudSend(p, clean, { label: 'public', flags: flagsOff, scan, env, fetchImpl: s.fetchImpl }), (e) => (e as SendRefused).reason === 'disabled');
+      }
+      const crew: string[] = [];
+      await assert.rejects(cloudSend('forgel', clean, { label: 'public', flags: flagsOff, scan, env, crewSend: async (_t, w) => (crew.push(w), { text: '' }) }), SendRefused);
+      assert.equal(s.calls.length + crew.length, 0);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('crew escalations are cloud: scanned the same way, refused when no crew transport exists', async () => {

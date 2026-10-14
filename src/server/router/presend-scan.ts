@@ -61,9 +61,21 @@ export function parseDenyHashes(json: string): DenyHashes {
   }
   return out;
 }
-export function loadDenyHashes(file: string | undefined): DenyHashes {
-  if (!file) return emptyDeny();
-  return parseDenyHashes(readFileSync(file, 'utf8'));
+/** A deny store cloud sends may rely on: it must hold at least one owner_name hash (Dan, #66). */
+export const denyStoreUsable = (d: DenyHashes | null | undefined): d is DenyHashes => !!d && d.owner_name.size > 0;
+
+/**
+ * Loads PRESEND_DENY_HASHES_FILE. Unset, unreadable, malformed, or no owner_name hashes: null, and
+ * every cloud send is refused (fail closed).
+ */
+export function loadDenyHashes(file: string | undefined): DenyHashes | null {
+  if (!file) return null;
+  try {
+    const d = parseDenyHashes(readFileSync(file, 'utf8'));
+    return denyStoreUsable(d) ? d : null;
+  } catch {
+    return null;
+  }
 }
 export function parseAllowList(json: string): AllowList {
   const raw = JSON.parse(json) as { entries?: { sha256?: unknown; reason?: unknown; owner?: unknown }[]; domains?: unknown };
