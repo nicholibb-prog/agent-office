@@ -210,7 +210,7 @@ export const hqRoutes = {
         const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
         const owner = okkinCaller(req, { touch: false }).kind === 'owner';
         const okkin = okkinClient(await probeOkkin(envOf(process.env), hq, undefined, { dataDir: ctx.cfg.dataDir }));
-        return send(res, 200, { seat, name: seatDisplayName('okkin', hq.names), messages: owner ? okkinThread() : [], okkin, chip: okkin.chip });
+        return send(res, 200, { seat, name: seatDisplayName('okkin', hq.names), messages: owner ? okkinThread() : [], private: !owner, okkin, chip: okkin.chip });
       }
       if (!bridgeGate(ctx, req, res)) return;
       if (!isSeatId(seat)) return send(res, 400, { error: 'unknown seat' });

@@ -76,7 +76,7 @@ test('the plinth is stepped like a temple base: two steps and a die, with fluted
   const named = (re: RegExp) => { let n = 0; group.traverse((o) => { if (re.test(o.name)) n++; }); return n; };
   assert.equal(named(/^okkin-pedestal-step-/), 2);
   assert.equal(named(/^okkin-pedestal-die$/), 1);
-  assert.ok(named(/^okkin-pilaster$/) >= 3 && named(/^okkin-flute$/) >= 9);
+  assert.ok(named(/^okkin-pilaster$/) === 2 && named(/^okkin-flute$/) >= 6, "pilasters at both ends only, none across the inscription");
   assert.ok(named(/^okkin-pedestal-gold$/) >= 4);
   assert.ok(PEDESTAL_STEPS[1].inset > PEDESTAL_STEPS[0].inset && PEDESTAL_DIE.inset > PEDESTAL_STEPS[1].inset, 'each tier sets back');
   const rise = PEDESTAL_STEPS.reduce((a, s) => a + s.rise, 0);

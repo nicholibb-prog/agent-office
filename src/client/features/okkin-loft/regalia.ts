@@ -241,9 +241,8 @@ export function buildPedestal(): { group: THREE.Group; inscription: string } {
     c.direction = 'rtl';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    // Whole word group on the open end of the face (left of the console as you face it), never clipped.
-    const tw = typeof c.measureText === 'function' ? c.measureText(inscription).width || 460 : 460;
-    const x = 28 + tw / 2;
+    // One panel: the whole inscription centred on the face, words an even gap apart (engravingText).
+    const x = cw / 2;
     c.fillStyle = 'rgba(255,255,255,.55)';
     c.fillText(inscription, x + 2, ch / 2 + 3);
     c.fillStyle = 'rgba(40,34,26,.85)';
@@ -285,9 +284,9 @@ export function buildPedestal(): { group: THREE.Group; inscription: string } {
   face.rotation.y = -Math.PI / 2;
   face.position.set(dx0 - 0.003, (y + dieTop) / 2, cz);
   g.add(face);
-  // Fluted pilasters: at both ends of the face and framing the engraving.
+  // Fluted pilasters at both ends only: the face is one panel, nothing cuts through the inscription.
   const fl = new THREE.CylinderGeometry(0.014, 0.014, dieTop - y - 0.02, 8);
-  const pz = [dz0 + 0.07, dz0 + (dz1 - dz0) * 0.55, dz1 - 0.07];
+  const pz = [dz0 + 0.07, dz1 - 0.07];
   for (const z of pz) {
     blk(dx0 - 0.03, dx0, z - 0.06, z + 0.06, y, dieTop, stoneLight, 'okkin-pilaster');
     for (const k of [-1, 0, 1]) {

@@ -1,4 +1,5 @@
 // Okkin's loft panel: one power control, a model dial, honest readouts. Text only (no innerHTML).
+import { askPrivateNote } from '../../../shared/hq.js';
 import type { Ctx } from '../../core/context';
 import { h } from '../../ui/dom';
 import { aside, hintTitle, key, onE } from '../../core/hint';
@@ -34,7 +35,8 @@ const NEAR = 3.8;
 
 /** Ask Okkin: a chat box only. Text nodes only (escaped), 500-char cap, memory only on the server. */
 function askBox(on: boolean, owner: boolean, lines: { who: string; text: string }[], ask?: (text: string) => void, say?: (text: string) => void): HTMLElement {
-  const log = h('div.okl-log', { role: 'log', 'aria-live': 'polite', 'aria-label': 'Ask Okkin replies' }, ...lines.slice(-6).map((l) => h('p', {}, h('strong', {}, `${l.who} `), l.text)));
+  const note = askPrivateNote({ messages: lines, private: !owner });
+  const log = h('div.okl-log', { role: 'log', 'aria-live': 'polite', 'aria-label': 'Ask Okkin replies' }, note ? h('p.okl-muted.okl-private', { role: 'note' }, note) : null, ...lines.slice(-6).map((l) => h('p', {}, h('strong', {}, `${l.who} `), l.text)));
   const v = askView(on, owner);
   const input = h('input.okl-input', { type: 'text', maxlength: 500, 'aria-label': 'Ask Okkin', placeholder: v.placeholder, ...(v.hint ? { 'aria-describedby': 'okl-ask-hint' } : {}) }) as HTMLInputElement;
   // Off, Ask stays focusable and clickable and says why it can't go (never a silent grey).
