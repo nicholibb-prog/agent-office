@@ -5,7 +5,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import type { Ctx } from '../../office/context.js';
 import type { ChatLine } from '../../../shared/protocol.js';
-import { activeSeatMap, isSeatId } from '../../../shared/hq.js';
+import { activeSeatMap, isSeatId, outboxItemCrewSeat } from '../../../shared/hq.js';
 import { send } from '../util.js';
 import { seatForToken } from '../../seat-tokens.js';
 import { BodyTooLarge, closeTooLarge, readJsonBody } from '../read-body.js';
@@ -499,7 +499,9 @@ export const bridgeRoutes = {
         if (!existsSync(file)) return send(res, 200, { items: [], private: false });
         const raw = JSON.parse(readFileSync(file, 'utf8')) as { items?: { seat?: string }[]; [k: string]: unknown };
         const all = Array.isArray(raw.items) ? raw.items : [];
-        const items = caller.kind === 'owner' ? all : all.filter((it) => it && it.seat === caller.seat);
+        // Seat-provider turns carry their desk/meeting id; the explicit server map names its crew seat.
+        const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
+        const items = caller.kind === 'owner' ? all : all.filter((it) => it && outboxItemCrewSeat(hq, it.seat) === caller.seat);
         return send(res, 200, { ...raw, items, private: false });
       } catch {
         return send(res, 500, { error: OFFICE_ERROR });

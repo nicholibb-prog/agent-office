@@ -206,3 +206,51 @@ test('POST /api/bridge/talk (crew seat): owner only; tokens and plain sessions r
   });
   rmSync(dataDir, { recursive: true, force: true });
 });
+
+test('kavi-outbox: seat-provider turns reach their crew seat only through the explicit server map', async () => {
+  const { dataDir, tokA, tokB } = await setup();
+  const { writeFileSync } = await import('node:fs');
+  // Explicit server-side config: seat-1 sits at desk-1 and owns the meeting room; seat-2 at desk-2.
+  // crewDesks is on, but its seat-N → desk-N default is never used for outbox scoping.
+  writeFileSync(path.join(dataDir, 'hq-local.json'), JSON.stringify({
+    crewDesks: true,
+    seats: { 'seat-1': 'desk-1', 'seat-2': 'desk-2' },
+    outboxSeats: { 'meeting-room': 'seat-1', 'desk-9': 'not-a-seat', 'bogus': 'seat-2' },
+  }));
+  const board = new SeatBoard(dataDir, { detect: () => ({}) as never });
+  for (const [id, text] of [['desk-1', 'FAKE A desk turn'], ['meeting-room', 'FAKE A meeting turn'], ['desk-2', 'FAKE B desk turn'], ['desk-3', 'FAKE unmapped desk turn'], ['desk-9', 'FAKE bad-map desk turn']] as const) {
+    assert.equal(board.queue('floor-1', id, text), true);
+  }
+  const { cookie } = await testOwner();
+  const owner = cookie();
+  await withServer(dataDir, async (port) => {
+    const texts = async (h: Record<string, string>) =>
+      ((await call(port, 'GET', '/api/bridge/kavi-outbox', h)).json.items as { text: string }[]).map((i) => i.text);
+    const a = await texts(tok(tokA));
+    // Crew A sees its own desk and meeting turns (plus its own bridge item), and nothing of B's.
+    assert.deepEqual(a, [A_TEXT, 'FAKE A desk turn', 'FAKE A meeting turn']);
+    const b = await texts(tok(tokB));
+    assert.deepEqual(b, [B_TEXT, 'FAKE B desk turn']);
+    // Unmapped / badly mapped desk turns: no crew token sees them (fail closed).
+    for (const t of [...a, ...b]) assert.ok(!/unmapped|bad-map/.test(t));
+    const tokC = issueSeatToken(dataDir, 'seat-3');
+    assert.deepEqual(await texts(tok(tokC)), []); // desk-3 via the crewDesks default is NOT honoured
+    // The owner sees everything.
+    const all = await texts({ cookie: `ao=session; ${owner}` });
+    assert.equal(all.length, 8);
+    assert.ok(all.includes('FAKE unmapped desk turn') && all.includes('FAKE bad-map desk turn'));
+  });
+  rmSync(dataDir, { recursive: true, force: true });
+});
+
+test('kavi-outbox: with no hq-local.json at all, every seat-provider turn is owner-only', async () => {
+  const { dataDir, tokA } = await setup();
+  const board = new SeatBoard(dataDir, { detect: () => ({}) as never });
+  board.queue('floor-1', 'desk-1', 'FAKE no-config desk turn');
+  board.queue('floor-1', 'meeting-room', 'FAKE no-config meeting turn');
+  await withServer(dataDir, async (port) => {
+    const got = await call(port, 'GET', '/api/bridge/kavi-outbox', tok(tokA));
+    assert.deepEqual(got.json.items.map((i: { text: string }) => i.text), [A_TEXT]);
+  });
+  rmSync(dataDir, { recursive: true, force: true });
+});

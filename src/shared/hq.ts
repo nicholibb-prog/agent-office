@@ -32,6 +32,11 @@ export type HqLocal = {
    * (`desk-1` → `seat-a`). Entries keyed by a crew seat id are left to `seats`.
    */
   deskSeats: Record<string, string>;
+  /**
+   * Explicit server-side map: seat-provider seat id (`meeting-room` or `desk-N`) → crew seat.
+   * Only from gitignored hq-local.json `outboxSeats`; never derived from client data.
+   */
+  outboxSeats?: Record<string, SeatId>;
   ollamaUrl?: string;
   okkinModel?: string;
   okkinAllow?: string[];
@@ -49,6 +54,7 @@ export const EMPTY_HQ: HqLocal = {
   crewDesks: false,
   seats: {},
   deskSeats: {},
+  outboxSeats: {},
 };
 
 export function isSeatId(value: string): value is SeatId {
@@ -297,4 +303,33 @@ export const ASK_PRIVATE_NOTE = 'Ask history is private — unlock owner to see 
 /** The private note only for a non-owner's empty thread; never for an owner whose thread is just empty. */
 export function askPrivateNote(r: { messages?: readonly unknown[] | null; private?: boolean | null } | null | undefined): string | null {
   return r?.private === true && !(r.messages?.length) ? ASK_PRIVATE_NOTE : null;
+}
+
+const PROVIDER_SEAT_ID = /^(meeting-room|desk-[1-9][0-9]?)$/;
+
+/** `outboxSeats` from hq-local.json: provider seat id → crew seat. Anything else is dropped. */
+export function sanitizeOutboxSeats(raw: unknown): Record<string, SeatId> {
+  const out: Record<string, SeatId> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const key = k.trim();
+    if (!PROVIDER_SEAT_ID.test(key) || typeof v !== 'string' || !isSeatId(v.trim())) continue;
+    out[key] = v.trim() as SeatId;
+  }
+  return out;
+}
+
+/**
+ * Which crew seat owns a seat-provider outbox item. Only explicit server config counts:
+ * hq-local.json `seats` (crew → desk, inverted) and `outboxSeats` (provider id → crew).
+ * The crewDesks default (seat-N → desk-N) is NOT used. When the two maps disagree, or an id is
+ * unmapped, the answer is null: the item stays owner-only (fail closed).
+ */
+export function outboxItemCrewSeat(hq: HqLocal, itemSeat: string | undefined): SeatId | null {
+  if (!itemSeat) return null;
+  if (isSeatId(itemSeat)) return itemSeat;
+  const fromDesk = (Object.entries(hq.seats || {}) as [SeatId, string][]).filter(([, d]) => d === itemSeat).map(([c]) => c);
+  const fromMap = hq.outboxSeats?.[itemSeat];
+  const all = new Set<SeatId>([...fromDesk, ...(fromMap ? [fromMap] : [])]);
+  return all.size === 1 ? [...all][0]! : null;
 }

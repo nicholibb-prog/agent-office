@@ -5,6 +5,7 @@ import { newTracker } from '../usage.js';
 import type { WorkerInfo, WorkerStatus } from '../../shared/protocol.js';
 import {
   EMPTY_HQ,
+  sanitizeOutboxSeats,
   OKKIN_SEAT,
   WORKING_LEASE_MS,
   activeSeatMap,
@@ -70,6 +71,7 @@ export function loadHqLocal(statePath: string): HqLocal {
       crewDesks: raw.crewDesks === true,
       seats: sanitizeSeatMap(raw.seats),
       deskSeats: deskSeatMap(raw.seats),
+      outboxSeats: sanitizeOutboxSeats((raw as { outboxSeats?: unknown }).outboxSeats),
       ollamaUrl: typeof raw.ollamaUrl === 'string' ? raw.ollamaUrl : undefined,
       okkinModel: typeof raw.okkinModel === 'string' ? raw.okkinModel : undefined,
       okkinAllow: Array.isArray(raw.okkinAllow) ? raw.okkinAllow.map(String) : undefined,
