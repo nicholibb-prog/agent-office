@@ -1,7 +1,7 @@
 // Local crew: a fixed roster, a talk thread, a desk card, and idle-only movement.
 import type * as THREE from 'three';
 import { DESK_BY_ID } from '../../../shared/layout.js';
-import { chooseAgency } from '../../../shared/hq.js';
+import { askPrivateNote, chooseAgency } from '../../../shared/hq.js';
 import type { Ctx } from '../../core/context';
 import { modalOpen } from '../../ui/dom';
 import { store } from '../../state';
@@ -50,9 +50,11 @@ export function installHq(ctx: Ctx, deps: HqDeps) {
     let lines: TalkLine[] = [];
     let name = seatLabel(row);
     let chip = row.chip;
+    let note: string | null = null;
     try {
-      const data = await getJson<{ messages: TalkLine[]; name?: string; chip?: string; okkin?: { chip: string } }>(`/api/bridge/talk?seat=${encodeURIComponent(row.seat)}`);
+      const data = await getJson<{ messages: TalkLine[]; private?: boolean; name?: string; chip?: string; okkin?: { chip: string } }>(`/api/bridge/talk?seat=${encodeURIComponent(row.seat)}`);
       lines = data.messages;
+      note = askPrivateNote(data);
       if (data.name) name = data.name;
       chip = data.okkin?.chip ?? data.chip ?? chip;
     } catch {
@@ -65,7 +67,7 @@ export function installHq(ctx: Ctx, deps: HqDeps) {
         panel.paint(res.body.messages ?? lines, nextChip);
         void loadRoster().catch(() => undefined);
       });
-    }, () => talking.delete(row.seat), name);
+    }, () => talking.delete(row.seat), name, note);
     panel.focus();
   }
 

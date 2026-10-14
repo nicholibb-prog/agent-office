@@ -109,10 +109,10 @@ the input. Success sets a separate owner cookie (`ao_okkin_owner`: HttpOnly, Sam
 Secure on https), held in server memory only: 15 minutes idle, 1 hour at most; Lock, signing out of the
 office, or a restart ends it. Power on/off also needs an unlock in the last 5 minutes.
 
-**Who may unlock.** Anyone in an office session (the shared office password is enough; the owner does
-not need an account) who types the right owner passphrase. The approvers list (`work-pool-policy.json`)
-is deliberately not consulted: that check was dropped on purpose, so the passphrase is the one thing
-that makes the owner, and a session alone never is. Unlocking is rate-limited per address (5 failures per
+**Who may unlock.** It takes an office session (the shared office password is enough; the owner does
+not need an account) PLUS the correct owner passphrase. An office-password session is never the owner
+by itself: a session alone never is. The approvers list (`work-pool-policy.json`) is deliberately not
+consulted: that check was dropped on purpose, so the passphrase is the one thing that makes the owner. Unlocking is rate-limited per address (5 failures per
 15 minutes) and globally (20 failures per 15 minutes across all addresses), each followed by a 15-minute
 lockout; the limiter prunes expired entries and holds at most 1,000 addresses. Lock (`POST
 /api/bridge/okkin/owner/lock`) has the same checks as the other controls (session, Host, Origin, JSON);

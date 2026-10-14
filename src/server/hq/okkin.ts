@@ -25,6 +25,15 @@ function readThread(_dataDir: string, _seat: string): TalkMessage[] {
 function appendOutbox(..._args: unknown[]): void {
   /* Okkin's talk is not relayed off the box. */
 }
+/** Okkin's latest reply in the Ask thread, capped at 400 characters, for the loft's CRT. Null if none. */
+export function latestOkkinOutput(): { text: string; at: number; model: string | null } | null {
+  for (let i = memThread.length - 1; i >= 0; i--) {
+    const m = memThread[i]!;
+    if (m.role === 'bot' && m.text.trim()) return { text: m.text.slice(-400), at: m.at, model: lastSpeed?.model ?? null };
+  }
+  return null;
+}
+
 export function okkinThread(): TalkMessage[] {
   return [...memThread];
 }

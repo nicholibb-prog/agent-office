@@ -1,9 +1,10 @@
 // Okkin's loft panel: one power control, a model dial, honest readouts. Text only (no innerHTML).
+import { askPrivateNote } from '../../../shared/hq.js';
 import type { Ctx } from '../../core/context';
 import { h } from '../../ui/dom';
 import { aside, hintTitle, key, onE } from '../../core/hint';
 import { OKKIN_LOFT_SPOT, modelShortName } from '../../../shared/okkin-loft';
-import { OWNER_ONLY, POWER_ON_FIRST, benchText, chosenIndex, stopsView, switchView, type StopView } from './model';
+import { askView, crtView, holoData, type CrtSource, benchText, chosenIndex, stopsView, switchView, type StopView } from './model';
 
 /** A model's short name, with the full tag on hover and for screen readers. */
 const tagEl = (sel: 'span.okl-tag', tag: string, extra = '') => h(sel, { title: tag, 'aria-label': `${tag}${extra}` }, `${modelShortName(tag)}${extra}`);
@@ -25,19 +26,25 @@ type Loft = {
   pickMeasured?: boolean | null;
   mock?: boolean;
   owner?: boolean;
+  /** Okkin's latest output (the Ask thread), for the CRT. */
+  crt?: CrtSource;
   ownerState?: 'not-set-up' | 'locked' | 'unlocked' | 'changed';
 };
 
-const NEAR = 3;
+const NEAR = 3.8;
 
 /** Ask Okkin: a chat box only. Text nodes only (escaped), 500-char cap, memory only on the server. */
 function askBox(on: boolean, owner: boolean, lines: { who: string; text: string }[], ask?: (text: string) => void, say?: (text: string) => void): HTMLElement {
-  const log = h('div.okl-log', { role: 'log', 'aria-live': 'polite', 'aria-label': 'Ask Okkin replies' }, ...lines.slice(-6).map((l) => h('p', {}, h('strong', {}, `${l.who} `), l.text)));
-  const input = h('input.okl-input', { type: 'text', maxlength: 500, 'aria-label': 'Ask Okkin', placeholder: !owner ? OWNER_ONLY : on ? 'Ask Okkin' : POWER_ON_FIRST }) as HTMLInputElement;
+  const note = askPrivateNote({ messages: lines, private: !owner });
+  const log = h('div.okl-log', { role: 'log', 'aria-live': 'polite', 'aria-label': 'Ask Okkin replies' }, note ? h('p.okl-muted.okl-private', { role: 'note' }, note) : null, ...lines.slice(-6).map((l) => h('p', {}, h('strong', {}, `${l.who} `), l.text)));
+  const v = askView(on, owner);
+  const input = h('input.okl-input', { type: 'text', maxlength: 500, 'aria-label': 'Ask Okkin', placeholder: v.placeholder, ...(v.hint ? { 'aria-describedby': 'okl-ask-hint' } : {}) }) as HTMLInputElement;
   // Off, Ask stays focusable and clickable and says why it can't go (never a silent grey).
   const form = h('form.okl-ask', { 'data-off': on && owner ? 'no' : 'yes' }, input, h('button.okl-btn', { type: 'submit', 'aria-disabled': on && owner ? 'false' : 'true', 'data-off': on ? 'no' : 'yes' }, 'Ask'));
-  form.addEventListener('submit', (e) => { e.preventDefault(); if (!owner) { say?.(`Ask: ${OWNER_ONLY}`); return; } if (!on) { say?.(`Ask: ${POWER_ON_FIRST}`); return; } const t = input.value.trim().slice(0, 500); if (t && ask) { input.value = ''; ask(t); } });
-  return h('section', {}, h('h3', {}, 'Ask'), log, form);
+  // The hint is already on screen once (below the box); a refused submit just keeps focus there.
+  form.addEventListener('submit', (e) => { e.preventDefault(); if (v.hint) { input.focus(); return; } const t = input.value.trim().slice(0, 500); if (t && ask) { input.value = ''; ask(t); } });
+  void say;
+  return h('section', {}, h('h3', {}, 'Ask'), log, form, v.hint ? h('p.okl-muted.okl-ask-hint', { id: 'okl-ask-hint' }, v.hint) : null);
 }
 
 /** Unlock owner: the owner passphrase (never stored in the page), or Lock when unlocked. */
@@ -160,7 +167,7 @@ export function renderPanel(root: HTMLElement, d: Loft | null, act: { unlock?(pa
   close.addEventListener('click', act.close);
   const parts: (HTMLElement | null)[] = [
     h('header.okl-head', {}, h('div', {}, h('h2', {}, 'Okkin'), h('p.okl-muted', {}, d ? (on ? `On · ${d.okkin.chip}` : 'Off') : sw.label)), d?.mock ? h('span.okl-mock', {}, 'mock') : null, close),
-    h('section.okl-center', {}, h('h3', {}, 'Power'), power, sw.reason ? h('p.okl-muted.okl-power-reason', { 'data-locked': sw.works ? 'no' : 'yes' }, sw.reason) : null, sw.signIn ? h('a.okl-btn.okl-signin', { href: '/' }, 'Sign in again') : null),
+    h('section.okl-center', {}, h('h3', {}, 'Power'), power, sw.reason ? h('p.okl-muted.okl-power-reason', { 'data-locked': sw.works ? 'no' : 'yes', ...(sw.detail ? { tabindex: '0', title: sw.detail } : {}) }, sw.reason, ...(sw.detail ? [h('span.okl-raw', {}, ` (${sw.detail})`)] : [])) : null, sw.signIn ? h('a.okl-btn.okl-signin', { href: '/' }, 'Sign in again') : null),
     ownerBox(d, act),
     h('section', {}, h('h3', {}, `Model switch · ${stops.length} models`), dial),
     h('section.okl-stats', {},
@@ -181,7 +188,10 @@ export function renderPanel(root: HTMLElement, d: Loft | null, act: { unlock?(pa
 function sceneState(d: Loft | null) {
   const stops = stopsView(d);
   const sw = switchView(d, loadError, loadStatus);
-  return { power: d?.power ?? 'off', busy: d?.okkin.chip === 'working', switchWorks: sw.works, switchLabel: sw.label, light: sw.light, dial: stops.map((s) => ({ role: s.role, status: s.status })), dialIndex: chosenIndex(d, stops) } as const;
+  const idx = chosenIndex(d, stops);
+  const holo = holoData(d);
+  const crt = crtView(d);
+  return { power: d?.power ?? 'off', busy: d?.okkin.chip === 'working', loading: d?.okkin.chip === 'switching', switchWorks: sw.works, switchLabel: sw.label, light: sw.light, dial: stops.map((s) => ({ role: s.role, status: s.status })), dialIndex: idx, dialRole: stops[idx]?.role, holo, crt } as const;
 }
 
 export function installOkkinLoft(ctx: Ctx) {
@@ -291,12 +301,13 @@ export function installOkkinLoft(ctx: Ctx) {
     const p = ctx.player.pos;
     const near = ctx.inOffice() && !ctx.upTop() && Math.hypot(p.x - OKKIN_LOFT_SPOT.x, p.z - OKKIN_LOFT_SPOT.z) < NEAR;
     pill.hidden = !near;
+    view.setNear(ctx.inOffice() && Math.hypot(p.x - OKKIN_LOFT_SPOT.x, p.z - OKKIN_LOFT_SPOT.z) < 16);
     age += dt;
     if (age < 5) return;
     age = 0;
     if (ctx.inOffice()) void refresh();
   });
-  (window as unknown as { __okkinLoft?: unknown }).__okkinLoft = { open: () => pill.click(), toggle, render: (d: Loft) => { frozen = true; data = d; panel.hidden = false; paint(); panel.querySelector<HTMLElement>('.okl-close')?.focus(); view.setState(sceneState(d)); } };
+  (window as unknown as { __okkinLoft?: unknown }).__okkinLoft = { open: () => pill.click(), toggle, render: (d: Loft) => { frozen = true; data = d; { const sw = switchView(d, null, 200); pillLight.dataset.light = sw.light; pill.title = sw.tip; } panel.hidden = false; paint(); panel.querySelector<HTMLElement>('.okl-close')?.focus(); view.setState(sceneState(d)); } };
 }
 
 declare module '../../world/types' {

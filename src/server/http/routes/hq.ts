@@ -19,7 +19,7 @@ import { okkinInstalled, okkinJobs, okkinLoaded, okkinQueueDepth } from '../../h
 import { flipPower, loadPowerConfig, recheckExposure, parseAction, powerCooling, powerRightsBlocked, realRunner } from '../../hq/okkin-power.js';
 import { benchByTag, bestModelPick, loadedSpeed, dialConfig, dialStops, loadLoftConfig, ramAllows } from '../../hq/okkin-loft.js';
 import { createOllama, psModels } from '../../ollama.js';
-import { OKKIN_OLLAMA_ORIGINS, okkinFetchOverride } from '../../hq/okkin.js';
+import { OKKIN_OLLAMA_ORIGINS, latestOkkinOutput, okkinFetchOverride } from '../../hq/okkin.js';
 
 /** Real per-model speeds seen this session; 'not measured yet' is the client's word for a missing one. */
 function benchmarks() {
@@ -210,7 +210,7 @@ export const hqRoutes = {
         const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
         const owner = okkinCaller(req, { touch: false }).kind === 'owner';
         const okkin = okkinClient(await probeOkkin(envOf(process.env), hq, undefined, { dataDir: ctx.cfg.dataDir }));
-        return send(res, 200, { seat, name: seatDisplayName('okkin', hq.names), messages: owner ? okkinThread() : [], okkin, chip: okkin.chip });
+        return send(res, 200, { seat, name: seatDisplayName('okkin', hq.names), messages: owner ? okkinThread() : [], private: !owner, okkin, chip: okkin.chip });
       }
       if (!bridgeGate(ctx, req, res)) return;
       if (!isSeatId(seat)) return send(res, 400, { error: 'unknown seat' });
@@ -315,6 +315,9 @@ export const hqRoutes = {
         speed: loadedSpeed(loadedNow, bench),
         bench: benchByTag(bench),
         jobs: okkinJobs(),
+        // The CRT: Okkin's latest reply from the in-memory Ask thread (never invented). Private like the
+        // thread itself: only the unlocked owner gets it; everyone else (bots included) gets null.
+        crt: !botCredential(req) && okkinCaller(req, { touch: false }).kind === 'owner' ? latestOkkinOutput() : null,
         pool: null,
         gpu,
         pick: best?.tag ?? null,

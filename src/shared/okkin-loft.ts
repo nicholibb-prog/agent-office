@@ -7,13 +7,27 @@ import { FLOOR } from './layout.js';
  */
 export const OKKIN_LOFT = { minX: 5, maxX: 6.2, minZ: 7, maxZ: 10, rackDepth: 0.8, rackHeight: 2.2 } as const;
 /** Where you stand to use the panel: in front of the racks, on open floor. */
-export const OKKIN_LOFT_SPOT = { x: 1.6, z: 8.5 } as const;
+export const OKKIN_LOFT_SPOT = { x: 1.1, z: 8.5 } as const;
 void FLOOR;
 /**
  * The physical controls: a console on a pedestal in front of the racks (between them and where you
  * stand), with the power switch on the left and the model dial on the right, facing the floor (-x).
  */
-export const OKKIN_CONSOLE = { x: 4.5, z: 8.5, width: 0.9, depth: 0.4, height: 0.95 } as const;
+/**
+ * The stone pedestal the supercomputer stands on (0.45 m: a step up, scaled to the office), a little
+ * larger than the loft's footprint. Its front face (-x) carries the Paleo-Hebrew engraving.
+ */
+export const OKKIN_PEDESTAL = { minX: OKKIN_LOFT.minX - 0.05, maxX: OKKIN_LOFT.maxX + 0.05, minZ: OKKIN_LOFT.minZ - 0.05, maxZ: OKKIN_LOFT.maxZ + 0.05, height: 1.1 } as const;
+/** The 日光 hanging scroll (kakejiku) on its stand, at the pedestal's north end, facing the floor (-x). */
+export const OKKIN_SCROLL = { x: OKKIN_LOFT.minX + 0.25, z: OKKIN_LOFT.minZ - 0.35, width: 0.5, height: 1.6, bottom: 0.55 } as const;
+/** The OKKIN sign above it all. */
+export const OKKIN_SIGN = { width: 3.4, height: 0.9, y: 5.2 } as const;
+/** The console stands on a low stone step (`step`), its top at a comfortable standing height (step + height ≈ 1.05 m). */
+export const OKKIN_CONSOLE = { x: 4.5, z: 8.5, width: 0.9, depth: 0.4, height: 0.85, step: 0.2 } as const;
+/** That step: from just in front of the console back to the plinth, wide enough for the console and the CRT. */
+export const OKKIN_CONSOLE_STEP = { minX: OKKIN_CONSOLE.x - OKKIN_CONSOLE.depth / 2 - 0.25, maxX: OKKIN_PEDESTAL.minX, minZ: OKKIN_CONSOLE.z - 0.75, maxZ: OKKIN_CONSOLE.z + 1.05 } as const;
+/** The little CRT on the step beside the console (its centre, and its screen's height). */
+export const OKKIN_CRT = { x: OKKIN_CONSOLE.x + 0.05, z: OKKIN_CONSOLE.z + 0.75, y: OKKIN_CONSOLE.step + 0.62, width: 0.42, height: 0.34 } as const;
 
 /**
  * The five models the switch always offers, in dial order (Jack's verified tags). okkin-loft.json

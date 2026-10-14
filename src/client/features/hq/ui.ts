@@ -103,15 +103,15 @@ function modelPick(row: SeatRow, onSwitch: (name: string) => void) {
   return h('div.hq-switch', {}, select, button);
 }
 
-export function openTalk(seat: string, lines: TalkLine[], chip: string, send: (text: string) => void, onClose?: () => void, name?: string) {
+export function openTalk(seat: string, lines: TalkLine[], chip: string, send: (text: string) => void, onClose?: () => void, name?: string, note?: string | null) {
   const log = h('div.hq-log');
   const paint = (next: TalkLine[], nextChip: string) => {
     chipEl.textContent = chipLabel(nextChip);
     chipEl.dataset.chip = nextChip;
     log.replaceChildren(
-      ...(next.length ? next : [{ id: 'empty', role: 'office', text: 'No messages yet.', at: 0 }]).map((line) =>
+      ...(!next.length && note ? [h('p', { class: 'hq-line hq-private', role: 'note' }, note)] : (next.length ? next : [{ id: 'empty', role: 'office', text: 'No messages yet.', at: 0 }]).map((line) =>
         h('p', { class: `hq-line hq-${line.role}` }, `${line.role === 'player' ? 'You' : line.role === 'guest' ? 'Guest' : line.role === 'bot' ? seatLabel({ seat, name }) : 'Office'}: ${line.text}`),
-      ),
+      )),
     );
     log.scrollTop = log.scrollHeight;
   };

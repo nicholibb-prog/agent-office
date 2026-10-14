@@ -291,3 +291,10 @@ export const GATED_TIERS = ['code', 'money', 'sends', 'security'] as const;
 export function okkinMayTake(job: { tier?: unknown } | null | undefined): boolean {
   return !!job && job.tier === 'open';
 }
+
+/** Shown when a non-owner opens Okkin's Ask thread: the server sent messages: [] because it's private. */
+export const ASK_PRIVATE_NOTE = 'Ask history is private — unlock owner to see it.';
+/** The private note only for a non-owner's empty thread; never for an owner whose thread is just empty. */
+export function askPrivateNote(r: { messages?: readonly unknown[] | null; private?: boolean | null } | null | undefined): string | null {
+  return r?.private === true && !(r.messages?.length) ? ASK_PRIVATE_NOTE : null;
+}

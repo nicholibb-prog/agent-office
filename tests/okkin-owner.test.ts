@@ -359,3 +359,53 @@ test('privacy: the Okkin Ask thread (GET /api/bridge/talk?seat=okkin) is the own
     if (saved.a === undefined) delete process.env.OKKIN_MODEL_ALLOW;
   }
 });
+
+test('privacy: the loft GET carries the CRT text only for the owner; crt is null for a shared-password session, a non-owner account and a bot token', async () => {
+  const { latestOkkinOutput } = await import('../src/server/hq/okkin.js');
+  const { dataDir, seat, ready } = setup();
+  await ready;
+  setOkkinFetchForTests(async (url: string) => {
+    if (url.endsWith('/api/chat')) return { ok: true, status: 200, text: async () => JSON.stringify({ message: { content: 'crt private 51b2' }, eval_count: 10, eval_duration: 1e9 }) } as never;
+    if (url.endsWith('/api/tags') || url.endsWith('/api/ps')) return { ok: true, status: 200, text: async () => JSON.stringify({ models: [{ name: 'demo:1b' }] }) } as never;
+    return { ok: false, status: 404, text: async () => '' } as never;
+  });
+  const saved = { m: process.env.OKKIN_MODEL, a: process.env.OKKIN_MODEL_ALLOW };
+  process.env.OKKIN_MODEL = 'demo:1b';
+  process.env.OKKIN_MODEL_ALLOW = 'demo:1b';
+  try {
+    const cookie = cookieFrom((await unlock(dataDir, PASS)).headers);
+    fresh();
+    assert.equal((await call(hqRoutes.talk, office(dataDir), { cookie }, { seat: 'okkin', text: 'hello' })).status, 200);
+    assert.equal(latestOkkinOutput()?.text, 'crt private 51b2');
+    const loft = (ctx: never, h: Record<string, string>) => call(hqRoutes.okkinLoft, ctx, h, undefined);
+    for (const [who, ctx, h] of [['shared-password session', office(dataDir), {}], ['non-owner account', ctxOf(dataDir, { account: { id: 'acct-3', role: 'member' } }), {}], ['seat token', office(dataDir), { 'x-bridge-token': seat }], ['bridge token + owner cookie', office(dataDir), { 'x-bridge-token': BRIDGE, cookie }]] as const) {
+      const r = await loft(ctx as never, { ...h });
+      assert.ok(!JSON.stringify(r.json).includes('crt private 51b2'), who);
+      if (r.status === 200) assert.equal((r.json as { crt?: unknown }).crt, null, who);
+    }
+    const mine = await loft(office(dataDir), { cookie });
+    assert.equal((mine.json as { crt?: { text: string } }).crt?.text, 'crt private 51b2', 'the owner sees it');
+  } finally {
+    if (saved.m === undefined) delete process.env.OKKIN_MODEL; else process.env.OKKIN_MODEL = saved.m;
+    if (saved.a === undefined) delete process.env.OKKIN_MODEL_ALLOW; else process.env.OKKIN_MODEL_ALLOW = saved.a;
+  }
+});
+
+test('private note: only a non-owner\'s empty Okkin thread says the Ask history is private; an owner\'s empty thread does not', async () => {
+  const { askPrivateNote, ASK_PRIVATE_NOTE } = await import('../src/shared/hq.js');
+  assert.equal(askPrivateNote({ messages: [], private: true }), ASK_PRIVATE_NOTE);
+  assert.equal(ASK_PRIVATE_NOTE, 'Ask history is private — unlock owner to see it.');
+  assert.equal(askPrivateNote({ messages: [], private: false }), null);
+  assert.equal(askPrivateNote({ messages: [] }), null);
+  assert.equal(askPrivateNote({ messages: [{}], private: true }), null);
+  assert.equal(askPrivateNote(null), null);
+  const { dataDir, ready } = setup();
+  await ready;
+  const read = (ctx: never, h: Record<string, string>) => call(hqRoutes.talkGet, ctx, h, undefined, '/api/bridge/talk?seat=okkin');
+  const viewer = await read(office(dataDir), {});
+  assert.equal(askPrivateNote(viewer.json as never), ASK_PRIVATE_NOTE, 'non-owner session');
+  const cookie = cookieFrom((await unlock(dataDir, PASS)).headers);
+  const owner = await read(office(dataDir), { cookie });
+  assert.equal((owner.json as { private?: boolean }).private, false);
+  if (!(owner.json as { messages: unknown[] }).messages.length) assert.equal(askPrivateNote(owner.json as never), null, 'owner with an empty thread');
+});
