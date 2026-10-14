@@ -5,7 +5,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import type { Ctx } from '../../office/context.js';
 import type { ChatLine } from '../../../shared/protocol.js';
-import { activeSeatMap, isSeatId, outboxItemCrewSeat } from '../../../shared/hq.js';
+import { activeSeatMap, isSeatId } from '../../../shared/hq.js';
 import { send } from '../util.js';
 import { seatForToken } from '../../seat-tokens.js';
 import { BodyTooLarge, closeTooLarge, readJsonBody } from '../read-body.js';
@@ -225,6 +225,13 @@ export type SeatPrivateCaller = { kind: 'seat'; seat: string } | { kind: 'owner'
  */
 export function seatPrivateCaller(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse, route: string): SeatPrivateCaller | null {
   if (!bridgeShape(req, res)) return null;
+  // Any Authorization header is a bot credential here (as botCredential): refused and logged.
+  const auth = req.headers.authorization;
+  if (typeof auth === 'string' && auth.trim()) {
+    logOkkinRefusal(ctx.cfg.dataDir, { route, caller: 'bearer' });
+    send(res, 403, { error: 'Authorization header not accepted; use x-bridge-token' });
+    return null;
+  }
   const got = tokenFromReq(req);
   if (got) {
     const seat = seatForToken(ctx.cfg.dataDir, got);
@@ -499,9 +506,8 @@ export const bridgeRoutes = {
         if (!existsSync(file)) return send(res, 200, { items: [], private: false });
         const raw = JSON.parse(readFileSync(file, 'utf8')) as { items?: { seat?: string }[]; [k: string]: unknown };
         const all = Array.isArray(raw.items) ? raw.items : [];
-        // Seat-provider turns carry their desk/meeting id; the explicit server map names its crew seat.
-        const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
-        const items = caller.kind === 'owner' ? all : all.filter((it) => it && outboxItemCrewSeat(hq, it.seat) === caller.seat);
+        // A seat token sees only items stamped with exactly its crew seat. null/missing = owner-only.
+        const items = caller.kind === 'owner' ? all : all.filter((it) => !!it && typeof it.seat === 'string' && it.seat !== '' && it.seat === caller.seat);
         return send(res, 200, { ...raw, items, private: false });
       } catch {
         return send(res, 500, { error: OFFICE_ERROR });

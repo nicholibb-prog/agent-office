@@ -42,9 +42,9 @@ async function withServer(dataDir: string, fn: (port: number) => Promise<void>) 
     cfg: { port: 4600, tailnet: undefined, dataDir },
     services: { lookup: () => undefined },
     auth: {
-      fromRequest: (req: never) => (has(req) ? { account: { id: 'nick', role: 'admin' } } : undefined),
+      fromRequest: (req: never) => (has(req) ? { account: { id: 'owner-1', role: 'admin' } } : undefined),
       fromAnyCookie: (req: never) => has(req),
-      sessionFromAnyCookie: (req: never) => (has(req) ? { account: { id: 'nick', role: 'admin' } } : undefined),
+      sessionFromAnyCookie: (req: never) => (has(req) ? { account: { id: 'owner-1', role: 'admin' } } : undefined),
     },
     meOf: () => ({ admin: true }),
     floors: new Map(),
@@ -93,6 +93,10 @@ test('GET /api/bridge/kavi-outbox: shared 403 logged, seat sees own, owner all, 
     const pool = await call(port, 'GET', p, { 'x-pool-caller': 'pool-x', cookie: `ao=session; ${owner}` });
     assert.equal(pool.status, 403);
     assert.equal((await call(port, 'GET', p, tok('u'.repeat(64)))).status, 401);
+    // Any Authorization header is refused and logged, even carrying a valid seat token.
+    const bearer = await call(port, 'GET', p, { authorization: 'Bearer ' + tokA });
+    assert.equal(bearer.status, 403);
+    assert.ok(!bearer.raw.includes('FAKE'));
     assert.equal((await call(port, 'GET', p, {})).status, 401);
     const a = await call(port, 'GET', p, tok(tokA));
     assert.equal(a.status, 200);
@@ -112,18 +116,24 @@ test('GET /api/bridge/kavi-outbox: shared 403 logged, seat sees own, owner all, 
     const log = logLines(dataDir);
     assert.match(log, /"route":"GET \/api\/bridge\/kavi-outbox","caller":"shared-bridge-token"/);
     assert.match(log, /"caller":"pool-caller"/);
+    assert.match(log, /"route":"GET \/api\/bridge\/kavi-outbox","caller":"bearer"/);
     noSecrets(log, [SHARED, tokA, tokB, 'pool-x', TEST_PASSPHRASE, owner.split('=')[1]]);
   });
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-test('seat-provider queue stamps its target seat on outbox items', async () => {
+test('seat-provider queue stamps a crew seat only through .agent-office/seat-map.json; unmapped is null', async () => {
   const { dataDir } = await setup();
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(path.join(dataDir, 'seat-map.json'), JSON.stringify({ 'floor-1:desk-1': 'seat-1', 'floor-1:desk-2': 'not-a-seat' }));
   const board = new SeatBoard(dataDir, { detect: () => ({}) as never });
-  assert.equal(board.queue('floor-1', 'seat-3', 'FAKE task'), true);
-  const items = JSON.parse(readFileSync(path.join(dataDir, 'kavi-outbox.json'), 'utf8')).items as { title: string; seat?: string }[];
-  assert.equal(items.at(-1)?.seat, 'seat-3');
-  assert.equal(items.at(-1)?.title, 'seat:floor-1:seat-3');
+  board.queue('floor-1', 'desk-1', 'FAKE mapped');
+  board.queue('floor-1', 'desk-2', 'FAKE invalid crew seat');
+  board.queue('floor-2', 'desk-1', 'FAKE other floor');
+  board.queue('floor-1', 'desk-3', 'FAKE unmapped');
+  const items = JSON.parse(readFileSync(path.join(dataDir, 'kavi-outbox.json'), 'utf8')).items as { title: string; seat?: string | null }[];
+  assert.deepEqual(items.slice(-4).map((i) => i.seat), ['seat-1', null, null, null]);
+  assert.equal(items.at(-4)?.title, 'seat:floor-1:desk-1');
   rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -207,43 +217,44 @@ test('POST /api/bridge/talk (crew seat): owner only; tokens and plain sessions r
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-test('kavi-outbox: seat-provider turns reach their crew seat only through the explicit server map', async () => {
+
+test('kavi-outbox: seat-map scoping, fail closed', async () => {
   const { dataDir, tokA, tokB } = await setup();
   const { writeFileSync } = await import('node:fs');
-  // Explicit server-side config: seat-1 sits at desk-1 and owns the meeting room; seat-2 at desk-2.
-  // crewDesks is on, but its seat-N → desk-N default is never used for outbox scoping.
-  writeFileSync(path.join(dataDir, 'hq-local.json'), JSON.stringify({
-    crewDesks: true,
-    seats: { 'seat-1': 'desk-1', 'seat-2': 'desk-2' },
-    outboxSeats: { 'meeting-room': 'seat-1', 'desk-9': 'not-a-seat', 'bogus': 'seat-2' },
-  }));
+  writeFileSync(path.join(dataDir, 'seat-map.json'), JSON.stringify({ 'floor-1:desk-1': 'seat-1', 'floor-1:meeting-room': 'seat-1', 'floor-1:desk-2': 'seat-2' }));
   const board = new SeatBoard(dataDir, { detect: () => ({}) as never });
-  for (const [id, text] of [['desk-1', 'FAKE A desk turn'], ['meeting-room', 'FAKE A meeting turn'], ['desk-2', 'FAKE B desk turn'], ['desk-3', 'FAKE unmapped desk turn'], ['desk-9', 'FAKE bad-map desk turn']] as const) {
-    assert.equal(board.queue('floor-1', id, text), true);
-  }
+  board.queue('floor-1', 'desk-1', 'FAKE A desk turn');
+  board.queue('floor-1', 'meeting-room', 'FAKE A meeting turn');
+  board.queue('floor-1', 'desk-2', 'FAKE B desk turn');
+  board.queue('floor-1', 'desk-3', 'FAKE unmapped desk-3 turn');
+  // A seat token whose name equals a raw desk id.
+  const tokDesk3 = issueSeatToken(dataDir, 'desk-3');
+  const tokC = issueSeatToken(dataDir, 'seat-3');
   const { cookie } = await testOwner();
   const owner = cookie();
   await withServer(dataDir, async (port) => {
     const texts = async (h: Record<string, string>) =>
       ((await call(port, 'GET', '/api/bridge/kavi-outbox', h)).json.items as { text: string }[]).map((i) => i.text);
-    const a = await texts(tok(tokA));
-    // Crew A sees its own desk and meeting turns (plus its own bridge item), and nothing of B's.
-    assert.deepEqual(a, [A_TEXT, 'FAKE A desk turn', 'FAKE A meeting turn']);
-    const b = await texts(tok(tokB));
-    assert.deepEqual(b, [B_TEXT, 'FAKE B desk turn']);
-    // Unmapped / badly mapped desk turns: no crew token sees them (fail closed).
-    for (const t of [...a, ...b]) assert.ok(!/unmapped|bad-map/.test(t));
-    const tokC = issueSeatToken(dataDir, 'seat-3');
-    assert.deepEqual(await texts(tok(tokC)), []); // desk-3 via the crewDesks default is NOT honoured
-    // The owner sees everything.
+    // Mapped items reach only their crew seat.
+    assert.deepEqual(await texts(tok(tokA)), [A_TEXT, 'FAKE A desk turn', 'FAKE A meeting turn']);
+    assert.deepEqual(await texts(tok(tokB)), [B_TEXT, 'FAKE B desk turn']);
+    // The unmapped (seat: null) item and the legacy unstamped item: hidden from every seat token...
+    for (const t of [tokA, tokB, tokC, tokDesk3]) {
+      const got = await texts(tok(t));
+      assert.ok(!got.includes('FAKE unmapped desk-3 turn'));
+      assert.ok(!got.includes('FAKE unstamped item'));
+    }
+    // ...including a token named exactly like the raw desk id.
+    assert.deepEqual(await texts(tok(tokDesk3)), []);
+    // ...and shown to the owner, with everything else.
     const all = await texts({ cookie: `ao=session; ${owner}` });
-    assert.equal(all.length, 8);
-    assert.ok(all.includes('FAKE unmapped desk turn') && all.includes('FAKE bad-map desk turn'));
+    assert.equal(all.length, 7);
+    assert.ok(all.includes('FAKE unmapped desk-3 turn') && all.includes('FAKE unstamped item'));
   });
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-test('kavi-outbox: with no hq-local.json at all, every seat-provider turn is owner-only', async () => {
+test('kavi-outbox: with no seat-map.json, every seat-provider turn is owner-only', async () => {
   const { dataDir, tokA } = await setup();
   const board = new SeatBoard(dataDir, { detect: () => ({}) as never });
   board.queue('floor-1', 'desk-1', 'FAKE no-config desk turn');
