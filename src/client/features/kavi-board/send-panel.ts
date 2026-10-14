@@ -5,6 +5,8 @@
  * and nothing is shown that has not arrived as a file.
  */
 import { FACE_SRC } from './picture';
+import { KAVI_SENT_PRIVATE_NOTE, PRIVATE_NOTE_GREY, kaviPrivateView, loadFailNote } from '../../../shared/privacy-view.js';
+import { unlockOwnerControl } from '../../ui/owner-unlock.js';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const POLL_MS = 20_000;
@@ -44,7 +46,9 @@ const CSS = `
 .kavi-empty{color:#9ab;text-align:center;margin:auto}
 .kavi-noreply{margin:6px auto 0;font-size:12px}
 .kavi-status{padding:6px 14px;font-size:12px;color:#bcd;min-height:16px;word-break:break-all}.kavi-status a{color:#9fe3c9}
-.kavi-status.err{color:#ff9b8f}
+.kavi-status.err{color:#ff9b8f}.kavi-status.priv{color:${PRIVATE_NOTE_GREY};font-style:italic}
+.kavi-unlock{padding:0 14px 6px}.kavi-unlock:empty{display:none}
+.kavi-msg.stale{opacity:.6}
 .kavi-compose{display:flex;gap:8px;padding:10px 14px;background:#181d21;align-items:center}
 .kavi-compose textarea{flex:1;height:44px;resize:none;border-radius:12px;border:1px solid #445;background:#11161a;color:#eef;padding:8px;font:14px system-ui,sans-serif}
 .kavi-compose textarea::placeholder{font-family:system-ui,sans-serif;color:#8a97a3}
@@ -79,6 +83,7 @@ export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): K
   const thread = el('div', 'kavi-thread');
   thread.setAttribute('aria-live', 'polite');
   const status = el('div', 'kavi-status');
+  const unlockSlot = el('div', 'kavi-unlock');
   const compose = el('div', 'kavi-compose');
   const text = el('textarea', '');
   text.maxLength = 4000;
@@ -90,7 +95,7 @@ export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): K
   const attach = el('button', '', 'Send file');
   const sendBtn = el('button', '', 'Send');
   compose.append(text, file, attach, sendBtn);
-  pc.append(top, thread, status, compose);
+  pc.append(top, thread, status, unlockSlot, compose);
   back.append(pc);
   document.body.append(opener, back);
 
@@ -98,9 +103,13 @@ export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): K
   let timer: ReturnType<typeof setInterval> | undefined;
   let lastFocus: Element | null = null;
   const localFiles: Item[] = [];
+  /** The last thread the owner saw: kept on screen (dimmed) under the private note after an idle lock. */
+  let lastOwnerItems: Item[] = [];
+  /** Messages this browser sent; shown only while the thread is private (the owner sees them in the thread). */
+  const localSent: Item[] = [];
 
-  const setStatus = (msg: string, err = false, withLink = false) => {
-    status.className = 'kavi-status' + (err ? ' err' : '');
+  const setStatus = (msg: string, err: boolean | 'priv' = false, withLink = false) => {
+    status.className = 'kavi-status' + (err === 'priv' ? ' priv' : err ? ' err' : '');
     status.textContent = msg;
     if (withLink && link) {
       status.append(' ');
@@ -111,29 +120,39 @@ export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): K
       status.append(a);
     }
   };
-  const paint = (items: Item[]) => {
-    const all = [...items, ...localFiles].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  const paint = (items: Item[], stale = false, withLocal = true) => {
+    const all = [...items, ...(withLocal ? localFiles : [])].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
     thread.replaceChildren();
-    if (!all.length) thread.append(el('div', 'kavi-empty', 'No messages yet.'));
+    if (!all.length && withLocal) thread.append(el('div', 'kavi-empty', 'No messages yet.'));
     for (const it of all) {
-      const m = el('div', `kavi-msg ${it.from}`, it.text);
+      const m = el('div', `kavi-msg ${it.from}${stale && lastOwnerItems.includes(it) ? ' stale' : ''}`, it.text);
       m.append(el('span', 'at', `${it.from === 'kavi' ? 'Kavi' : 'You'} · ${timeLabel(it.at)}`));
       thread.append(m);
     }
-    if (all.length && !items.some((i) => i.from === 'kavi')) thread.append(el('div', 'kavi-empty kavi-noreply', 'No replies yet.'));
+    if (withLocal && all.length && !items.some((i) => i.from === 'kavi')) thread.append(el('div', 'kavi-empty kavi-noreply', 'No replies yet.'));
     thread.scrollTop = thread.scrollHeight;
   };
   const load = () =>
     fetch('/api/kavi/thread', { credentials: 'same-origin' })
-      .then((r) => (r.ok ? (r.json() as Promise<Thread>) : Promise.reject(new Error(String(r.status)))))
+      .then((r) => (r.ok ? (r.json() as Promise<Thread>) : Promise.reject(Object.assign(new Error(String(r.status)), { status: r.status }))))
       .then((t) => {
         link = t.driveLink || "";
-        if (t.private) setStatus('The Kavi thread is private — unlock owner to see it.', true);
-        else if (t.state === 'unconfigured') setStatus('The Bridge folder is not set up on this machine yet.', true);
+        if (t.private) {
+          // Not the owner (or the owner's idle timeout): keep what was on screen, note in grey above, Unlock owner.
+          const v = kaviPrivateView(lastOwnerItems, [...localFiles, ...localSent], true);
+          setStatus(v.note ?? '', 'priv');
+          if (!unlockSlot.childElementCount) unlockSlot.append(unlockOwnerControl(() => void load()));
+          paint(v.items, lastOwnerItems.length > 0, false);
+          return;
+        }
+        unlockSlot.replaceChildren();
+        if (t.state === 'unconfigured') setStatus('The Bridge folder is not set up on this machine yet.', true);
         else if (t.state === 'unreachable') setStatus('The Bridge folder is unreachable.', true);
-        paint(t.items || []);
+        else if (status.classList.contains('priv')) setStatus('');
+        lastOwnerItems = t.items || [];
+        paint(lastOwnerItems);
       })
-      .catch(() => setStatus('Could not load the thread.', true));
+      .catch((e: { status?: number }) => setStatus(loadFailNote(e?.status, 'Could not load the thread.'), true));
   const done = (r: Response) =>
     r.json().then((j: { name?: string; folderId?: string; error?: string }) => {
       if (r.ok && j.folderId) {
@@ -142,7 +161,7 @@ export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): K
         setStatus("Sent to Kavi's Bridge folder.", false, true);
         return true;
       }
-      setStatus(`Not sent: ${j.error || r.status}`, true);
+      setStatus(r.status === 401 ? loadFailNote(401, '') : `Not sent: ${j.error || r.status}`, true);
       return false;
     });
 
@@ -190,8 +209,14 @@ export function mountKaviSendPanel(onSent: (name: string) => void = () => {}): K
     void fetch('/api/kavi/message', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: body }) })
       .then(done)
       .then((ok) => {
-        if (ok) text.value = '';
-        return load();
+        if (ok) {
+          text.value = '';
+          // Kept locally so a non-owner still sees their own send (the thread itself is owner-only).
+          localSent.push({ from: 'owner', text: body, at: new Date().toISOString() });
+        }
+        return load().then(() => {
+          if (ok && status.classList.contains('priv')) setStatus(KAVI_SENT_PRIVATE_NOTE, 'priv');
+        });
       })
       .catch(() => setStatus('Not sent: the office did not answer.', true))
       .finally(() => (sendBtn.disabled = false));
