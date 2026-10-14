@@ -57,6 +57,9 @@ export function tunneledService(req: http.IncomingMessage, officePort: number, t
 function upstreamHeaders(req: http.IncomingMessage, svc: ServiceInfo): http.OutgoingHttpHeaders {
   const headers: http.OutgoingHttpHeaders = { ...req.headers, [RELAYED]: '1' };
   delete headers[SERVICE_HEADER];
+  // Office credentials never reach a tunneled service.
+  delete headers.authorization;
+  delete headers['proxy-authorization'];
   // From the tailnet, the server gets the Host it would through a tunnel: dev servers like Vite
   // refuse names they don't know. X-Forwarded-Host (set by Tailscale Serve) still has the real one.
   if (!LOOPBACK_HOST.test(req.headers.host ?? '')) headers.host = `localhost:${svc.port}`;
