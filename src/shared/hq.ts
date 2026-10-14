@@ -73,7 +73,13 @@ export function sanitizeNames(raw: unknown): Partial<Record<SeatId, string>> {
 
 /** Public label is the seat id (`seat-1` … `seat-9`, or Okkin). A gitignored `names` map can override it on one machine. */
 export function seatDisplayName(seat: SeatId, names?: Partial<Record<SeatId, string>>): string {
-  return names?.[seat] || (seat === OKKIN_SEAT ? 'Okkin' : seat);
+  return names?.[seat]?.trim() || (seat === OKKIN_SEAT ? 'Okkin' : emptySeatLabel(seat));
+}
+
+/** An unnamed generic seat for people: "seat-3" → "Empty desk 3". Anything else stays as given. */
+export function emptySeatLabel(seat: string): string {
+  const m = /^seat-([1-9])$/.exec(seat);
+  return m ? `Empty desk ${m[1]}` : seat;
 }
 
 /** The only office line a talk adds when the seat is offline and nobody has replied. */

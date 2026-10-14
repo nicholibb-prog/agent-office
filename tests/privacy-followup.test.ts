@@ -11,21 +11,21 @@ import { CREW_PRIVATE_NOTE, UNMAPPED_SEAT_LABEL, outboxView } from '../src/share
 
 const src = (...p: string[]) => readFileSync(path.join(import.meta.dirname, '..', 'src', ...p), 'utf8');
 
-test('401 says "Session expired, sign in again"; other failures keep their own text', () => {
-  assert.equal(SESSION_EXPIRED_NOTE, 'Session expired, sign in again');
+test('401 says "Session expired, unlock owner again"; other failures keep their own text', () => {
+  assert.equal(SESSION_EXPIRED_NOTE, 'Session expired, unlock owner again');
   assert.equal(loadFailNote(401, 'Could not load the thread.'), SESSION_EXPIRED_NOTE);
   assert.equal(loadFailNote(500, 'Could not load the thread.'), 'Could not load the thread.');
   assert.equal(loadFailNote(undefined, 'x'), 'x');
   const panel = src('client', 'features', 'kavi-board', 'send-panel.ts');
   assert.match(panel, /loadFailNote\(e\?\.status, 'Could not load the thread\.'\)/);
-  assert.match(panel, /r\.status === 401 \? loadFailNote\(401/);
+  assert.match(panel, /r\.status === 401\) setStatus\(loadFailNote\(401/);
   assert.match(src('client', 'features', 'hq', 'index.ts'), /loadFailNote\(err instanceof HttpError/);
 });
 
 test('friendly names: roster names for crew seats, layout labels for desks; placeholders only', () => {
   const names = { 'seat-1': 'Placeholder One', 'seat-2': '  ' };
   assert.equal(crewName('seat-1', names), 'Placeholder One');
-  assert.equal(crewName('seat-2', names), 'seat-2');
+  assert.equal(crewName('seat-2', names), 'Empty desk 2');
   assert.equal(crewName('okkin'), 'Okkin');
   assert.equal(crewName(null, names), UNMAPPED_SEAT_LABEL);
   assert.equal(deskName('desk-1'), 'Desk 1');
@@ -173,4 +173,22 @@ test('Lock and Unlock also clear the old Path=/api/bridge owner cookie (Secure w
   assert.equal(lock.status, 200);
   assert.ok(lock.cookies.some((c) => /^ao_okkin_owner=; Path=\/api;.*Max-Age=0/.test(c)));
   assert.ok(lock.cookies.includes(clearLegacyOwnerCookieHeader(false)), 'lock clears the old-path cookie');
+});
+
+test('UI polish: empty seats, strip seat names, no stray dash, neutral expired note', async () => {
+  const { emptySeatLabel, seatDisplayName } = await import('../src/shared/hq.js');
+  const { blockSeatName } = await import('../src/shared/privacy-view.js');
+  assert.equal(emptySeatLabel('seat-4'), 'Empty desk 4');
+  assert.equal(emptySeatLabel('Placeholder Ada'), 'Placeholder Ada');
+  assert.equal(seatDisplayName('seat-3', { 'seat-3': 'Placeholder Bo' }), 'Placeholder Bo');
+  assert.equal(blockSeatName('seat-1', { 'seat-1': 'Placeholder Ada' }, { 'seat-1': 'desk-3' }), 'Placeholder Ada');
+  assert.equal(blockSeatName('seat-1', {}, { 'seat-1': 'desk-3' }), 'Desk 3');
+  assert.equal(blockSeatName('seat-1'), 'Empty desk 1');
+  assert.equal(blockSeatName('okkin'), 'Okkin');
+  assert.equal(blockSeatName('Placeholder worker'), 'Placeholder worker');
+  const fs = await import('node:fs');
+  const ui = fs.readFileSync(new URL('../src/client/features/hq/ui.ts', import.meta.url), 'utf8');
+  assert.match(ui, /row\.age && row\.age !== '—'/, 'roster never prints a bare dash after the chip');
+  const panel = fs.readFileSync(new URL('../src/client/features/kavi-board/send-panel.ts', import.meta.url), 'utf8');
+  assert.match(panel, /loadFailNote\(401, ''\), 'priv'/, 'expired note uses the neutral private tone');
 });

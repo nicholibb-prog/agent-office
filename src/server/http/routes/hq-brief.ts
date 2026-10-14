@@ -14,6 +14,10 @@ import { bridgeGate, bridgeShape, seatGate } from './bridge.js';
 import { ownerWriteGate } from './kavi-send.js';
 import { botCredential } from '../../hq/okkin-owner.js';
 import type { Route } from '../router.js';
+import path from 'node:path';
+import { loadHqLocal } from '../../workers/crew.js';
+import { activeSeatMap } from '../../../shared/hq.js';
+import { blockSeatName } from '../../../shared/privacy-view.js';
 
 const INTERNAL = 'internal error';
 
@@ -82,7 +86,12 @@ export const hqBriefRoutes = {
     handle(ctx: Ctx, { req, res, url }: { req: http.IncomingMessage; res: http.ServerResponse; url: URL }) {
       if (!bridgeGate(ctx, req, res)) return;
       const { workers, tasks } = snapshot(ctx);
-      return send(res, 200, readBrief(ctx.cfg.dataDir, workers, tasks, num(url.searchParams.get('since')), Date.now()));
+      const brief = readBrief(ctx.cfg.dataDir, workers, tasks, num(url.searchParams.get('since')), Date.now());
+      const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
+      const names = (hq.names ?? {}) as Record<string, string | undefined>;
+      const desks = activeSeatMap(hq) as Record<string, string | undefined>;
+      if (Array.isArray(brief.blocks)) brief.blocks = brief.blocks.map((b) => ({ ...b, seatName: blockSeatName(b.seat, names, desks) }));
+      return send(res, 200, brief);
     },
   },
   seen: {

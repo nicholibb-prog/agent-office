@@ -57,7 +57,7 @@ export class Strip {
       'div.unblock-row',
       {},
       h('span.unblock-title', { title: b.title }, b.title),
-      h('span.unblock-seat', {}, b.seat),
+      h('span.unblock-seat', { title: b.seat }, b.seatName || b.seat),
       h('span.unblock-age', {}, ageLabel(b.at, now)),
       ...actions,
     );
