@@ -107,7 +107,7 @@ never touches disk, argv, env or logs. Until it is set, the controls say
 
 **Unlock owner.** In the Okkin panel, "Unlock owner" takes the passphrase and checks it in constant time.
 Five wrong tries per 15 minutes (per address) lock unlocking for 15 minutes; failures are logged without
-the input. Success sets a separate owner cookie (`ao_okkin_owner`: HttpOnly, SameSite=Strict, Path=/api/bridge,
+the input. Success sets a separate owner cookie (`ao_okkin_owner`: HttpOnly, SameSite=Strict, Path=/api, so it also reaches `/api/kavi/*`;
 Secure on https), held in server memory only: 15 minutes idle, 1 hour at most; Lock, signing out of the
 office, or a restart ends it. Power on/off also needs an unlock in the last 5 minutes.
 
@@ -162,4 +162,6 @@ Each key is `<floorId>:<deskOrMeetingId>`, the same pair as the item title `seat
 ### What a non-owner sees
 
 A session that has not unlocked owner gets neutral grey notes, not errors: the crew talk thread says *Crew threads are private — unlock owner to see them.*, the talk input is disabled and says *Unlock owner to talk* (a 403 on send shows the same text), and the Kavi outbox board (roster → **Kavi outbox**) says *The Kavi outbox is private — unlock owner to see it.*
+
+Each of those windows (crew talk, Kavi's screen, the Kavi outbox) has an **Unlock owner** button that runs the same unlock as Okkin's panel (`POST /api/bridge/okkin/owner/unlock`) and reloads the window. Talking needs the unlock; the locked talk input is greyed and disabled. The outbox shows desk labels (*Desk 3 turn*, *Meeting room turn*) and crew names from the roster instead of raw ids. When the owner's 15-minute idle timeout ends the unlock, an open thread stays on screen, dimmed, under the private note. A non-owner's own Kavi sends stay visible in their window with *Sent. Only the owner can see the thread*. A 401 anywhere in these windows says *Session expired, sign in again*.
 

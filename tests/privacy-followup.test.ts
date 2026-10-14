@@ -89,3 +89,14 @@ test('locked talk input is greyed and disabled', () => {
   assert.match(ui, /form\.dataset\.locked = 'yes'/);
   assert.match(src('client', 'features', 'hq', 'ui.css'), /\.hq-talk\[data-locked='yes'\] footer input,[\s\S]*?cursor: not-allowed/);
 });
+
+test('owner cookie path reaches /api/kavi/thread as well as /api/bridge (browser path matching)', async () => {
+  const { ownerCookieHeader, clearOwnerCookieHeader } = await import('../src/server/hq/okkin-owner.js');
+  const set = ownerCookieHeader('tok', false);
+  const cookiePath = /Path=([^;]+)/.exec(set)?.[1] ?? '';
+  const sends = (p: string) => p === cookiePath || p.startsWith(cookiePath.endsWith('/') ? cookiePath : cookiePath + '/');
+  for (const p of ['/api/kavi/thread', '/api/bridge/talk', '/api/bridge/kavi-outbox', '/api/bridge/okkin/owner/unlock']) assert.ok(sends(p), `owner cookie must be sent to ${p}`);
+  assert.ok(!sends('/'), 'not the whole site');
+  assert.match(set, /HttpOnly; SameSite=Strict/);
+  assert.equal(/Path=([^;]+)/.exec(clearOwnerCookieHeader(false))?.[1], cookiePath);
+});
