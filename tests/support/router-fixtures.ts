@@ -22,4 +22,4 @@ export function scanCtx(over: Partial<ScanContext> = {}): ScanContext {
   return { deny, allow, ...over };
 }
 
-export const flagsOff: RouterFlags = { openrouter: false, openrouterKeyEnv: 'OPENROUTER_API_KEY', c1SecretToGrokCrew: false, c6StudentDrive: false, kill: false };
+export const flagsOff: RouterFlags = { openrouter: false, openrouterKeyEnv: 'OPENROUTER_API_KEY', c1SecretToGrokCrew: false, c6StudentDrive: false, routerOn: false, driftFetch: false, kill: false };

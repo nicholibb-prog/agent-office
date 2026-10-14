@@ -15,6 +15,10 @@ export interface RouterFlags {
   c1SecretToGrokCrew: boolean;
   /** (c) C6: the owner has supplied student names / Drive IDs into the ProArt store, so student-sourced tasks may route (to Okkin only). */
   c6StudentDrive: boolean;
+  /** ROUTER_ON=1: the router is wired and live. OFF: the office board says "Model routing is off". */
+  routerOn: boolean;
+  /** ROUTER_DRIFT_FETCH=1: the weekly drift check may GET the public OpenRouter model list. */
+  driftFetch: boolean;
   /** ROUTER_KILL=1 halts all paid routing (also settable by file, see budget.ts). */
   kill: boolean;
 }
@@ -31,6 +35,8 @@ export function readRouterFlags(env: RouterEnv = process.env): RouterFlags {
     openrouterKeyEnv,
     c1SecretToGrokCrew: on(env.ROUTER_C1_SECRET_TO_GROK_CREW),
     c6StudentDrive: on(env.ROUTER_C6_STUDENT_DRIVE),
+    routerOn: on(env.ROUTER_ON),
+    driftFetch: on(env.ROUTER_DRIFT_FETCH),
     kill: on(env.ROUTER_KILL),
   };
 }

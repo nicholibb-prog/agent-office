@@ -2,10 +2,12 @@
 // Okkin is cloud (C3): HTTP model providers and crew escalations (ForgeL, PolishL, Grok crew) alike.
 // Order: label gate -> provider enabled -> presendScan(full wire body) -> send. A hit throws
 // ScanBlocked (types only, never values); nothing is redacted and nothing is retried trimmed.
-import { httpChat, type ProviderFetch, type ProviderReply } from './provider-clients.js';
+import { httpChat, listOpenRouterModels, type ListFetch, type ProviderFetch, type ProviderReply } from './provider-clients.js';
 import { keyEnvFor, type RouterEnv, type RouterFlags } from './flags.js';
 import { denyStoreUsable, presendScan, scanPayload, serialize, type ScanContext } from './presend-scan.js';
 import { isCloud, isHttpProvider, type CloudProvider, type CrewProvider, type Label, type ScanHit, type WirePayload } from './types.js';
+
+export type { ProviderReply, ProviderFetch, ListFetch } from './provider-clients.js';
 
 export class ScanBlocked extends Error {
   constructor(readonly hits: ScanHit[]) {
@@ -84,4 +86,13 @@ function messagesOf(p: WirePayload): { role: string; content: string }[] {
   for (const a of p.attachments ?? []) out.push({ role: 'user', content: `Attachment ${a.name}:\n${a.text ?? ''}` });
   out.push({ role: 'user', content: p.prompt });
   return out;
+}
+
+/**
+ * The live free-model list for the weekly drift check (#34). New egress (the public OpenRouter model list), so it
+ * needs its own flag (ROUTER_DRIFT_FETCH, default OFF) as well as the OpenRouter route.
+ */
+export async function liveFreeModels(flags: RouterFlags, fetchImpl?: ListFetch): Promise<string[]> {
+  if (!flags.openrouter || !flags.driftFetch) return [];
+  return listOpenRouterModels(fetchImpl ?? ((url, init) => fetch(url, init) as never));
 }

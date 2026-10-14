@@ -65,3 +65,22 @@ export async function httpChat(provider: HttpProvider, key: string, body: string
     clearTimeout(t);
   }
 }
+
+export const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
+export type ListFetch = (url: string, init: { method: 'GET'; signal?: AbortSignal }) => Promise<{ status: number; text(): Promise<string> }>;
+
+/** The live OpenRouter model ids (public list, no key, nothing sent but the request). For #34. */
+export async function listOpenRouterModels(fetchImpl: ListFetch, timeoutMs = 15_000): Promise<string[]> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(OPENROUTER_MODELS_URL, { method: 'GET', signal: ctl.signal });
+    if (res.status !== 200) return [];
+    const j = JSON.parse((await res.text()).slice(0, 4 * MAX_REPLY)) as { data?: { id?: unknown }[] };
+    return (j.data ?? []).map((m) => m.id).filter((id): id is string => typeof id === 'string' && /^[\w./:-]{1,128}$/.test(id));
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(t);
+  }
+}
