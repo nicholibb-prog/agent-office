@@ -124,17 +124,15 @@ export function openTalk(seat: string, lines: TalkLine[], chip: string, send: (t
     'form.modal.hq-talk',
     { role: 'dialog', 'aria-label': `Talk to ${seat === 'okkin' ? 'Okkin' : seat}` },
     h('header', {}, h('h2', {}, `Talk to ${seatLabel({ seat, name })}`), chipEl),
-    h('div.body', {}, log),
+    h('div.body', {}, log, status),
     h('footer', {}, input, sendBtn),
-    status,
   ) as HTMLFormElement;
   // Not the owner: the input is locked with a plain note, so a send never ends in a bare 403.
   const lock = (text = TALK_LOCKED_NOTE) => {
     input.disabled = true;
     sendBtn.disabled = true;
     input.placeholder = text;
-    status.textContent = text;
-    status.hidden = false;
+    input.title = text;
   };
   if (locked) lock();
   paint(lines, chip);
