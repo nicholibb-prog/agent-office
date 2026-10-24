@@ -105,6 +105,10 @@ agent-office
 
 > Only your computer can reach the office: it listens on `127.0.0.1`. `--host 0.0.0.0` lets your network in, but over plain http, where voice and screen sharing don't work. To share the office with a team, put it on a server: [AWS](#deploy-to-aws-ec2), [Azure](#deploy-to-azure), [Railway](#deploy-to-railway), [Fly.io](#deploy-to-flyio), [Dokploy](#deploy-to-dokploy), [Coolify](#deploy-to-coolify) or [any Ubuntu or Debian machine](#deploy-to-any-ubuntu-or-debian-server).
 
+## Crew home open
+
+After the ProArt and the Mac have been off, the human steps are only the two power-ons in [docs/HOME-OPEN-CHECKLIST.md](docs/HOME-OPEN-CHECKLIST.md). What has to stay true is [docs/STABLE-6-12MO-PLAN.md](docs/STABLE-6-12MO-PLAN.md). What was removed from the Notion front desk is [docs/FRONT-DESK-CLEANUP.md](docs/FRONT-DESK-CLEANUP.md). When george's usage is empty, Kavi covers routing through the bridge and Cursor writes Notion ([docs/KAVI-COVERS-GEORGE.md](docs/KAVI-COVERS-GEORGE.md)). The office still binds `127.0.0.1` unless `--host` is passed. `HOST` in the environment is ignored.
+
 ## Deploy to AWS (EC2)
 
 One script, using only the AWS CLI. You need the **AWS CLI signed in** (`aws configure` or `aws sso login`), `ssh`, `curl` and a clone of this repo:
