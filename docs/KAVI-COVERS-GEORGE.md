@@ -1,6 +1,8 @@
 # Kavi covers george
 
-George routes in Notion. The other lanes read Notion. Kavi cannot open Notion and cannot message those lanes. When george's usage is empty, Kavi still covers the routing seat. The bridge is the only path Kavi uses. Cursor, on a different usage pool, is the hands that write Notion.
+Kavi is the Muse bot (`muse` in this office, Crew Status runtime **Muse app**). That is why Kavi cannot open Notion and cannot message the Cursor or Grok lanes. Those lanes read Notion. The Muse bot's only path to them is the Drive bridge: files in `to-kavi` and `to-george`.
+
+George routes in Notion while his usage is up. When that usage is empty, the Muse bot covers the routing seat by writing bridge files. Cursor, on a different usage pool, is the hands that copy those files into Notion. The Muse bot does not get a Notion login and does not get hired onto a Cursor seat to do this.
 
 Nick does nothing for this. Do not ask him to share Notion, to wake a machine, or to refill george's usage.
 
@@ -31,9 +33,9 @@ One `row:` line per open Work Queue row that is not Done and not Killed. Five fi
 
 `src/shared/kavi-cover.ts` `parseCover` must return ok. If it does not, do not drop the file.
 
-## What Kavi writes (to-george)
+## What the Muse bot writes (to-george)
 
-Kavi reads that digest and writes one reply. File name: `<YYYY-MM-DD-HHMM>-cover-george.md`.
+The Muse bot reads that digest and writes one reply. File name: `<YYYY-MM-DD-HHMM>-cover-george.md`. No other lane writes this file.
 
 ```text
 COVER GEORGE
