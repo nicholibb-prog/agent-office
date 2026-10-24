@@ -255,6 +255,21 @@ Read Needs Nick, view **Awaiting**.
 | Fail | The view has a row. george does not text Nick during this home open. He sets that row's status only if he is recording a quote Nick already gave. He does not write a task body. |
 | stuck_if | He has not read the view 30 minutes after B9 Pass. Cursor reads it and notes the count. |
 
+### B11. Cursor — Kavi cover, only if george is Usage empty
+
+Skip this step when george State is ON. The full packet shapes are in [KAVI-COVERS-GEORGE.md](KAVI-COVERS-GEORGE.md). Kavi does not message the other lanes. Cursor is the only one who writes Notion from a cover file.
+
+1. If george's note is `usage-exhausted at step N`, or george was ON and is now stale, set State = Usage empty and Note = `cover on`.
+2. Write `cover-george-on-<UTC stamp>.md` into `to-kavi` using the digest shape. Run it through `parseCover` (`src/shared/kavi-cover.ts`). Do not drop a file the parser rejects.
+3. When `to-george` has a `*-cover-george.md` whose first line is `COVER GEORGE` and `parseCover` is ok, apply each `set` line onto that Work Queue ref. Apply `quote` only onto a Needs Nick row that already exists.
+4. Do not create a Needs Nick row. Do not set Waiting on Nick. Do not assign Grok Bot.
+
+| Line | Result |
+|---|---|
+| Pass | george is ON and this step was skipped, or State is Usage empty, the digest is in `to-kavi`, and each applied `set` line matches the row. |
+| Fail | Parser not ok, or the edit would add a Needs Nick row. Note `cover rejected` on the Work Queue row "Apply Kavi cover while george usage is empty". |
+| stuck_if | Usage empty for 30 minutes with no digest, or a valid order in `to-george` for 30 minutes with no Notion edit. Cursor finishes it. Do not ask Nick. |
+
 ## Done
 
-Nick's steps: 2. Bot chain B1–B10 has a pass or a recorded fail on Crew Status. WQ-7 is Done or Blocked. Grok Bot is still Parked.
+Nick's steps: 2. Bot chain B1–B11 has a pass or a recorded fail on Crew Status. B11 may be a skip while george is ON. WQ-7 is Done or Blocked. Grok Bot is still Parked.

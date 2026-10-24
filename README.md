@@ -107,7 +107,7 @@ agent-office
 
 ## Crew home open
 
-After the ProArt and the Mac have been off, the human steps are only the two power-ons in [docs/HOME-OPEN-CHECKLIST.md](docs/HOME-OPEN-CHECKLIST.md). What has to stay true is [docs/STABLE-6-12MO-PLAN.md](docs/STABLE-6-12MO-PLAN.md). What was removed from the Notion front desk is [docs/FRONT-DESK-CLEANUP.md](docs/FRONT-DESK-CLEANUP.md). The office still binds `127.0.0.1` unless `--host` is passed. `HOST` in the environment is ignored.
+After the ProArt and the Mac have been off, the human steps are only the two power-ons in [docs/HOME-OPEN-CHECKLIST.md](docs/HOME-OPEN-CHECKLIST.md). What has to stay true is [docs/STABLE-6-12MO-PLAN.md](docs/STABLE-6-12MO-PLAN.md). What was removed from the Notion front desk is [docs/FRONT-DESK-CLEANUP.md](docs/FRONT-DESK-CLEANUP.md). When george's usage is empty, Kavi covers routing through the bridge and Cursor writes Notion ([docs/KAVI-COVERS-GEORGE.md](docs/KAVI-COVERS-GEORGE.md)). The office still binds `127.0.0.1` unless `--host` is passed. `HOST` in the environment is ignored.
 
 ## Deploy to AWS (EC2)
 

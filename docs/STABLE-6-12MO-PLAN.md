@@ -12,7 +12,7 @@ Nick powers on the ProArt and the Mac. [HOME-OPEN-CHECKLIST.md](HOME-OPEN-CHECKL
 | Okkin | Ollama on the ProArt, `http://127.0.0.1:11434` only | `GET /api/tags` returns 200. Any other host is refused by `src/server/ollama.ts`. | Jack |
 | crew-router | Not in this repo. Loopback `127.0.0.1:4317` when a unit is already installed | Socket is loopback, or the row stays OFF | Jack |
 | Kavi bridge | Drive folders `to-george`, `to-kavi`, `in`, `out` on the Mac sync | Both `to-*` folders exist and are not symlinks. Office env `AGENT_OFFICE_KAVI_BRIDGE_DIR` | Kavi |
-| Front Desk | Private Notion page Crew Front Desk | Four databases only: Needs Nick, Work Queue, Crew Status, Life Admin | Cursor writes. Kavi writes Life Admin and her issue rows. george routes. |
+| Front Desk | Private Notion page Crew Front Desk | Four databases only: Needs Nick, Work Queue, Crew Status, Life Admin | Cursor writes. Kavi writes Life Admin and bridge issue rows. george routes. When george is Usage empty, Kavi covers through the bridge and Cursor applies it ([KAVI-COVERS-GEORGE.md](KAVI-COVERS-GEORGE.md)). |
 | ISSUES | GitHub issues on the floor, plus Work Queue Type = Issue | `gh issue list` exits 0. Each open issue has a Work Queue link or a recorded skip | ForgeL for GitHub. Kavi for bridge issues |
 | Grok Bot | Crew Status row Parked | No Notion writes, no routines, no spend | Dan, if it wakes |
 
@@ -26,7 +26,8 @@ DeepSeek is not the default. Cursor is the default. DeepSeek runs only when crew
 | Life admin, bridge files, bridge issue rows | Kavi | Muse |
 | ProArt listen checks, office process, Okkin socket, crew-router socket | Jack | Local. No model required |
 | Forbidden-data read, security review of a PR that touches bridge, auth, router, or Okkin | Dan | Cursor |
-| Routing a row, recording Nick's quote + time | george | No deliverable text |
+| Routing a row, recording Nick's quote + time | george, while State is ON | No deliverable text |
+| The same routing, only while george State is Usage empty | Kavi decides. Cursor writes Notion | Muse for the decision, Cursor for the write. Kavi does not message the lanes |
 | Anything | Grok Bot | Do not call it |
 
 If Cursor usage would roll into on-demand charges, the lane writes `usage-exhausted at step N` on Crew Status and stops. That is the kill. It does not switch on Grok Bot, and it does not open a new paid account.
@@ -61,7 +62,7 @@ Any one of these stops the new work. The owner writes the note. Nobody asks Nick
 | K-GROK | Grok Bot writes Notion or starts a routine | Revert the write. Row stays Parked | Dan |
 | K-SPEND | A step needs a new account, a paid plan, or on-demand charges | Stop. Leave the service OFF | The lane that hit it |
 | K-SURVEY | A task is a template survey, a premortem packet, a fact-check list, or a replay corpus | Trash the row. Do not do the task | Cursor |
-| K-ASK | A bot is about to message Nick for a login, a key, a share, or a deploy OK | Do not send it. Record Blocked on the row | george |
+| K-ASK | A bot is about to message Nick for a login, a key, a share, or a deploy OK | Do not send it. Record Blocked on the row | george, or Cursor while Kavi is covering |
 
 ## Owners
 
@@ -69,11 +70,11 @@ Any one of these stops the new work. The owner writes the note. Nobody asks Nick
 |---|---|---|
 | Nick | Opens the ProArt. Opens the Mac | Run commands, share Notion, create accounts, approve deploys on the way in |
 | Jack | B1–B4 in the home checklist | Wake a machine, read the power-file, pull a model |
-| Kavi | Bridge heartbeat, Life Admin, WQ-7 and later issue rows | Questionnaire, Notion share request, Major Files |
+| Kavi | Bridge heartbeat, Life Admin, WQ-7, and COVER GEORGE orders while george is Usage empty | Talk to other lanes, Notion itself, questionnaire, Major Files |
 | ForgeL | Office PRs, `gh issue list`, Work Queue links for those issues | Merge, force-push, `gh auth login` |
 | Dan | K-SECRET read, security PR review | A new data-class research document |
-| george | Awaiting count, quote + time when Nick has already spoken | Author a task body, ping Nick during home open |
-| Cursor | Front Desk structure, heartbeats, killing survey rows | Grok Bot, new databases |
+| george | Awaiting count and quote + time while State is ON | Author a task body, route while Usage empty |
+| Cursor | Front Desk structure, heartbeats, killing survey rows, applying Kavi cover orders | Grok Bot, new databases, applying a cover file the parser rejects |
 | Grok Bot | Nothing | Everything |
 
 ## Acceptance tests
@@ -90,10 +91,11 @@ Re-run these any month. Public output only: PASS, FAIL, and a count. No file nam
 | A6 | Bridge | B5 prints `PASS`, or WQ-7 is Blocked with `bridge dir missing` / `wait for Mac wake` |
 | A7 | Needs Nick Awaiting | 0 rows |
 | A8 | Grok Bot | State = Parked, and it has no edit on the Front Desk since 2026-10-24 |
-| A9 | Work Queue | Every open row has Lane, Next action, and Stuck if no update by |
+| A9 | Work Queue | Every open row has Lane and Next action. Every open row except the standing Kavi-cover watch has Stuck if no update by |
 | A10 | ISSUES | `gh issue list` exit 0, or the note is `gh not logged in` / `gh not found` with no login attempt |
 | A11 | Secrets | Dan's latest note is `KS1 pass` |
 | A12 | Survey | No Work Queue row whose task is a template survey, premortem, fact check, or replay corpus |
+| A13 | Kavi cover | `parseCover` accepts the ON, OFF, and order samples in [KAVI-COVERS-GEORGE.md](KAVI-COVERS-GEORGE.md) and rejects Waiting on Nick, Grok Bot, and Major Files. A cover file never creates a Needs Nick row |
 
 A fail on A4 or A5 with the row left OFF is a stable degrade. A fail on A2, A3, A7, A8, or A11 is a stop. The owner in the table fixes it. Nick is not the owner of those rows.
 
