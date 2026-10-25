@@ -272,13 +272,7 @@ Skip this step when george State is ON. The full packet shapes are in [KAVI-COVE
 
 ### B12. Tailscale — Jack on the ProArt, Kavi on the Mac
 
-The steps are in [TAILSCALE-CREW.md](TAILSCALE-CREW.md). Run them in that machine's own session. Serve stays off until B2 prints `PASS`. Do not pass an auth key. Do not pass `--host 0.0.0.0`.
-
-| Line | Result |
-|---|---|
-| Pass | `BackendState` is `Running`. That machine's Crew Status note includes `tailscale Running`. The Tailscale row goes ON only when both notes say that. |
-| Fail | `NeedsLogin`. The login URL goes on that machine's Work Queue Link only. |
-| stuck_if | 30 minutes after that desktop is up, the note still has no `tailscale` word. |
+The steps, and the pass, fail, and stuck_if lines, are in [TAILSCALE-CREW.md](TAILSCALE-CREW.md). Run them in that machine's own session. Serve runs on the ProArt only, and only after B2 prints `PASS`. The Mac joins and does not serve. Do not pass an auth key. Do not pass `--host 0.0.0.0`.
 
 ## Done
 

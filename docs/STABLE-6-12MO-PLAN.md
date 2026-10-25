@@ -11,7 +11,7 @@ Nick powers on the ProArt and the Mac. [HOME-OPEN-CHECKLIST.md](HOME-OPEN-CHECKL
 | agent-office | This repo, on the ProArt | HTTP on `127.0.0.1:4600` only. Default bind is `127.0.0.1` (`src/server/config.ts`). `HOST` is ignored. | Jack starts it. ForgeL changes code by PR. |
 | Okkin | Ollama on the ProArt, `http://127.0.0.1:11434` only | `GET /api/tags` returns 200. Any other host is refused by `src/server/ollama.ts`. | Jack |
 | crew-router | Not in this repo. Loopback `127.0.0.1:4317` when a unit is already installed | Socket is loopback, or the row stays OFF | Jack |
-| Tailscale | The Mac and the ProArt, one tailnet | Both notes say `tailscale Running`. Serve points 443 at `127.0.0.1:4600` only after the office listen check passes. No auth key in git or on the Front Desk. Steps: [TAILSCALE-CREW.md](TAILSCALE-CREW.md) | Jack on the ProArt. Kavi on the Mac. |
+| Tailscale | The Mac and the ProArt, one tailnet | Both notes say `tailscale Running`. Serve runs on the ProArt only, and points 443 at `127.0.0.1:4600` only after the office listen check passes. The Mac does not serve. No auth key in git or on the Front Desk. Steps: [TAILSCALE-CREW.md](TAILSCALE-CREW.md) | Jack on the ProArt. Kavi on the Mac. |
 | Kavi bridge | Drive folders `to-george`, `to-kavi`, `in`, `out` on the Mac sync | Both `to-*` folders exist and are not symlinks. Office env `AGENT_OFFICE_KAVI_BRIDGE_DIR` | Kavi |
 | Front Desk | Private Notion page Crew Front Desk | Four databases only: Needs Nick, Work Queue, Crew Status, Life Admin | Cursor writes. Kavi writes Life Admin and bridge issue rows. george routes. When george is Usage empty, Kavi covers through the bridge and Cursor applies it ([KAVI-COVERS-GEORGE.md](KAVI-COVERS-GEORGE.md)). |
 | ISSUES | GitHub issues on the floor, plus Work Queue Type = Issue | `gh issue list` exits 0. Each open issue has a Work Queue link or a recorded skip | ForgeL for GitHub. Kavi for bridge issues |
@@ -98,7 +98,7 @@ Re-run these any month. Public output only: PASS, FAIL, and a count. No file nam
 | A11 | Secrets | Dan's latest note is `KS1 pass` |
 | A12 | Survey | No Work Queue row whose task is a template survey, premortem, fact check, or replay corpus |
 | A13 | Kavi cover | `parseCover` accepts the ON, OFF, and order samples in [KAVI-COVERS-GEORGE.md](KAVI-COVERS-GEORGE.md) and rejects Waiting on Nick, Grok Bot, and Major Files. A cover file never creates a Needs Nick row |
-| A14 | Tailscale | Both machine notes say `tailscale Running` and the office listen check is still loopback, or the note is `tailscale NeedsLogin` and the login URL is only on the Work Queue Link |
+| A14 | Tailscale | Both machine notes include `tailscale Running`, the ProArt note includes `tailscale serve on`, and the office listen check is still loopback. Or the note is `tailscale NeedsLogin` and the login URL is only on the Work Queue Link. The Mac does not serve |
 
 A fail on A4 or A5 with the row left OFF is a stable degrade. A fail on A2, A3, A7, A8, or A11 is a stop. The owner in the table fixes it. Nick is not the owner of those rows.
 
