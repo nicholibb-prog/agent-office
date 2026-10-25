@@ -40,7 +40,7 @@ If Cursor usage would roll into on-demand charges, the lane writes `usage-exhaus
 - Work Queue rows have a lane, a next action, and `Stuck if no update by`. Overdue is the formula already on the database. Nobody pages Nick because a formula is true.
 - Crew Status Stale is the formula already on the database (no heartbeat for 2 intervals). Heartbeat every min = 30 on ON rows. An OFF row does not get a heartbeat.
 - Life Admin is metadata Kavi enters while she works: item, kind, due, status, owner. No account numbers, no card numbers, no Major Files links.
-- Do not add a database, an automation, a Notion AI agent, Notion Mail, or Notion Calendar.
+- Do not add a database, an automation, a Notion AI agent, Notion Mail, or Notion Calendar. Routing is three views on the databases that already exist: Work Queue **Route**, Life Admin **Gate**, Crew Status **Router**. The page copy for those views, the life hook, and the kill switches is [KAVI-NOTION-MODULES.md](KAVI-NOTION-MODULES.md).
 
 ## ISSUES
 

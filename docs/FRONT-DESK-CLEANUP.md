@@ -1,6 +1,6 @@
 # Front Desk cleanup
 
-**Page:** private Crew Front Desk, read back 2026-10-24 22:55 UTC. Not published. This file has titles and public URLs only.
+**Page:** private Crew Front Desk, read back 2026-10-24 22:55 UTC. Not published. This file has titles and public URLs only. The views that make this page the phone HQ are in [KAVI-NOTION-MODULES.md](KAVI-NOTION-MODULES.md).
 
 **Order applied:** Nick, 2026-10-24 4:51 PM MT. Stop rebuilding Notion from templates. Delete the work that is not the operating desk. Kavi and Cursor run it. Grok Bot does not.
 
