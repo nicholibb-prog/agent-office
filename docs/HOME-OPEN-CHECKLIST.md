@@ -270,6 +270,16 @@ Skip this step when george State is ON. The full packet shapes are in [KAVI-COVE
 | Fail | Parser not ok, or the edit would add a Needs Nick row. Note `cover rejected` on the Work Queue row "Apply Kavi cover while george usage is empty". |
 | stuck_if | Usage empty for 30 minutes with no digest, or a valid order in `to-george` for 30 minutes with no Notion edit. Cursor finishes it. Do not ask Nick. |
 
+### B12. Tailscale — Jack on the ProArt, Kavi on the Mac
+
+The steps are in [TAILSCALE-CREW.md](TAILSCALE-CREW.md). Run them in that machine's own session. Serve stays off until B2 prints `PASS`. Do not pass an auth key. Do not pass `--host 0.0.0.0`.
+
+| Line | Result |
+|---|---|
+| Pass | `BackendState` is `Running`. That machine's Crew Status note includes `tailscale Running`. The Tailscale row goes ON only when both notes say that. |
+| Fail | `NeedsLogin`. The login URL goes on that machine's Work Queue Link only. |
+| stuck_if | 30 minutes after that desktop is up, the note still has no `tailscale` word. |
+
 ## Done
 
-Nick's steps: 2. Bot chain B1–B11 has a pass or a recorded fail on Crew Status. B11 may be a skip while george is ON. WQ-7 is Done or Blocked. Grok Bot is still Parked.
+Nick's steps: 2. Bot chain B1–B12 has a pass or a recorded fail on Crew Status. B11 may be a skip while george is ON. B12 may be `NeedsLogin` with the URL only on the Work Queue Link. WQ-7 is Done or Blocked. Grok Bot is still Parked.
