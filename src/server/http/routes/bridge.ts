@@ -13,6 +13,7 @@ import { readKaviDesk } from '../../kavi-desk.js';
 import type { Route } from '../router.js';
 import { appendInbox, ingestInbox } from '../../hq/relay.js';
 import { loadHqLocal, writeCrewPush } from '../../workers/crew.js';
+import { meritCrewAttachment } from '../../router/merit-crew.js';
 import { writePrivate } from '../../private-file.js';
 import { logOkkinRefusal, okkinCaller } from '../../hq/okkin-owner.js';
 
@@ -391,8 +392,9 @@ export const bridgeRoutes = {
       if (!bridgeGate(ctx, req, res)) return;
       try {
         const file = path.join(ctx.cfg.dataDir, 'crew-status.json');
-        if (!existsSync(file)) return send(res, 200, { crew: {}, updatedAt: null });
-        return send(res, 200, JSON.parse(readFileSync(file, 'utf8')));
+        const parsed = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown> : { crew: {}, updatedAt: null };
+        const merit = meritCrewAttachment(ctx);
+        return send(res, 200, merit ? { ...parsed, merit } : parsed);
       } catch {
         return send(res, 500, { error: OFFICE_ERROR });
       }
