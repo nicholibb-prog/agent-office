@@ -1,0 +1,850 @@
+{
+  "meta": {
+    "title": "Ultimate routing system",
+    "status": "Merit pick is implemented behind ROUTER_ON, default off. HOLD merge until Nick Yes on the merge.",
+    "docs": "docs/ULTIMATE-ROUTING-SYSTEM.md",
+    "officeReadsThis": false,
+    "live": {
+      "true": "Seat this plan allows when the edge when-clause is true. Not a heartbeat from this turn.",
+      "false": "Forbidden, or a design that is not built.",
+      "unproven": "Do not send real work."
+    },
+    "neverTraverse": "Edges whose when starts with NEVER are kill-lines. Do not animate them as taken.",
+    "failoverTokens": {
+      "stop": "Do not take another lane.",
+      "wait": "Hold for the named gate. Do not skip it."
+    },
+    "unprovenLanes": ["okkin", "deepseek", "jev"],
+    "h2h": {
+      "pin": "730ef8c523d6e3d6f8d65f8ca7e1b43c7d98eb58",
+      "result": "10/10 cannot-run okkin-down",
+      "scores": "n/a",
+      "routerCloud": 0,
+      "bindChanged": false
+    }
+  },
+  "nodes": [
+    {
+      "id": "nick-ask",
+      "label": "Nick ask",
+      "role": "lane",
+      "privacy": "grey",
+      "live": true,
+      "why": "Every new ask enters here. The job carries its own privacy class downstream. Nick is not a model lane."
+    },
+    {
+      "id": "george-router",
+      "label": "george",
+      "role": "router",
+      "privacy": "grey",
+      "live": true,
+      "why": "Wins a task when he is live and his merit score is best. Not a locked seat. Two sentences to Nick: owner and link. No deliverable body. If he is out, the next live router or an empty top takes the slot."
+    },
+    {
+      "id": "kavi-overseer",
+      "label": "Kavi overseer",
+      "role": "overseer",
+      "privacy": "grey",
+      "live": true,
+      "why": "Always on. Verify, check, record, escalate. Overseer is not the deliverer and does not assign. She does not oversee a body she wrote."
+    },
+    {
+      "id": "kavi-router-2",
+      "label": "Kavi Router #2",
+      "role": "router",
+      "privacy": "grey",
+      "live": true,
+      "why": "Wins when she is the best live score, including when george is out. Still does not deliver and does not route to herself. Grok desks only if that path is verified the same turn."
+    },
+    {
+      "id": "kavi-local",
+      "label": "Kavi local",
+      "role": "deliverer",
+      "privacy": "private",
+      "live": true,
+      "why": "Life, admin, money, memory, bridge, and private or grey while Okkin is unproven. Used only when someone else routed the job."
+    },
+    {
+      "id": "cursor",
+      "label": "Cursor",
+      "role": "lane",
+      "privacy": "grey",
+      "live": true,
+      "why": "Public non-VM lane and grey ops with no secrets, including Notion writes, while DeepSeek is unproven. Refuses private. Usage-exhausted stops the lane. Stable plan still governs."
+    },
+    {
+      "id": "deepseek",
+      "label": "DeepSeek",
+      "role": "lane",
+      "privacy": "public",
+      "live": "unproven",
+      "why": "Target cheap public lane after a live path and a score of at least 7/10. H2H used ROUTER_CLOUD=0. No result exists. Do not send private or grey."
+    },
+    {
+      "id": "okkin",
+      "label": "Okkin",
+      "role": "lane",
+      "privacy": "private",
+      "live": "unproven",
+      "why": "Private or grey only, after a proven path, a score of at least 7/10, and Nick Yes on bind. H2H: router.json loopback 127.0.0.1:11434 refused while OLLAMA_HOST on Tailscale answered 200. Bind not changed."
+    },
+    {
+      "id": "jev",
+      "label": "Jev",
+      "role": "lane",
+      "privacy": "public",
+      "live": "unproven",
+      "why": "Evaluated first on public asks. Cannot win without a live path and a score of at least 7/10, cheaper than the next passing lane. No live job in these packets. Never private or grey. Not the office room scoreboard."
+    },
+    {
+      "id": "forgel",
+      "label": "ForgeL",
+      "role": "deliverer",
+      "privacy": "grey",
+      "live": "unproven",
+      "why": "Named Grok desk for VM, box, or ProArt code when quota is verified this turn. Does not merge. Non-VM code stays on Cursor."
+    },
+    {
+      "id": "dan",
+      "label": "Dan",
+      "role": "gate",
+      "privacy": "private",
+      "live": true,
+      "why": "Security gate for bridge, auth, router, Okkin, secrets, and bind. Stable plan runs that review on the Cursor pool. Does not copy secrets into git or Notion."
+    },
+    {
+      "id": "jack",
+      "label": "Jack",
+      "role": "deliverer",
+      "privacy": "grey",
+      "live": true,
+      "why": "Local checks only: office process, Okkin socket, crew-router socket. No model. Does not edit bind or config. A one-line result is not a PASS for a different sha."
+    },
+    {
+      "id": "polishl",
+      "label": "PolishL",
+      "role": "gate",
+      "privacy": "private",
+      "live": "unproven",
+      "why": "Text gate before Nick. Grok desk was not probed; unproven means wait, not skip. One PASS is one sha. Owners write the body."
+    },
+    {
+      "id": "scoutl",
+      "label": "ScoutL",
+      "role": "researcher",
+      "privacy": "public",
+      "live": "unproven",
+      "why": "One public cited job when Grok quota is live and the source bar is met. Not the idle research pool. Not a volume lane."
+    },
+    {
+      "id": "tutorl",
+      "label": "TutorL",
+      "role": "deliverer",
+      "privacy": "private",
+      "live": false,
+      "why": "Named VM desk. This plan does not assign it. Student content never enters a route, a title, or git."
+    },
+    {
+      "id": "arbiter",
+      "label": "Arbiter",
+      "role": "gate",
+      "privacy": "grey",
+      "live": "unproven",
+      "why": "Kill-line audit and any fix of the router's own miss. Also records a job Kavi delivered, so she does not oversee herself. Desk not probed this turn."
+    },
+    {
+      "id": "viral",
+      "label": "Viral",
+      "role": "lane",
+      "privacy": "grey",
+      "live": false,
+      "why": "Named VM desk. No specialty in these packets. Do not invent one and do not assign work."
+    },
+    {
+      "id": "cut",
+      "label": "Cut",
+      "role": "lane",
+      "privacy": "grey",
+      "live": false,
+      "why": "Named VM desk. No specialty in these packets. Do not invent one and do not assign work."
+    },
+    {
+      "id": "bench",
+      "label": "Bench",
+      "role": "lane",
+      "privacy": "grey",
+      "live": false,
+      "why": "Named seat. Front Desk cleanup recorded no ops job. Do not assign and do not restore that Notion row in this plan."
+    },
+    {
+      "id": "r1",
+      "label": "R1",
+      "role": "researcher",
+      "privacy": "public",
+      "live": "unproven",
+      "why": "Fixed subagent. One public crew-research claim while Kavi is Router #2. Does not route. No live result in these packets."
+    },
+    {
+      "id": "r2",
+      "label": "R2",
+      "role": "researcher",
+      "privacy": "public",
+      "live": "unproven",
+      "why": "Fixed subagent. A different claim from R1. Does not join R1's claim. Does not route."
+    },
+    {
+      "id": "r3",
+      "label": "R3",
+      "role": "researcher",
+      "privacy": "public",
+      "live": "unproven",
+      "why": "Fixed subagent. A different claim from R1 and R2. Does not route. The research set is exactly these three."
+    },
+    {
+      "id": "t1",
+      "label": "T1",
+      "role": "deliverer",
+      "privacy": "grey",
+      "live": "unproven",
+      "why": "Fixed subagent. One test claim while Kavi is Router #2. Does not route."
+    },
+    {
+      "id": "t2",
+      "label": "T2",
+      "role": "deliverer",
+      "privacy": "grey",
+      "live": "unproven",
+      "why": "Fixed subagent. A different test claim from T1. Does not route. The test set is exactly these two."
+    },
+    {
+      "id": "g1",
+      "label": "G1",
+      "role": "deliverer",
+      "privacy": "grey",
+      "live": "unproven",
+      "why": "Fixed subagent. The only general overflow while Kavi is Router #2. Not research and not test. No seventh subagent."
+    },
+    {
+      "id": "researcher-pool",
+      "label": "Research pool",
+      "role": "researcher",
+      "privacy": "public",
+      "live": false,
+      "why": "Standing-watch design: cheap-first, one claim, digest, partial at cap. Not built. Builds HOLD. Does not wake Cursor or Grok when the cheap lane is unproven."
+    },
+    {
+      "id": "claim-queue",
+      "label": "Claim queue",
+      "role": "researcher",
+      "privacy": "public",
+      "live": false,
+      "why": "One owner per standing question. Idle until claimed. Not built. A second desk on the same question is forbidden."
+    },
+    {
+      "id": "digest",
+      "label": "Digest",
+      "role": "researcher",
+      "privacy": "public",
+      "live": false,
+      "why": "One window, deltas only, or [partial N/M] at the cap, on a cache hit, on a repeated tool loop, or when the cheap lane is unproven. Not built."
+    },
+    {
+      "id": "hive",
+      "label": "Hive log",
+      "role": "hive",
+      "privacy": "grey",
+      "live": false,
+      "why": "Logs route, cost, quality, and miss. Notifies the active router on a kill. Does not pick the next owner. Not built. A prune that deletes a lane waits on Nick."
+    },
+    {
+      "id": "bar-7",
+      "label": "Bar 7/10",
+      "role": "gate",
+      "privacy": "grey",
+      "live": true,
+      "why": "Cheap result is kept only at 7/10 or above. Under 7, escalate. Cheapest-only is forbidden. The router does not grade his own body."
+    },
+    {
+      "id": "nick-yes",
+      "label": "Nick Yes",
+      "role": "gate",
+      "privacy": "grey",
+      "live": true,
+      "why": "His own Yes or No for merge, delete, publish, create-bot, spend, bind/config, and for this plan. A relayed quote is not a Yes. The merge trio does not replace him."
+    },
+    {
+      "id": "empty-top",
+      "label": "Empty top",
+      "role": "gate",
+      "privacy": "grey",
+      "live": true,
+      "why": "No live router. The top slot stays empty. Private and grey HOLD. Public waits. No cloud lane is invented."
+    },
+    {
+      "id": "hold-private",
+      "label": "HOLD private",
+      "role": "gate",
+      "privacy": "private",
+      "live": true,
+      "why": "Private or grey waits when Okkin is unproven and the only legal author would be the router herself. No cloud copy."
+    },
+    {
+      "id": "george-deliverer",
+      "label": "george as deliverer",
+      "role": "deliverer",
+      "privacy": "grey",
+      "live": false,
+      "why": "Forbidden. The router never delivers. Status charts are deliverables. Named desks only."
+    },
+    {
+      "id": "grok-bulk",
+      "label": "Grok bulk",
+      "role": "lane",
+      "privacy": "public",
+      "live": false,
+      "why": "Forbidden. No Grok essays, tables, or bulk. Computer-specific work goes to a named desk when quota is live. Two-line status stays on the router."
+    }
+  ],
+  "edges": [
+    {
+      "from": "nick-ask",
+      "to": "george-router",
+      "when": "george is live and his merit score is the best for this task",
+      "failover": "kavi-router-2"
+    },
+    {
+      "from": "nick-ask",
+      "to": "kavi-router-2",
+      "when": "Kavi is live and her merit score beats every other live router, including when george is out. She routes and does not deliver.",
+      "failover": "empty-top"
+    },
+    {
+      "from": "nick-ask",
+      "to": "empty-top",
+      "when": "No router is live. Top slot stays empty.",
+      "failover": "hold-private"
+    },
+    {
+      "from": "nick-ask",
+      "to": "kavi-overseer",
+      "when": "Every ask. Verify the classification. Do not assign and do not write the body.",
+      "failover": "stop"
+    },
+    {
+      "from": "george-router",
+      "to": "jev",
+      "when": "Public ask, evaluated first. Traverse only if a live path was verified this turn AND score >= 7/10 AND cheaper than the next passing lane. Otherwise skip.",
+      "failover": "cursor"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "jev",
+      "when": "Same Jev test, only while she is Router #2. Private and grey never.",
+      "failover": "cursor"
+    },
+    {
+      "from": "george-router",
+      "to": "okkin",
+      "when": "Private or grey, Okkin path proven this turn, expected score >= 7/10, and Nick already Yes on bind. H2H loopback mismatch: do not traverse.",
+      "failover": "kavi-local"
+    },
+    {
+      "from": "george-router",
+      "to": "kavi-local",
+      "when": "Life, admin, money, memory, or bridge; or private or grey while Okkin is unproven; and Kavi is not the router on this ask.",
+      "failover": "hold-private"
+    },
+    {
+      "from": "george-router",
+      "to": "deepseek",
+      "when": "Public, non-VM, DeepSeek path proven this turn, expected score >= 7/10, brief has lane= and why-cheapest=. Do not traverse while unproven.",
+      "failover": "cursor"
+    },
+    {
+      "from": "george-router",
+      "to": "cursor",
+      "when": "Public non-VM while DeepSeek is unproven, or the job needs a power lane, or a cheap score is under 7/10.",
+      "failover": "wait"
+    },
+    {
+      "from": "george-router",
+      "to": "cursor",
+      "when": "Notion Front Desk write. george names the row. Cursor writes. Kavi has no Notion login.",
+      "failover": "wait"
+    },
+    {
+      "from": "george-router",
+      "to": "researcher-pool",
+      "when": "Standing public watch. Not a one-shot Nick is waiting on.",
+      "failover": "digest"
+    },
+    {
+      "from": "george-router",
+      "to": "scoutl",
+      "when": "One-shot public cited research, Grok quota verified this turn, source bar met (credible, tested, extremely beneficial).",
+      "failover": "cursor"
+    },
+    {
+      "from": "george-router",
+      "to": "forgel",
+      "when": "Code that must run on the VM, box, or ProArt, and Grok quota verified this turn. If it is not tied to the machine, use the Cursor edge instead.",
+      "failover": "wait"
+    },
+    {
+      "from": "george-router",
+      "to": "jack",
+      "when": "Local socket or process check. No model call. No bind or config edit.",
+      "failover": "stop"
+    },
+    {
+      "from": "george-router",
+      "to": "dan",
+      "when": "Security review of bridge, auth, router, Okkin, secrets, or bind.",
+      "failover": "wait"
+    },
+    {
+      "from": "george-router",
+      "to": "arbiter",
+      "when": "Routing failure, kill-line audit, or meta-work on the router's own mistake.",
+      "failover": "stop"
+    },
+    {
+      "from": "george-router",
+      "to": "tutorl",
+      "when": "NEVER. Student content is out of this plan.",
+      "failover": "stop"
+    },
+    {
+      "from": "george-router",
+      "to": "viral",
+      "when": "NEVER until Nick defines a specialty and quota is live.",
+      "failover": "stop"
+    },
+    {
+      "from": "george-router",
+      "to": "cut",
+      "when": "NEVER until Nick defines a specialty and quota is live.",
+      "failover": "stop"
+    },
+    {
+      "from": "george-router",
+      "to": "bench",
+      "when": "NEVER. No ops job. Do not restore the Notion row.",
+      "failover": "stop"
+    },
+    {
+      "from": "george-router",
+      "to": "george-deliverer",
+      "when": "NEVER. Deliverable text is never the router's.",
+      "failover": "cursor"
+    },
+    {
+      "from": "george-router",
+      "to": "grok-bulk",
+      "when": "NEVER. No Grok bulk, chart, or essay.",
+      "failover": "cursor"
+    },
+    {
+      "from": "george-router",
+      "to": "nick-yes",
+      "when": "Merge, delete, publish, create-bot, spend, or bind/config. Stop and ask. Do not do the thing.",
+      "failover": "stop"
+    },
+    {
+      "from": "george-router",
+      "to": "hive",
+      "when": "Job closed, or a kill tripped. Log only. Hive does not get the next assignment from this edge.",
+      "failover": "stop"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "cursor",
+      "when": "Public non-VM, or grey with no secrets, while she is router. She decides. Cursor writes.",
+      "failover": "wait"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "cursor",
+      "when": "COVER GEORGE file while george is Usage empty. Cursor applies Notion. She does not message the lanes. Do not set lane george as the author of a body.",
+      "failover": "wait"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "deepseek",
+      "when": "Public, live path proven this turn, expected score >= 7/10. Else skip.",
+      "failover": "cursor"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "okkin",
+      "when": "Private or grey, path proven this turn, expected score >= 7/10, Nick already Yes on bind. Else skip.",
+      "failover": "hold-private"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "hold-private",
+      "when": "Private or grey and Okkin is unproven. She must not write it herself.",
+      "failover": "stop"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "kavi-local",
+      "when": "NEVER. A router does not route to itself.",
+      "failover": "hold-private"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "forgel",
+      "when": "VM work and that Grok path was verified this turn. Machine-bound work waits if the desk is down.",
+      "failover": "wait"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "scoutl",
+      "when": "Grok path verified this turn and the job is one public cited research ask.",
+      "failover": "r1"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "r1",
+      "when": "One distinct public crew-research claim. Do not also assign R2 to it.",
+      "failover": "stop"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "r2",
+      "when": "A different public crew-research claim from R1.",
+      "failover": "stop"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "r3",
+      "when": "A different public crew-research claim from R1 and R2.",
+      "failover": "stop"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "t1",
+      "when": "One test claim.",
+      "failover": "stop"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "t2",
+      "when": "A different test claim from T1.",
+      "failover": "stop"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "g1",
+      "when": "One general overflow claim that is not research and not a test.",
+      "failover": "stop"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "george-deliverer",
+      "when": "NEVER. She does not assign deliverable text to george.",
+      "failover": "cursor"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "grok-bulk",
+      "when": "NEVER. No Grok bulk while she covers.",
+      "failover": "cursor"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "researcher-pool",
+      "when": "Standing public watch while she is router.",
+      "failover": "digest"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "nick-yes",
+      "when": "Irreversible ask (merge, delete, publish, create-bot, spend, bind). She does not approve it.",
+      "failover": "stop"
+    },
+    {
+      "from": "kavi-router-2",
+      "to": "hive",
+      "when": "Job closed, or a kill tripped. Log only.",
+      "failover": "stop"
+    },
+    {
+      "from": "researcher-pool",
+      "to": "claim-queue",
+      "when": "Standing question is not already claimed and not in the semantic cache.",
+      "failover": "digest"
+    },
+    {
+      "from": "researcher-pool",
+      "to": "digest",
+      "when": "Cap hit, cache hit, third identical tool-plus-input repeat, or cheap lane unproven. Body is [partial N/M]. No sibling job.",
+      "failover": "stop"
+    },
+    {
+      "from": "claim-queue",
+      "to": "deepseek",
+      "when": "One public claim, DeepSeek proven, expected score >= 7/10, single owner.",
+      "failover": "digest"
+    },
+    {
+      "from": "claim-queue",
+      "to": "r1",
+      "when": "Kavi is Router #2 and the claim is one public crew question. Do not wake R2 on that same claim.",
+      "failover": "digest"
+    },
+    {
+      "from": "claim-queue",
+      "to": "r2",
+      "when": "A second distinct standing claim, not a retry of R1.",
+      "failover": "digest"
+    },
+    {
+      "from": "claim-queue",
+      "to": "r3",
+      "when": "A third distinct standing claim.",
+      "failover": "digest"
+    },
+    {
+      "from": "deepseek",
+      "to": "bar-7",
+      "when": "A real DeepSeek result exists. Do not invent one.",
+      "failover": "cursor"
+    },
+    {
+      "from": "jev",
+      "to": "bar-7",
+      "when": "A real Jev result exists on a verified live path. Do not invent one.",
+      "failover": "cursor"
+    },
+    {
+      "from": "okkin",
+      "to": "bar-7",
+      "when": "A real Okkin result exists and george is the router.",
+      "failover": "kavi-local"
+    },
+    {
+      "from": "okkin",
+      "to": "bar-7",
+      "when": "A real Okkin result exists and Kavi is the router.",
+      "failover": "hold-private"
+    },
+    {
+      "from": "bar-7",
+      "to": "polishl",
+      "when": "Score >= 7/10. Send the body to the text gate.",
+      "failover": "wait"
+    },
+    {
+      "from": "bar-7",
+      "to": "cursor",
+      "when": "Public score under 7/10. Escalate. Do not keep the cheap body.",
+      "failover": "wait"
+    },
+    {
+      "from": "bar-7",
+      "to": "kavi-local",
+      "when": "Private or grey score under 7/10 and george is the router.",
+      "failover": "hold-private"
+    },
+    {
+      "from": "bar-7",
+      "to": "hold-private",
+      "when": "Private or grey score under 7/10 and Kavi is the router.",
+      "failover": "stop"
+    },
+    {
+      "from": "cursor",
+      "to": "polishl",
+      "when": "Deliverable text is ready for Nick.",
+      "failover": "wait"
+    },
+    {
+      "from": "cursor",
+      "to": "hive",
+      "when": "Cursor reports usage-exhausted. Log it. Do not open a new paid account and do not move the job to Grok.",
+      "failover": "stop"
+    },
+    {
+      "from": "cursor",
+      "to": "grok-bulk",
+      "when": "NEVER. Usage-exhausted does not fall through to Grok.",
+      "failover": "stop"
+    },
+    {
+      "from": "kavi-local",
+      "to": "polishl",
+      "when": "Her deliverable text is ready. She is the author, so she is not the overseer on this job.",
+      "failover": "wait"
+    },
+    {
+      "from": "forgel",
+      "to": "polishl",
+      "when": "PR text is ready. ForgeL does not merge.",
+      "failover": "wait"
+    },
+    {
+      "from": "forgel",
+      "to": "nick-yes",
+      "when": "Someone asks to merge the PR.",
+      "failover": "stop"
+    },
+    {
+      "from": "scoutl",
+      "to": "polishl",
+      "when": "Cited memo is ready and the source bar is met.",
+      "failover": "wait"
+    },
+    {
+      "from": "scoutl",
+      "to": "george-router",
+      "when": "Sources miss the bar. ScoutL does not widen onto Grok bulk. Router decides.",
+      "failover": "digest"
+    },
+    {
+      "from": "jack",
+      "to": "kavi-overseer",
+      "when": "One-line check result to record. Not a PASS for any other sha.",
+      "failover": "arbiter"
+    },
+    {
+      "from": "jack",
+      "to": "polishl",
+      "when": "The check note is longer than a status line.",
+      "failover": "wait"
+    },
+    {
+      "from": "r1",
+      "to": "polishl",
+      "when": "Cited research text is ready.",
+      "failover": "wait"
+    },
+    {
+      "from": "r2",
+      "to": "polishl",
+      "when": "Cited research text is ready.",
+      "failover": "wait"
+    },
+    {
+      "from": "r3",
+      "to": "polishl",
+      "when": "Cited research text is ready.",
+      "failover": "wait"
+    },
+    {
+      "from": "t1",
+      "to": "polishl",
+      "when": "Test note is ready.",
+      "failover": "wait"
+    },
+    {
+      "from": "t2",
+      "to": "polishl",
+      "when": "Test note is ready.",
+      "failover": "wait"
+    },
+    {
+      "from": "g1",
+      "to": "polishl",
+      "when": "Overflow text is ready.",
+      "failover": "wait"
+    },
+    {
+      "from": "digest",
+      "to": "polishl",
+      "when": "Digest text is a deliverable Nick will read.",
+      "failover": "wait"
+    },
+    {
+      "from": "digest",
+      "to": "hive",
+      "when": "Log lane, cost, and partial flag. The digest does not re-route.",
+      "failover": "stop"
+    },
+    {
+      "from": "polishl",
+      "to": "dan",
+      "when": "Body touches bridge, auth, router, Okkin, secrets, or bind.",
+      "failover": "wait"
+    },
+    {
+      "from": "polishl",
+      "to": "kavi-overseer",
+      "when": "PASS on one sha, re-read, and the deliverer is not kavi-local.",
+      "failover": "george-router"
+    },
+    {
+      "from": "polishl",
+      "to": "arbiter",
+      "when": "PASS on one sha and the deliverer is kavi-local. Kavi does not oversee her own body.",
+      "failover": "wait"
+    },
+    {
+      "from": "polishl",
+      "to": "george-router",
+      "when": "FAIL. Router reassigns. The author does not self-route around the gate.",
+      "failover": "kavi-router-2"
+    },
+    {
+      "from": "dan",
+      "to": "nick-yes",
+      "when": "An irreversible step still needs Nick after the security note.",
+      "failover": "stop"
+    },
+    {
+      "from": "dan",
+      "to": "kavi-overseer",
+      "when": "Security note recorded and no irreversible step remains.",
+      "failover": "stop"
+    },
+    {
+      "from": "kavi-overseer",
+      "to": "hive",
+      "when": "Record route, sha, and miss. She does not reassign from this edge.",
+      "failover": "stop"
+    },
+    {
+      "from": "kavi-overseer",
+      "to": "george-router",
+      "when": "Check fails (sha, privacy, or missing gate) and george is in. He reassigns.",
+      "failover": "kavi-router-2"
+    },
+    {
+      "from": "kavi-overseer",
+      "to": "arbiter",
+      "when": "The failure is a routing violation, including one of her own routes.",
+      "failover": "stop"
+    },
+    {
+      "from": "kavi-overseer",
+      "to": "nick-yes",
+      "when": "george is out and the check fails. She does not fix her own route in place.",
+      "failover": "stop"
+    },
+    {
+      "from": "hive",
+      "to": "george-router",
+      "when": "Quality under 7, cost over the brief cap, or a privacy breach. Hive does not pick the next lane.",
+      "failover": "kavi-router-2"
+    },
+    {
+      "from": "hive",
+      "to": "digest",
+      "when": "Weekly prune list. Listing is not deletion.",
+      "failover": "nick-yes"
+    },
+    {
+      "from": "hive",
+      "to": "nick-yes",
+      "when": "A prune would delete or retire a standing lane.",
+      "failover": "stop"
+    },
+    {
+      "from": "hold-private",
+      "to": "nick-yes",
+      "when": "The only unblock is a bind or config change for Okkin. Still needs Dan.",
+      "failover": "stop"
+    }
+  ]
+}

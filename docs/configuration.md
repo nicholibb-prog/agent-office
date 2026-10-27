@@ -52,6 +52,14 @@ The unblock strip and **Since last visit** read four files in the office data di
 
 The bridge accepts these on `POST /api/bridge/unblock` (`{ "blocks": [] }`) and `POST /api/bridge/board-status` (`{ "items": [] }`), with the same token or office session as the other bridge routes, and only from `127.0.0.1` or `localhost`. `GET /api/bridge/hq-brief?since=` returns the strip and the digest. `POST /api/bridge/unblock/answer` is signed-in office session only (a bridge token or `Authorization: Bearer` is rejected). The body is `{ "id", "answer": "yes"|"no", "at", "titleHash" }`. A `workerId` in that body is ignored. The server types only when the block is `yesno`, that desk’s status is `needs_input`, and `at` plus `titleHash` still match the live desk.
 
+## Merit routing
+
+The top router is whoever scores best among live routers for that task. It is not a fixed seat. `ROUTER_ON` defaults off: only the exact string `1` turns the picker on. While it is off, `GET /api/router/merit` answers the owner `{ "on": false, "top": null }` and `GET /api/bridge/crew-status` is unchanged.
+
+With the flag on, the seat comes from `crew-status.json` plus gitignored display names in `hq-local.json`. A fresh `working` or `idle` heartbeat is live. `out`, usage empty, offline, blocked, or a heartbeat older than the working lease is not. Nobody live leaves the top empty. Private and grey work does not go to a public-cloud lane. The assign call is `POST /api/router/merit` with `id`, `privacy`, `kind`, and an optional `http(s)` link. It does not accept a proof flag, a prompt, or a provider key. Scoring is in [ULTIMATE-ROUTING-SYSTEM.md](ULTIMATE-ROUTING-SYSTEM.md#merit).
+
+Do not merge a change that turns this on, and do not set it in production, without Nick's own Yes. Bind stays `127.0.0.1`. This flag does not spend and does not open Okkin, DeepSeek, or Jev.
+
 ## Command line
 
 ```

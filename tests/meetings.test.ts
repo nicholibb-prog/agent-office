@@ -251,10 +251,11 @@ test('in a git project the output is committed on the meeting branch, which outl
   assert.ok(f.prompts[0].text.includes(`Write it to ${path.join(f.cwd(), '.meeting', 'r1-1-chair.md')},`));
   for (const i of [0, 1, 2]) f.take(i);
   f.take(0, '# Redis\n');
-  for (let i = 0; i < 50 && !f.room.state().current!.commit; i++) await new Promise((r) => setTimeout(r, 20));
+  // Git commit is async. Under a full parallel run it can take well over a second.
+  for (let i = 0; i < 1500 && !f.room.state().current!.commit; i++) await new Promise((r) => setTimeout(r, 20));
   const m = f.room.state().current!;
   assert.equal(m.status, 'done');
-  assert.ok(m.commit);
+  assert.ok(m.commit, f.toasts.join(' | ') || 'commit did not land');
   const git = (...args: string[]) => execFileSync('git', args, { cwd: f.dir, encoding: 'utf8' }).trim();
   assert.equal(git('show', `${m.worktree!.branch}:docs/decision.md`), '# Redis');
   // Notes stay out of the commit.
