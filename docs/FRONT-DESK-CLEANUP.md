@@ -25,7 +25,7 @@
 
 | Object | URL | Rows left |
 |---|---|---|
-| Crew Front Desk | https://app.notion.com/p/403e7aa3897681568be4cc639dc48aba | Intro, four databases, never-list. No Rules child |
+| Crew Front Desk | https://app.notion.com/p/403e7aa3897681568be4cc639dc48aba | Phone, Crew, Work, Life. Four inline databases. No Rules child |
 | Needs Nick | https://app.notion.com/p/6ceb05f6480a4f8caa1b40027c8e4490 | Notion path GO (G1) = Answered Yes. Grok Bot Notion access = Parked |
 | Work Queue | https://app.notion.com/p/41c1e5c3778c43d89cc69d35eefacb8c | WQ-7 File open bridge issues on Work Queue. Lane Kavi. Status Routed. Stuck if no update by 2026-10-25 12:00 MT |
 | Crew Status | https://app.notion.com/p/02a41468405343668c769245cf215474 | agent-office, crew-router, Cursor, Dan, ForgeL, george, Grok Bot, Jack, Kavi (MuseBot), Mac, ProArt, Side Lanes, TutorL |
@@ -79,3 +79,16 @@ Do not dispatch these. If a row for one appears, trash it (kill switch K-SURVEY 
 3. Renamed the one remaining handoff to "File open bridge issues on Work Queue" and set the next action so Kavi files titles and links only.
 
 Nothing here wakes the ProArt or the Mac.
+
+## How the page reads
+
+Checked 2026-10-25 12:56 PM MT. Same four databases. They sit inline on [Crew Front Desk](https://app.notion.com/p/403e7aa3897681568be4cc639dc48aba), in this order: Phone, Crew, Work, Life.
+
+| Database | Home view | Also |
+|---|---|---|
+| Needs Nick | Awaiting. Status = Awaiting Nick. Item, question, gate, age, asked on | All, the answered and parked rows |
+| Work Queue | Open. Done and Killed hidden. Task, status, lane, priority, next action, stuck time, overdue, ref, type | By lane (empty lanes hidden). Done |
+| Crew Status | Now. Name, state, kind, note, stale, last heartbeat | By state (empty states hidden) |
+| Life Admin | Open. Done hidden, sorted by due | All |
+
+Lane on Work Queue is george, Kavi, ForgeL, Dan, Jack, Cursor. PolishL, ScoutL, Arbiter, Bench, and Grok Bot are not choices. Prepared by on Needs Nick is the same six. A row still opens with status, lane, and next action pinned. No fifth database.
