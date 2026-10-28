@@ -1,8 +1,8 @@
 # Kavi covers george
 
-Kavi is the Muse bot (`muse` in this office, Crew Status runtime **Muse app**). That is why Kavi cannot open Notion and cannot message the Cursor or Grok lanes. Those lanes read Notion. The Muse bot's only path to them is the Drive bridge: files in `to-kavi` and `to-george`.
+Kavi is the Muse bot (`muse` in this office, Crew Status runtime **Muse app**). Muse connects on its own path: the Muse app, and the Drive bridge folders `to-kavi` and `to-george`. That path is not a crew seat. Crew seats stay `seat-1` through `seat-9` and `okkin`. Muse is not a Notion member. The Work Queue value `Kavi` is a lane label on a row. The other lanes read the row after Cursor applies it. They do not get a message from the Muse bot.
 
-George routes in Notion while his usage is up. When that usage is empty, the Muse bot covers the routing seat by writing bridge files. Cursor, on a different usage pool, is the hands that copy those files into Notion. The Muse bot does not get a Notion login and does not get hired onto a Cursor seat to do this.
+George routes in Notion while his usage is up. When that usage is empty, the Muse bot covers the routing fields on existing rows: Status, Lane, Next action, and stuck time. It writes `COVER GEORGE` on the bridge. Cursor, on a different usage pool, applies those fields in Notion.
 
 Nick does nothing for this. Do not ask him to share Notion, to wake a machine, or to refill george's usage.
 
