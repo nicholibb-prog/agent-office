@@ -290,7 +290,8 @@ export function sessionOnly(ctx: Ctx, req: http.IncomingMessage, res: http.Serve
 export const bridgeRoutes = {
   chatRecent: {
     method: 'GET' as const,
-    path: '/api/bridge/chat',
+    // /bridge/chat is the DeepSeek seat MCP alias (CREW_BRIDGE_URL). Same handler and bridgeGate.
+    path: ['/api/bridge/chat', '/bridge/chat'],
     auth: 'public' as const,
     handle(ctx: Ctx, { req, res, url }: { req: http.IncomingMessage; res: http.ServerResponse; url: URL }) {
       if (!bridgeGate(ctx, req, res)) return;
@@ -300,7 +301,8 @@ export const bridgeRoutes = {
   },
   say: {
     method: 'POST' as const,
-    path: '/api/bridge/say',
+    // /say is the DeepSeek seat MCP alias (CREW_BRIDGE_URL). Same handler and seatGate.
+    path: ['/api/bridge/say', '/say'],
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
       const seat = seatGate(ctx, req, res);

@@ -145,6 +145,12 @@ is 401.
 and any `POST` with it is 403. `say`, `status` and `crew-status` need a seat token (an office
 session gets 403 there too). Other bridge POSTs accept a seat token or an office session.
 
+`GET /bridge/chat` and `POST /say` are compatibility aliases for `GET /api/bridge/chat` and
+`POST /api/bridge/say`. The DeepSeek seat MCP calls those short paths (`CREW_BRIDGE_URL`). They are
+the same handlers on the existing loopback office server: the same Host allowlist, Origin check, and
+seat-token rules. A shared bridge token can read chat and still cannot post. The office does not
+bind beyond `127.0.0.1` for this, and it does not open a separate port.
+
 ## Local crew
 
 See [Local HQ](hq.md). The floor's gitignored `.agent-office/hq-local.json` turns desks into crew seats. `seats` maps a crew seat id (`seat-1` … `seat-9`, `okkin`) to a desk; its other keys are the unblock strip's desk-to-seat-key map above. `names` maps a seat to a display name on this machine; without it the roster says `seat-1` … `seat-9`. The office data directory also holds `bridge-token` (created if it is missing, mode 0600), `ollama.json` (optional loopback `url` and `model`), `crew-status.json`, `chat-outbox.jsonl`, `chat-inbox.jsonl`, `talk-threads.json`, `desk-cards.json`, `kavi-feed.json`, and `kavi-outbox.json` (the last two mode 0600; the outbox keeps 200 items). Bot lines for a generic seat are posted to `POST /api/bridge/inbox`. `POST /api/bridge/talk` (every seat) and the model switch are owner only: a verified office session that has unlocked owner; any bridge, seat or Bearer token is refused, and so is a session that has not unlocked owner. Crew talk threads and the Kavi outbox are readable by the owner, or by a seat token for its own seat only; the shared bridge token is refused (see [Local HQ](hq.md)). Seat-provider turns reach a crew seat only through the gitignored `.agent-office/seat-map.json` (`{"<floorId>:<deskOrMeetingId>": "<crewSeatId>"}`; see the committed `seat-map.example.json`); unmapped turns are owner-only. JSON bodies over 16 KB are refused with the connection closed.
