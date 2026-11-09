@@ -72,3 +72,47 @@
   opacity: 0.7;
   font-size: 0.8rem;
 }
+
+.hq-talk .body,
+.hq-outbox .body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 70vh;
+  overflow: auto;
+}
+
+/* Owner-lock notes: neutral grey, never the error style. */
+.hq-private {
+  margin: 0;
+  color: #9aa0a6;
+  font-style: italic;
+}
+.hq-lock {
+  padding: 0.3rem 0 0;
+}
+.hq-unmapped {
+  opacity: 0.75;
+  font-style: italic;
+}
+
+/* Locked talk: greyed and disabled (owner unlock needed). */
+.hq-talk[data-locked='yes'] footer input,
+.hq-talk[data-locked='yes'] footer button {
+  background: #e4e6e8;
+  color: #8a9096;
+  border-color: #b9bec3;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.hq-stale {
+  opacity: 0.6;
+}
+.hq-unlock:empty {
+  display: none;
+}
+
+/* Friendly names keep their case in the outbox (the roster chip lowercases states). */
+.hq-outbox .hq-chip {
+  text-transform: none;
+}

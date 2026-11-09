@@ -149,7 +149,7 @@ export function installPalette(ctx: Ctx, parts: PaletteParts) {
     for (const p of store.peers.values()) {
       if (p.id === store.you) continue;
       const floor = store.onMyFloor(p) ? 'On this floor' : `On the ${store.floors.find((f) => f.id === p.floor)?.name ?? 'other'} floor`;
-      // As clicking them under "In the office" does: over to them, by elevator if need be.
+      // As clicking them in the 👥 People panel does: over to them, by elevator if need be.
       out.push({ icon: '🙂', kind: 'Teammate', title: p.name, detail: floor, open: () => parts.walking.walkTo(p.id) });
     }
     return out;

@@ -1,0 +1,21 @@
+{
+  "_comment": "Dan's spec \u00a74: exact fake fixtures by SHA-256 of the normalised string (NFKC, zero-width stripped, lower-case, whitespace collapsed). No wildcards or regexes. Can never exempt PRIVATE_KEY, OWNER_NAME, DRIVE_ID, MAJOR_FILES, HOME_PATH or FINANCIAL. Changes need Dan's PASS.",
+  "entries": [
+    {
+      "sha256": "2eb6c6020c2290c8d9020b570bd9d6ef7577109b2d51c2510b61674ca782ee18",
+      "reason": "AWS documentation example key id",
+      "owner": "dan"
+    },
+    {
+      "sha256": "12b9377cbe7e5c94e8a70d9d23929523d14afa954793130f8a3959c7b849aca8",
+      "reason": "all-zero UUID",
+      "owner": "dan"
+    }
+  ],
+  "domains": [
+    "example.com",
+    "example.org",
+    "example.net",
+    "users.noreply.github.com"
+  ]
+}

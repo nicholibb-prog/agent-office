@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual, randomBytes, scrypt } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Account, Accounts } from './accounts.js';
+import { OWNER_COOKIE } from './hq/okkin-owner.js';
 
 export const COOKIE_NAME = 'ao_session';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 14;
@@ -165,12 +166,15 @@ function cookieName(req: IncomingMessage): string {
 
 const OFFICE_COOKIE = new RegExp(`^${COOKIE_NAME}(?:_\\d+)?$`);
 
-/** The Cookie header without the office's session cookies, for passing on to someone else's server. */
+/** The Cookie header without the office's session cookies or the owner cookie, for passing on to someone else's server. */
 export function withoutOfficeCookies(header: string | undefined): string | undefined {
   if (!header) return header;
   const kept = header
     .split(';')
-    .filter((part) => !OFFICE_COOKIE.test(part.split('=', 1)[0].trim()))
+    .filter((part) => {
+      const name = part.split('=', 1)[0].trim();
+      return !OFFICE_COOKIE.test(name) && name !== OWNER_COOKIE;
+    })
     .join(';')
     .trim();
   return kept || undefined;

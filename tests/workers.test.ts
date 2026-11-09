@@ -250,8 +250,11 @@ test('Claude workers use the configured executable, pass prompts and resume ids,
   assert.ok(secondWorker.args.includes('claude-session-1'));
   assert.equal(secondWorker.args.includes('initial Claude prompt'), false);
 
-  // The Claude hook remains accepted after a resume and updates the activity state.
-  assert.equal(workers.handleHook(worker.id, firstWorker.env.hookToken!, 'UserPromptSubmit', { prompt: 'follow-up' }), true);
+  // A resume is a relaunch: a fresh hook token, and the pre-relaunch one stops working.
+  assert.ok(secondWorker.env.hookToken);
+  assert.notEqual(secondWorker.env.hookToken, firstWorker.env.hookToken);
+  assert.equal(workers.handleHook(worker.id, firstWorker.env.hookToken!, 'UserPromptSubmit', { prompt: 'stale' }), false);
+  assert.equal(workers.handleHook(worker.id, secondWorker.env.hookToken!, 'UserPromptSubmit', { prompt: 'follow-up' }), true);
   assert.equal(workers.get(worker.id)?.activity, 'follow-up');
 
   // Selecting the alternate provider uses its binary with a clean argument set.
@@ -1671,4 +1674,17 @@ test("a worker whose worktree was deleted outside the office waits, marked lost,
   assert.equal(git(path.join(f.root, gone.worktree!.path), 'rev-parse', 'HEAD'), gone.worktree!.base);
   assert.equal(after.get(gone.id)?.lost, undefined);
   assert.deepEqual(toasts, []);
+});
+
+test('a legacy plaintext hookToken in workers.json is re-saved as a hash right at startup', async (t) => {
+  const f = carryOnFixture(t);
+  const file = path.join(f.data, 'workers.json');
+  writeFileSync(file, JSON.stringify([{ id: 'legacy', kind: 'agent', provider: 'claude', deskId: 'desk-1', name: 'legacy', hookToken: 'placeholder-legacy-token' }]));
+  const workers = manager(f, f.claude, []);
+  t.after(() => workers.shutdown());
+  const disk = readFileSync(file, 'utf8');
+  assert.ok(!disk.includes('placeholder-legacy-token'), 'plaintext token gone');
+  assert.ok(!/"hookToken"/.test(disk), 'no hookToken key');
+  const saved = JSON.parse(disk) as { id: string; hookTokenHash?: string }[];
+  assert.match(saved.find((w) => w.id === 'legacy')?.hookTokenHash ?? '', /^[0-9a-f]{64}$/);
 });

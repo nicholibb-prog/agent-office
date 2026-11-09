@@ -29,6 +29,8 @@ export type Decision = {
   at: number;
   kind: BlockKind;
   workerId?: string;
+  /** For people: crew name, else its desk, else "Empty desk N" (never the raw seat id). */
+  seatName?: string;
 };
 
 export type BoardItem = {

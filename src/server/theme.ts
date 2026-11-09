@@ -43,7 +43,7 @@ export class Themes {
   }
 
   state(): ThemeState {
-    const pick = this.saved?.pick ?? 'auto';
+    const pick = this.saved?.pick ?? 'off';
     return { pick, active: activeTheme(pick, Date.now(), this.utcOffset()), ...(this.saved ? { by: this.saved.by, at: this.saved.at } : {}) };
   }
 
@@ -67,7 +67,7 @@ export class Themes {
       const s = JSON.parse(readFileSync(this.path, 'utf8')) as Partial<Saved>;
       if (isThemePick(s.pick)) this.saved = { pick: s.pick, by: typeof s.by === 'string' ? s.by : 'someone', at: typeof s.at === 'number' ? s.at : 0 };
     } catch {
-      // never set: it follows the calendar
+      // never set: no theme until someone picks one
     }
   }
 

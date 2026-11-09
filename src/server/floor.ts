@@ -20,6 +20,8 @@ import { Court } from './court.js';
 import { Jail } from './jail.js';
 import { Garage } from './garage.js';
 import { JevStore } from './jev.js';
+import { WorkPool } from './pool/pool.js';
+import { deskForPoolSeat, nextPresence } from '../shared/pool.js';
 import { Jukebox } from './jukebox.js';
 import { Whiteboard } from './whiteboard.js';
 import { MeetingRoom } from './meetings.js';
@@ -130,6 +132,8 @@ export class Floor {
   readonly whiteboard: Whiteboard;
   /** Local Jev rankings and desk cups for this floor. */
   readonly jev: JevStore;
+  /** Community work pool: claimed jobs with a lease, beside the task queue. */
+  readonly pool: WorkPool;
   /** The meeting room, where workers work through a question together (see meetings.ts). */
   readonly meetings: MeetingRoom;
   /** Providers for the meeting room and the three front desks (see seat-provider.ts). */
@@ -329,6 +333,21 @@ export class Floor {
     this.jukebox = new Jukebox(dataDir);
     this.whiteboard = new Whiteboard(dataDir);
     this.jev = new JevStore(dataDir);
+    this.pool = new WorkPool(dataDir, {
+      update: (board) => ctx.emit(this, { t: 'pool', board }),
+      presence: (seatId, desired, seen) => {
+        // Resolve by seatId / desk id only — never by a free display label.
+        const deskId = deskForPoolSeat(seatId);
+        const hit = this.workers.list().find(
+          (w) => w.id === seatId || w.id === `crew-${seatId}` || (!!deskId && w.deskId === deskId),
+        );
+        if (hit && nextPresence(hit.status, desired) === 'needs_input') return;
+        this.workers.applyCrewPresence(
+          { [seatId]: desired },
+          { seen: typeof seen === 'number' ? { [seatId]: seen } : undefined },
+        );
+      },
+    });
     this.ready = this.workers.start();
 
     void this.github.refresh();
@@ -436,6 +455,7 @@ export class Floor {
     this.dog.stop();
     this.github.stop();
     this.queue.shutdown();
+    this.pool.stop();
     this.meetings.shutdown();
     this.huddle.shutdown();
     this.changes.stop();

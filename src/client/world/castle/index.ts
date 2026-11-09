@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { VACANCY } from '../../../shared/vacancy';
+import { showVacancyLabel } from '../office/seats';
 import type { FloorPalette } from '../../../shared/floors';
 import type { MapPlan } from '../../../shared/maps';
 import type { PropKind } from '../../../shared/maps/props';
@@ -203,10 +205,12 @@ export function buildCastle(plan: MapPlan): World {
         doorOpen = want > doorOpen ? Math.min(1, doorOpen + dt * 1.2) : Math.max(0, doorOpen - dt * 0.8);
         shell.swing(doorOpen);
       }
+      const me = people[Symbol.iterator]().next().value as { x: number; z: number } | undefined;
       for (const d of kit.desks.values()) {
         if (!d.vacancy.visible || !d.group.visible || d.def.station) continue;
-        d.vacancy.position.y = d.vacancyY + Math.sin(t * 2 + d.def.x) * 0.06;
+        d.vacancy.position.y = d.vacancyY + Math.sin(t * 2 + d.def.x) * VACANCY.bob;
         d.vacancy.rotation.y = t * 1.2;
+        showVacancyLabel(d.vacancy, d.def.x, d.def.z, me);
       }
       kit.gong?.update(dt);
       herald?.person.update(dt, t, false, false);

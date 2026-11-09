@@ -1,7 +1,7 @@
 // The meeting room's patterns: how 2–5 workers at the table work on one question or task together.
 // The server runs them (server/meetings.ts); the client offers them when a meeting is called.
 
-import { fmtCost, fmtTokens, type Meeting, type MeetingPattern, type MeetingRecord } from './protocol.js';
+import { fmtCost, fmtTokens, type Meeting, type MeetingDecisionLog, type MeetingPattern, type MeetingRecord, type MeetingState } from './protocol.js';
 
 export interface PatternDef {
   icon: string;
@@ -161,6 +161,67 @@ export function meetingSummary(m: Meeting): string {
   return `${head} · ✅ ${m.output}${where}`;
 }
 
+
+/** How much decision text the durable log keeps (the rest is still in the output file). */
+export const DECISION_LOG_CHARS = 4000;
+
+/** Seat / bot labels for the decision log: never personal names. */
+export function meetingLogSeats(m: Pick<Meeting, 'seats'>): MeetingDecisionLog['seats'] {
+  return m.seats.map((s, i) => ({
+    id: `seat-${i + 1}`,
+    role: s.role,
+    bot: `bot-${String.fromCharCode(97 + (i % 26))}`,
+  }));
+}
+
+/**
+ * Builds the durable decision log for a finished meeting. Ids are redacted (`owner`, `seat-N`,
+ * `bot-a`); the decision text is capped. Local-only — stays in meetings.json next to the floor.
+ */
+export function buildDecisionLog(m: Meeting): MeetingDecisionLog {
+  const seats = meetingLogSeats(m);
+  const decidedAt = new Date(m.finishedAt ?? Date.now()).toISOString();
+  const decidedBy = m.status === 'done' ? (seats[0]?.id ?? 'seat-1') : 'owner';
+  let decision: string;
+  if (m.status === 'done') {
+    const body = (m.preview ?? '').trim() || `(wrote ${m.output})`;
+    decision = body.slice(0, DECISION_LOG_CHARS);
+  } else {
+    // Reasons can name a role; strip parenthetical worker labels so no personal names linger.
+    const why = (m.reason ?? 'stopped').replace(/\s*\([^)]*\)/g, '').trim();
+    decision = `Stopped: ${why}`.slice(0, DECISION_LOG_CHARS);
+  }
+  return { decidedBy, decidedAt, decision, seats };
+}
+
+/** Plain-text decision log for the meeting UI (no live-call styling). */
+export function formatDecisionLog(log: MeetingDecisionLog): string {
+  const who = log.seats.find((s) => s.id === log.decidedBy);
+  const by = who ? `${log.decidedBy} (${who.role})` : log.decidedBy;
+  const room = log.seats.map((s) => `- ${s.id} · ${s.role} · ${s.bot}`).join('\n');
+  return [`Decision log`, `Decided by: ${by}`, `When: ${log.decidedAt}`, ``, `Decision:`, log.decision, ``, `In the room:`, room].join('\n');
+}
+
+/**
+ * Whether the meeting room should raise an alarm. A finished, stopped, or empty room never does —
+ * a closed office is not an alarm.
+ */
+export function meetingRoomAlarms(state: MeetingState): boolean {
+  return state.current?.status === 'running';
+}
+
 export function meetingRecord(m: Meeting): MeetingRecord {
-  return { id: m.id, pattern: m.pattern, title: m.title, status: m.status, summary: meetingSummary(m), calledBy: m.calledBy, finishedAt: m.finishedAt ?? Date.now(), branch: m.worktree?.branch, output: m.output };
+  return {
+    id: m.id,
+    pattern: m.pattern,
+    title: m.title,
+    status: m.status,
+    summary: meetingSummary(m),
+    // Past list is shared on the wire: keep the caller generic in public forks.
+    calledBy: 'owner',
+    finishedAt: m.finishedAt ?? Date.now(),
+    branch: m.worktree?.branch,
+    output: m.output,
+    decisionLog: m.decisionLog,
+  };
 }

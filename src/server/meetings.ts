@@ -4,7 +4,8 @@ import { closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, readS
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { MEETING_SEATS } from '../shared/layout.js';
-import { MEETING_NOTES_DIR, MEETING_PATTERNS, isMeetingPattern, meetingRecord, outputProblem, slugify } from '../shared/meetings.js';
+import { MEETING_NOTES_DIR, MEETING_PATTERNS, buildDecisionLog, isMeetingPattern, meetingRecord, outputProblem, slugify } from '../shared/meetings.js';
+import { readMeetingsState, writeMeetingsState } from './meetings-state.js';
 import { isAgentEffort, isAgentProvider, tokensOf, type AgentChoice, type AgentEffort, type AgentProvider, type Meeting, type MeetingRecord, type MeetingRequest, type MeetingState, type MeetingTurn, type WorkerInfo, type WorkerStatus } from '../shared/protocol.js';
 import { validateWorkerEffort, validateWorkerModel } from './agents.js';
 import { providerMeta, takesEffort, takesModel } from '../shared/providers.js';
@@ -401,6 +402,7 @@ export class MeetingRoom {
     m.finishedAt = Date.now();
     m.turns = [];
     this.readPreview(m);
+    m.decisionLog = buildDecisionLog(m);
     this.keepNotes(m);
     const p = MEETING_PATTERNS[m.pattern];
     this.events.toast(`🤝 The ${p.label} meeting on “${m.title}” is done: it wrote ${m.output}`, 'info');
@@ -442,6 +444,7 @@ export class MeetingRoom {
     const busy = new Set(this.workers.list().filter((w) => w.status === 'working' || w.status === 'needs_input').map((w) => w.id));
     for (const s of m.seats) if (s.workerId && busy.has(s.workerId)) this.workers.write(s.workerId, '\x1b', BY);
     this.readPreview(m);
+    m.decisionLog = buildDecisionLog(m);
     this.keepNotes(m);
     this.events.toast(`⛔ The meeting on “${m.title}” stopped in round ${m.round}: ${reason}`, 'warn');
     this.changed();
@@ -692,24 +695,19 @@ export class MeetingRoom {
 
   private persist() {
     try {
-      writeFileSync(this.statePath, JSON.stringify({ current: this.current, past: this.past }, null, 2), { mode: 0o600 });
+      this.past = writeMeetingsState(this.statePath, this.current, this.past);
     } catch {
       // disk issues shouldn't take the office down
     }
   }
 
   private restore() {
-    if (!existsSync(this.statePath)) return;
-    try {
-      const saved = JSON.parse(readFileSync(this.statePath, 'utf8')) as Partial<MeetingState>;
-      if (Array.isArray(saved.past)) this.past = saved.past.filter((r) => r && typeof r.id === 'string' && typeof r.summary === 'string').slice(0, PAST_MAX);
-      const m = saved.current;
-      // The workers at the table outlive a restart of the office, so a meeting carries on where it was.
-      if (m && typeof m.id === 'string' && isMeetingPattern(m.pattern) && Array.isArray(m.seats) && Array.isArray(m.turns)) this.current = m;
-    } catch {
-      // corrupt state file: an empty room
-    }
+    const saved = readMeetingsState(this.statePath);
+    this.past = saved.past;
+    // The workers at the table outlive a restart of the office, so a meeting carries on where it was.
+    if (saved.current) this.current = saved.current;
   }
+
 }
 
 /**

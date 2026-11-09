@@ -13,7 +13,7 @@ declare module '../store' {
 
 export const theme: Slice = {
   init(s) {
-    s.theme = { pick: 'auto', active: null };
+    s.theme = { pick: 'off', active: null };
   },
   on: {
     welcome(s, m) {

@@ -17,6 +17,8 @@ import {
   type Decision,
 } from '../../../shared/hq-brief';
 import { openDigest, Strip } from './ui';
+import { UNBLOCK_LOCKED_NOTE, ownerLocked } from '../../../shared/privacy-view';
+import { currentOwner, noteOwner, onOwner, probeOwner } from '../../ui/owner-state';
 
 const VISIT_KEY = 'ao.hq.lastVisit';
 /** How long a tapped row stays down before it comes back, if the desk is still blocked. */
@@ -43,7 +45,14 @@ export function installHqBrief(ctx: Ctx, deps: HqBriefDeps) {
     yes: (b) => void answer(b, 'yes'),
     no: (b) => void answer(b, 'no'),
     talk: (b) => openTalk(b),
+    unlocked: () => paint(),
   });
+  strip.locked = ownerLocked(currentOwner());
+  onOwner((o) => {
+    strip.locked = ownerLocked(o);
+    paint();
+  });
+  void probeOwner();
 
   function liveNow(): Decision[] {
     const out: Decision[] = [];
@@ -90,7 +99,12 @@ export function installHqBrief(ctx: Ctx, deps: HqBriefDeps) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id: b.id, answer: which, at: b.at, titleHash: titleHash(b.title) }),
       });
-      if (!res.ok) {
+      if (res.status === 403) {
+        // Owner-only (server PR) or refused: same lock text and Unlock owner as everywhere else.
+        quietUntil.delete(b.id);
+        noteOwner({ status: 403 });
+        toast(UNBLOCK_LOCKED_NOTE, 'warn');
+      } else if (!res.ok) {
         quietUntil.delete(b.id);
         toast(which === 'yes' ? 'Yes did not land' : 'No did not land', 'warn');
       }

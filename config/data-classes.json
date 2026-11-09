@@ -1,0 +1,7 @@
+{
+  "_comment": "Funnel #3/#28: the only source of a task's data label. Unlisted = private. Public names only; no private repo, person or Drive ID belongs here (the repo is public). Changes need Dan's PASS.",
+  "public": ["nicholibb-prog/agent-office", "docs:public"],
+  "private": ["email", "drive", "owner-notes", "kavi-bridge"],
+  "secret": ["env", "keys", "secret-store"],
+  "student": ["preply", "lessons"]
+}

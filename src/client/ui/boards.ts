@@ -1,5 +1,5 @@
 import './boards.css';
-import { ghBoardBlock, ghBoardHint, type GhIssue, type GhLabel, type GhPull, type WorkerInfo } from '../../shared/protocol';
+import { boardEmptyNote, ghBoardBlock, ghBoardHint, type GhIssue, type GhLabel, type GhPull, type WorkerInfo } from '../../shared/protocol';
 import type { Net } from '../net';
 import { store, workerForPull } from '../state';
 import { h, openModal, timeAgo } from './dom';
@@ -252,7 +252,7 @@ export function openBoard(kind: 'issues' | 'pulls', net: Net, actions: BoardActi
     body.replaceChildren();
     const block = ghBoardBlock(st.error);
     if (block || (st.error && !st.items.length)) {
-      body.append(h('div.board-error', {}, block ?? `Couldn't load from GitHub: ${st.error}`, h('br'), h('small', {}, ghBoardHint(st.error))));
+      body.append(h('div.board-error', {}, boardEmptyNote(kind, st), h('br'), h('small', {}, ghBoardHint(st.error))));
       return;
     }
     const all = boardLabels(st.items);

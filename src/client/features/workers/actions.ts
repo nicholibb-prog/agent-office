@@ -357,7 +357,7 @@ export function installWorkerActions(ctx: Ctx, core: CoreState, parts: WorkerAct
       return {
         k: `${paused}|${full}|${m.workers}|${m.limit}|${!!m.pressure}|${sign}`,
         parts: [
-          h('span.title', {}, `${deskName} · empty`),
+          h('span.title', {}, `${deskName} · No one at this desk`),
           ...(full
             ? [h('span.cost', {}, `🚫 Office full · ${m.workers} of ${m.limit} workers`)]
             : [
@@ -376,6 +376,7 @@ export function installWorkerActions(ctx: Ctx, core: CoreState, parts: WorkerAct
           h('span.title', {}, `${sign ? `🪧 ${sign} · ` : ''}${w.name} · 🌿 worktree deleted`),
           aside('deleted outside agent-office'),
           key('E', 'Fix it'),
+          key('Click', 'Enlarge'),
           key('X', 'Send home'),
           labelKey,
         ],
@@ -392,6 +393,7 @@ export function installWorkerActions(ctx: Ctx, core: CoreState, parts: WorkerAct
         doing ? aside(doing) : '',
         spent ? h('span.cost', { title: usageTitle(w.usage!, workerProvider) }, spent) : '',
         key('E', 'Open terminal'),
+        key('Click', 'Enlarge'),
         key('C', 'Changes'),
         isAsleep(w.status) ? key('R', shell ? 'Restart' : 'Resume') : key('P', shell ? 'Run command' : 'Prompt'),
         w.repos?.length ? reposKey(w) : w.pr ? key('O', `PR #${w.pr.number}`) : w.prOpening ? aside('⏳ Opening PR…') : prReady(w) ? key('O', 'Open PR') : '',

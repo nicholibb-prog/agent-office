@@ -1,3 +1,4 @@
+import { ARMS_IDLE_AFTER, armsHideStep } from './hands-idle';
 import * as THREE from 'three';
 import { EMOTE_BY_ID, type Emote, type EmoteId } from '../../shared/emotes';
 import type { CarriedIssue, Theme } from '../../shared/protocol';
@@ -22,6 +23,8 @@ export interface HandsInput {
 }
 
 /** Where the hands rest for holding, throwing, a drag or an emote (see classic): out wider than at rest. */
+/** How big your own arms are drawn in first person. */
+export const ARM_SCALE = 0.72;
 const CLASSIC = { x: 0.25, y: -0.185, z: -0.44, rx: 0.2, ry: 0.22, rz: -0.25 } as const;
 
 /** Lifting the mug for a sip and lowering it again, in seconds. */
@@ -47,6 +50,10 @@ interface Arm {
  * a cleared depth buffer, so they never poke through desks or walls. Camera space: -z is forward.
  */
 export class Hands {
+  private idleT = 0;
+  private hideK = 0;
+  reduceMotion = false; // prefers-reduced-motion
+  poke() { this.idleT = 0; } // any input: arms back
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(55, 1, 0.01, 5);
   private sleeve: THREE.MeshToonMaterial;
@@ -208,7 +215,7 @@ export class Hands {
       for (const m of arm.mitten) m.visible = !warlock;
       // A mitten's fluffy cuff.
       arm.cuff.visible = theme === 'christmas';
-      arm.cuff.scale.set(1.3, 1.3, 1.9);
+      arm.cuff.scale.set(1, 1, 1);
       if (!warlock) continue;
       const g = new THREE.Group();
       g.add(warlockHand(arm.side, this.skin), raggedCuff(this.rags));
@@ -331,10 +338,12 @@ export class Hands {
       group.add(finger);
     }
     // Out from the bottom corners of the view, the sleeves angled in toward the hands.
-    const base = new THREE.Vector3(side * 0.18, -0.17, -0.5);
+    // Low in the corners and smaller, so they frame the view rather than fill it.
+    const base = new THREE.Vector3(side * 0.21, -0.29, -0.6);
     const baseRot = new THREE.Euler(0.45, side * 0.55, side * -0.2);
     group.position.copy(base);
     group.rotation.copy(baseRot);
+    group.scale.setScalar(ARM_SCALE);
     this.scene.add(group);
     return { group, base, baseRot, side, cuff, mitten: [palm], finger, dressed: null, fire: null };
   }
@@ -368,6 +377,11 @@ export class Hands {
       this.sway.x += (tx - this.sway.x) * Math.min(1, dt * 10);
       this.sway.y += (ty - this.sway.y) * Math.min(1, dt * 10);
     }
+    if (this.last && (s.walking || s.airborne || s.grip || s.yaw !== this.last.yaw || s.pitch !== this.last.pitch)) this.idleT = 0;
+    else this.idleT += dt;
+    this.hideK = armsHideStep(this.hideK, this.idleT > ARMS_IDLE_AFTER, dt, this.reduceMotion);
+    this.scene.position.y = -0.45 * this.hideK;
+    this.scene.visible = this.hideK < 0.99;
     this.last = { yaw: s.yaw, pitch: s.pitch };
     this.air += ((s.airborne && !s.grip ? 1 : 0) - this.air) * Math.min(1, dt * 8);
     this.ladderK += ((s.grip === 'ladder' ? 1 : 0) - this.ladderK) * Math.min(1, dt * 10);

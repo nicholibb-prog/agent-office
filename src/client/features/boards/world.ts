@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GH_FAILED, GH_NOT_FOUND, GH_NOT_LOGGED_IN, ghBoardBlock, type GhIssue, type GhPull, type GhState, type QueueState, type QueueTask, type ServiceInfo, type WorkerInfo } from '../../../shared/protocol';
+import { GH_FAILED, GH_NOT_FOUND, GH_NOT_LOGGED_IN, boardEmptyNote, ghBoardBlock, type GhIssue, type GhPull, type GhState, type QueueState, type QueueTask, type ServiceInfo, type WorkerInfo } from '../../../shared/protocol';
 import { store, workerForPull } from '../../state';
 
 export const NOTE_COLORS = ['#fff7b0', '#ffd6e0', '#caffbf', '#bde0fe', '#ffe5b4'];
@@ -99,7 +99,7 @@ export class BoardTexture {
     const blocked = ghBoardBlock(state.error);
     const open = blocked ? [] : (state.items as (GhIssue | GhPull)[]).filter((i) => i.state === 'OPEN');
     if (!open.length) {
-      const note = blocked ? blocked : state.error ? `⚠️ ${state.error}` : state.loading && !state.fetchedAt ? 'Loading…' : this.kind === 'issues' ? 'No open issues 🎉' : 'No open PRs';
+      const note = boardEmptyNote(this.kind, state);
       g.font = '800 40px Nunito, ui-rounded, system-ui, sans-serif';
       const lines = wrap(g, note.replace(/`/g, ''), 760, 4);
       const boxH = 60 + lines.length * 50;

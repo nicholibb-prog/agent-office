@@ -10,8 +10,14 @@ import type { WorkerInfo } from '../../../shared/protocol.js';
 import { answerKey, liveBlock, liveFromInfo, titleHash, type LiveTask, type LiveWorker } from '../../../shared/hq-brief.js';
 import { answerBlock, loadBook, markSeen, readBlocks, readBrief, saveBlocks, saveItems } from '../../hq/brief.js';
 import { send, readBody } from '../util.js';
-import { bridgeGate, bridgeShape } from './bridge.js';
+import { bridgeGate, bridgeShape, seatGate } from './bridge.js';
+import { ownerWriteGate } from './kavi-send.js';
+import { botCredential } from '../../hq/okkin-owner.js';
 import type { Route } from '../router.js';
+import path from 'node:path';
+import { loadHqLocal } from '../../workers/crew.js';
+import { activeSeatMap } from '../../../shared/hq.js';
+import { blockSeatName } from '../../../shared/privacy-view.js';
 
 const INTERNAL = 'internal error';
 
@@ -80,7 +86,12 @@ export const hqBriefRoutes = {
     handle(ctx: Ctx, { req, res, url }: { req: http.IncomingMessage; res: http.ServerResponse; url: URL }) {
       if (!bridgeGate(ctx, req, res)) return;
       const { workers, tasks } = snapshot(ctx);
-      return send(res, 200, readBrief(ctx.cfg.dataDir, workers, tasks, num(url.searchParams.get('since')), Date.now()));
+      const brief = readBrief(ctx.cfg.dataDir, workers, tasks, num(url.searchParams.get('since')), Date.now());
+      const hq = loadHqLocal(path.join(ctx.cfg.dataDir, 'workers.json'));
+      const names = (hq.names ?? {}) as Record<string, string | undefined>;
+      const desks = activeSeatMap(hq) as Record<string, string | undefined>;
+      if (Array.isArray(brief.blocks)) brief.blocks = brief.blocks.map((b) => ({ ...b, seatName: blockSeatName(b.seat, names, desks) }));
+      return send(res, 200, brief);
     },
   },
   seen: {
@@ -88,16 +99,18 @@ export const hqBriefRoutes = {
     path: '/api/bridge/hq-brief/seen',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!bridgeGate(ctx, req, res)) return;
+      // Writes need a #20 seat token; the shared token is read-only.
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
       const body = await jsonBody(req, res);
       if (!body) return;
       const at = typeof body.at === 'number' && Number.isFinite(body.at) ? body.at : Date.now();
       try {
-        markSeen(ctx.cfg.dataDir, at);
+        markSeen(ctx.cfg.dataDir, at, seat);
       } catch {
         return send(res, 500, { error: INTERNAL });
       }
-      return send(res, 200, { ok: true, at });
+      return send(res, 200, { ok: true, at, seat });
     },
   },
   needs: {
@@ -105,14 +118,16 @@ export const hqBriefRoutes = {
     path: '/api/bridge/unblock',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!bridgeGate(ctx, req, res)) return;
+      // Writes need a #20 seat token; the shared token is read-only.
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
       const body = await jsonBody(req, res);
       if (!body) return;
       if (!Array.isArray(body.blocks)) return send(res, 400, { error: 'blocks array required' });
       try {
-        const accepted = saveBlocks(ctx.cfg.dataDir, body.blocks);
+        const accepted = saveBlocks(ctx.cfg.dataDir, body.blocks, seat);
         if (body.blocks.length > 0 && accepted === 0) return send(res, 400, { error: 'no actionable blocks' });
-        return send(res, 200, { ok: true, accepted });
+        return send(res, 200, { ok: true, accepted, seat });
       } catch {
         return send(res, 500, { error: INTERNAL });
       }
@@ -123,14 +138,16 @@ export const hqBriefRoutes = {
     path: '/api/bridge/board-status',
     auth: 'public' as const,
     async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
-      if (!bridgeGate(ctx, req, res)) return;
+      // Writes need a #20 seat token; the shared token is read-only.
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
       const body = await jsonBody(req, res);
       if (!body) return;
       if (!Array.isArray(body.items)) return send(res, 400, { error: 'items array required' });
       try {
-        const accepted = saveItems(ctx.cfg.dataDir, body.items);
+        const accepted = saveItems(ctx.cfg.dataDir, body.items, seat);
         if (body.items.length > 0 && accepted === 0) return send(res, 400, { error: 'no status lines' });
-        return send(res, 200, { ok: true, accepted });
+        return send(res, 200, { ok: true, accepted, seat });
       } catch {
         return send(res, 500, { error: INTERNAL });
       }
@@ -139,10 +156,12 @@ export const hqBriefRoutes = {
   answer: {
     method: 'POST' as const,
     path: '/api/bridge/unblock/answer',
-    auth: 'session' as const,
-    async handle(ctx: Ctx, { req, res, session }: { req: http.IncomingMessage; res: http.ServerResponse; session: Session }) {
-      if (!bridgeShape(req, res)) return;
-      if (presentedToken(req)) return send(res, 403, { error: 'bridge token cannot approve' });
+    // 'public' so a bot with no session still gets the logged 403; ownerWriteGate requires the session.
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      // Owner only (Dan, bf64a4c0 sweep): typing Yes/No into a desk is the owner's own call.
+      if (presentedToken(req) && !botCredential(req)) return send(res, 403, { error: 'bridge token cannot approve' });
+      if (!ownerWriteGate(ctx, 'POST /api/bridge/unblock/answer', req, res, (rq, rs) => bridgeShape(rq, rs))) return;
       const body = await jsonBody(req, res);
       if (!body) return;
       const answer = body.answer === 'yes' || body.answer === 'no' ? body.answer : undefined;
@@ -162,7 +181,8 @@ export const hqBriefRoutes = {
       const at = typeof body.at === 'number' && Number.isFinite(body.at) ? body.at : undefined;
       const hash = typeof body.titleHash === 'string' ? body.titleHash : '';
       if (at !== live.at || hash !== titleHash(live.title)) return send(res, 409, { error: 'stale' });
-      const who = session.account?.id ?? '';
+      const session: Session | undefined = ctx.auth.sessionFromAnyCookie(req);
+      const who = session?.account?.id ?? '';
       try {
         desk.write(answerKey(answer), who || 'session');
         answerBlock(ctx.cfg.dataDir, id, answer, Date.now(), who);

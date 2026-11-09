@@ -10,6 +10,7 @@ import { hqBriefRoutes } from '../src/server/http/routes/hq-brief.js';
 import { saveBlocks } from '../src/server/hq/brief.js';
 import { titleHash } from '../src/shared/hq-brief.js';
 import type { WorkerInfo } from '../src/shared/protocol.js';
+import { testOwner } from './support/okkin-owner.js';
 
 type Write = { id: string; data: string; by: string };
 
@@ -36,7 +37,10 @@ function office(workers: WorkerInfo[], opts?: { boom?: Error }) {
         if (c.includes('ao_session=human')) return { account: { id: 'acct-1' } };
         return undefined;
       },
-      fromAnyCookie: () => false,
+      fromAnyCookie: (req: { headers: { cookie?: string | string[] } }) => String(req.headers.cookie || '').includes('ao_session=human'),
+      sessionFromAnyCookie(req: { headers: { cookie?: string | string[] } }) {
+        return String(req.headers.cookie || '').includes('ao_session=human') ? { account: { id: 'acct-1' } } : undefined;
+      },
     },
     floors: new Map([
       [
@@ -93,7 +97,9 @@ function post(server: Server, headers: Record<string, string>, body: unknown): P
   });
 }
 
-const HUMAN = { cookie: 'ao_session=human' };
+// The owner, unlocked: an office session plus a live owner cookie (Dan, bf64a4c0 sweep).
+const OWNER = await testOwner();
+const HUMAN = { get cookie() { return `ao_session=human; ${OWNER.cookie()}`; } };
 const TOKEN = 'a'.repeat(64);
 
 function yes(id: string, patch: Record<string, unknown> = {}) {

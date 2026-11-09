@@ -15,13 +15,15 @@
   ],
   "scripts": {
     "test": "node --import tsx --import=#tests/css --test tests/*.test.ts",
-    "dev": "concurrently -k \"vite\" \"tsx watch src/server/cli.ts --port 4600 --password dev --no-open\"",
+    "dev": "concurrently -k \"vite\" \"node scripts/dev-server.mjs\"",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
+    "owner:set": "tsx scripts/okkin-owner-set.ts",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "start": "node bin/agent-office.js",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "check:providers": "tsx scripts/check-provider-imports.ts"
   },
   "engines": {
     "node": ">=20"
@@ -44,7 +46,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",
-    "concurrently": "^10.0.5",
+    "concurrently": "^10.0.6",
     "dompurify": "^3.4.16",
     "marked": "^18.0.14",
     "playwright-core": "^1.63.0",

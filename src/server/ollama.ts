@@ -337,7 +337,7 @@ export type OllamaRoutes = {
   ps(): Promise<OllamaResult>;
   chat(model: string, messages: { role: string; content: string }[]): Promise<OllamaResult>;
   /** Unload or warm. A warm-up sets num_predict so the prompt cannot run unbounded. */
-  generate(body: { model: string; keep_alive: number | string; prompt?: string; options?: { num_predict: number } }): Promise<OllamaResult>;
+  generate(body: { model: string; keep_alive: number | string; prompt?: string; options?: { num_predict: number; num_ctx?: number; num_gpu?: number } }): Promise<OllamaResult>;
 };
 
 /** Env wins over config. Unset means the loopback default. A non-loopback value is refused, not rewritten. */
@@ -418,4 +418,21 @@ export function chatText(result: OllamaResult): string {
   const message = (result.body as { message?: { content?: unknown } }).message;
   const content = message && typeof message.content === 'string' ? message.content : (result.body as { response?: unknown }).response;
   return typeof content === 'string' ? content.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 500) : '';
+}
+
+/** Loaded models and their VRAM from /api/ps, as numbers only. Empty when /api/ps is missing or fails. */
+export function psModels(result: OllamaResult): { name: string; vramMB: number | null }[] {
+  if (!result.ok || !result.body || typeof result.body !== 'object') return [];
+  const models = (result.body as { models?: unknown }).models;
+  if (!Array.isArray(models)) return [];
+  const out: { name: string; vramMB: number | null }[] = [];
+  for (const row of models.slice(0, 8)) {
+    if (!row || typeof row !== 'object') continue;
+    const r = row as { name?: unknown; model?: unknown; size_vram?: unknown };
+    const name = typeof r.name === 'string' ? r.name : typeof r.model === 'string' ? r.model : '';
+    if (!name.trim()) continue;
+    const v = typeof r.size_vram === 'number' && Number.isFinite(r.size_vram) && r.size_vram >= 0 ? Math.round(r.size_vram / 1048576) : null;
+    out.push({ name: name.trim().slice(0, 80), vramMB: v });
+  }
+  return out;
 }

@@ -50,6 +50,32 @@ test('seat key comes from the local book; an unmapped name becomes the desk id',
   assert.equal(acceptSeat('person', EMPTY_BOOK), null);
 });
 
+test('crew seat ids in seats are desks; every other key is a seat key', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'hq-desk-seat-'));
+  try {
+    writeFileSync(
+      path.join(dir, 'hq-local.json'),
+      JSON.stringify({
+        seats: {
+          'seat-1': 'desk-3',
+          okkin: 'desk-4',
+          'desk-1': 'seat-a',
+          'desk-2': 'seat-1',
+          'real name': 'not a seat',
+        },
+      }),
+    );
+    const hq = loadHqLocal(path.join(dir, 'workers.json'));
+    assert.deepEqual(hq.seats, { 'seat-1': 'desk-3', okkin: 'desk-4' });
+    assert.deepEqual(hq.deskSeats, { 'desk-1': 'seat-a', 'desk-2': 'seat-1' });
+    assert.equal(hq.seats['desk-1'], undefined);
+    assert.equal(hq.deskSeats['seat-1'], undefined);
+    assert.equal(hq.deskSeats.okkin, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('age is always a short count, including the first minute', () => {
   assert.equal(ageLabel(0, 5_000), '5s');
   assert.equal(ageLabel(0, 90_000), '1m');

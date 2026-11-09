@@ -73,7 +73,13 @@ export function sanitizeNames(raw: unknown): Partial<Record<SeatId, string>> {
 
 /** Public label is the seat id (`seat-1` … `seat-9`, or Okkin). A gitignored `names` map can override it on one machine. */
 export function seatDisplayName(seat: SeatId, names?: Partial<Record<SeatId, string>>): string {
-  return names?.[seat] || (seat === OKKIN_SEAT ? 'Okkin' : seat);
+  return names?.[seat]?.trim() || (seat === OKKIN_SEAT ? 'Okkin' : emptySeatLabel(seat));
+}
+
+/** An unnamed generic seat for people: "seat-3" → "Empty desk 3". Anything else stays as given. */
+export function emptySeatLabel(seat: string): string {
+  const m = /^seat-([1-9])$/.exec(seat);
+  return m ? `Empty desk ${m[1]}` : seat;
 }
 
 /** The only office line a talk adds when the seat is offline and nobody has replied. */
@@ -284,4 +290,56 @@ export function modelChoices(allow: readonly string[], installed: readonly strin
 
 export function modelTagOk(name: string): boolean {
   return name.length > 0 && name.length <= 80 && !/[\r\n\0]/.test(name) && !name.includes('..') && !/^[a-zA-Z]:[\\/]/.test(name);
+}
+
+/** Pool tiers. Only `open` work may ever be routed to Okkin; code, money, sends and security are gated. */
+export const GATED_TIERS = ['code', 'money', 'sends', 'security'] as const;
+export function okkinMayTake(job: { tier?: unknown } | null | undefined): boolean {
+  return !!job && job.tier === 'open';
+}
+
+/** Shown when a non-owner opens Okkin's Ask thread: the server sent messages: [] because it's private. */
+export const ASK_PRIVATE_NOTE = 'Ask history is private — unlock owner to see it.';
+/** The private note only for a non-owner's empty thread; never for an owner whose thread is just empty. */
+export function askPrivateNote(r: { messages?: readonly unknown[] | null; private?: boolean | null } | null | undefined): string | null {
+  return r?.private === true && !(r.messages?.length) ? ASK_PRIVATE_NOTE : null;
+}
+
+
+/** Non-owner notes for the crew talk thread, the talk input, and the Kavi outbox board (neutral, not errors). */
+export const CREW_PRIVATE_NOTE = 'Crew threads are private — unlock owner to see them.';
+export const TALK_LOCKED_NOTE = 'Unlock owner to talk';
+export const OUTBOX_PRIVATE_NOTE = 'The Kavi outbox is private — unlock owner to see it.';
+export const OUTBOX_EMPTY_NOTE = 'Nothing in the outbox.';
+export const UNMAPPED_SEAT_LABEL = 'not mapped to a crew seat';
+
+type PrivateShape = { messages?: readonly unknown[] | null; items?: readonly unknown[] | null; private?: boolean | null } | null | undefined;
+
+/** The note a talk thread shows instead of a blank log: Okkin's Ask note, or the crew note. */
+export function threadPrivateNote(seat: string, r: PrivateShape): string | null {
+  if (r?.private !== true || r.messages?.length) return null;
+  return seat === OKKIN_SEAT ? ASK_PRIVATE_NOTE : CREW_PRIVATE_NOTE;
+}
+
+/** Whether the talk input should be locked: the server said this caller is not the owner. */
+export function talkLocked(r: PrivateShape): boolean {
+  return r?.private === true;
+}
+
+/** What a failed talk send shows. A 403 is the owner lock, never a bare status code. */
+export function talkSendError(status: number, error?: string): string {
+  if (status === 403) return TALK_LOCKED_NOTE;
+  return error ? `Not sent: ${error}` : `Not sent (${status})`;
+}
+
+export type OutboxRow = { title: string; text: string; at: string; seat: string; mapped: boolean };
+
+/** Rows for the Kavi outbox board. A null or missing seat is shown as unmapped (owner view only). */
+export function outboxView(r: { items?: readonly { title?: unknown; text?: unknown; at?: unknown; seat?: unknown }[] | null; private?: boolean | null } | null | undefined): { note: string | null; rows: OutboxRow[] } {
+  if (r?.private === true) return { note: OUTBOX_PRIVATE_NOTE, rows: [] };
+  const rows = (r?.items ?? []).map((it) => {
+    const seat = typeof it.seat === 'string' && it.seat ? it.seat : '';
+    return { title: String(it.title ?? ''), text: String(it.text ?? ''), at: String(it.at ?? ''), seat: seat || UNMAPPED_SEAT_LABEL, mapped: !!seat };
+  });
+  return { note: rows.length ? null : OUTBOX_EMPTY_NOTE, rows };
 }

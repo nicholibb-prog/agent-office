@@ -33,12 +33,14 @@ curl -fsSL https://raw.githubusercontent.com/AgentSystemLabs/agent-office/main/i
 ## What it is
 
 - **A floor per project.** Ride the elevator, pick one of your GitHub repos, and the office clones it (showing how far along it is) and opens a floor for it. Every worker, board and queue on that floor works in that checkout.
-- **Workers at desks.** Walk up to an empty desk, press **E**, and pick Claude Code, Codex, OpenCode, Grok, Muse, DeepSeek Harness, Pi or Cursor, each with its model and reasoning effort. The laptop shows a live desktop that scrolls and blinks while that worker is working and sits still when it is idle. Press **E** again for the real terminal, and type.
+- **Workers at desks.** Walk up to an empty desk, press **E**, and pick Claude Code, Codex, OpenCode, Grok, Muse, DeepSeek Harness, Pi or Cursor, each with its model and reasoning effort. The laptop shows a live desktop that scrolls and blinks while that worker is working and sits still when it is idle. Click the laptop to open that desktop large; **Esc** closes it. Press **E** for the real terminal, and type.
+- **Merit routing, off until `ROUTER_ON=1`.** The top router for a task is whichever live router scores best. Nobody live leaves that slot empty. Private and grey work does not go to a public-cloud lane. See [Merit](docs/ULTIMATE-ROUTING-SYSTEM.md#merit).
 - **A local crew.** Press **Y** for ten seats: nine generic ones (`seat-1` … `seat-9`) plus Okkin, a local model on this machine. Each row shows an honest chip and a task, and can walk you over, open a thread, or show the desk card. A display name for a seat, if you want one, stays in gitignored `hq-local.json`. Okkin's address is `OLLAMA_URL` or gitignored `ollama.json` (loopback only). Idle seats may wander the room. Working ones stay put. See [docs/hq.md](docs/hq.md).
 - **Talk instead of typing.** Hold **Ctrl+Space** (or the **🎤**) in a worker's terminal or a prompt box and say what you want: it's typed in for you to send. Your browser does the listening, so there's nothing to install.
 - **You can't miss who needs you.** A worker that stops to ask you something lights a red beacon over its desk, puts a banner on your screen saying who and what for, and sounds an alarm. One that has finished jumps up and down and dings. Press **N** to go straight to whoever is waiting. A loud strip on boot lists the decisions you can answer in one tap while you are signed in (Yes, No, or open the terminal). **Since last visit** sums what finished, what is still going, and what is blocked, from files on this machine.
 - **From your phone, too.** `/lite` is the office in 2D: every worker and what it's waiting on, its terminal with the keys a phone keyboard lacks, and the boards. The 3D office offers it on a phone or a slow computer.
 - **GitHub on the walls.** Issues and pull requests hang on cork boards. Hand an issue to a worker, queue tasks, give a worker its own git worktree and open its PR with one key (if one gets deleted behind the office's back, the worker waits at its desk until you rebuild it). One task can span several projects: the worker gets a worktree of each, and a PR in each that links the others.
+- **A community work pool.** A board in the aisle lists jobs as open, claimed, needs approval, or done, each with a level from 1 to 7. A claim lasts 15 minutes unless the claimer sends a heartbeat. With no level given, a job is level 4. Levels 6 and 7 finish into needs approval: a Dan pass from a configured id, then owner approval from an allowlisted account. Press E at the board to read a job in full, including its named target, before recording that approval. The read is only for a floor the office has open. Channels, payment, and messenger words land at 7. Code, secrets, shell, network words, and a bare domain, address, or localhost land at 6. Direction overrides in that text show up as visible markers. The pool never runs a merge, send, spend, or delete. A poster on the north wall shows the seven badges.
 - **Agents that manage agents.** Every worker can list, hire, message and send home the others, through an `agent-office` MCP server (Claude Code, Codex, OpenCode) or the `office-workers` command. Ask one to "send everyone whose PR merged home" and it does, deleting their worktrees and branches unless they hold unpushed work. A worker that opens its pull request itself (`gh pr create`) shows it at its desk, and one the office missed can be told which is its own (`office-workers pr`).
 - **Together.** Voice, chat, screen sharing on the lounge TV and a shared whiteboard.
 
@@ -84,7 +86,7 @@ Common options:
 
 ```bash
 agent-office ~/code/my-project              # use a project you already have as the first floor
-agent-office --password 'correct horse'     # choose the password
+AGENT_OFFICE_PASSWORD='correct horse' agent-office   # choose the password (or AGENT_OFFICE_PASSWORD_FILE)
 agent-office --port 4700
 agent-office --agent pi                     # default agent: claude, codex, opencode, grok, muse, dsh, pi or cursor-agent
 agent-office --no-open                      # print the sign-in link instead of opening a browser
@@ -103,6 +105,10 @@ agent-office
 ```
 
 > Only your computer can reach the office: it listens on `127.0.0.1`. `--host 0.0.0.0` lets your network in, but over plain http, where voice and screen sharing don't work. To share the office with a team, put it on a server: [AWS](#deploy-to-aws-ec2), [Azure](#deploy-to-azure), [Railway](#deploy-to-railway), [Fly.io](#deploy-to-flyio), [Dokploy](#deploy-to-dokploy), [Coolify](#deploy-to-coolify) or [any Ubuntu or Debian machine](#deploy-to-any-ubuntu-or-debian-server).
+
+## Crew home open
+
+After the ProArt and the Mac have been off, the human steps are only the two power-ons in [docs/HOME-OPEN-CHECKLIST.md](docs/HOME-OPEN-CHECKLIST.md). What has to stay true is [docs/STABLE-6-12MO-PLAN.md](docs/STABLE-6-12MO-PLAN.md). What was removed from the Notion front desk is [docs/FRONT-DESK-CLEANUP.md](docs/FRONT-DESK-CLEANUP.md). The phone HQ views, the life-admin hook, and the kill switches are [docs/KAVI-NOTION-MODULES.md](docs/KAVI-NOTION-MODULES.md). When george's usage is empty, Kavi covers routing through the bridge and Cursor writes Notion ([docs/KAVI-COVERS-GEORGE.md](docs/KAVI-COVERS-GEORGE.md)). Tailscale joins the Mac and the ProArt without moving the office off `127.0.0.1` ([docs/TAILSCALE-CREW.md](docs/TAILSCALE-CREW.md)). The office still binds `127.0.0.1` unless `--host` is passed. `HOST` in the environment is ignored.
 
 ## Deploy to AWS (EC2)
 

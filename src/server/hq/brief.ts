@@ -93,7 +93,7 @@ function storedBlock(b: Decision) {
   return { id: b.id, seat: b.seat, title: b.title, kind: b.kind, actionable: true as const, at: b.at, workerId: b.workerId };
 }
 
-export function saveBlocks(dataDir: string, rawBlocks: unknown[]): number {
+export function saveBlocks(dataDir: string, rawBlocks: unknown[], seat?: string): number {
   const { book } = loadBook(dataDir);
   const prev = readJson(hqPaths(dataDir).needs);
   const blocks = rawBlocks.map((b) => fileBlock(b, book)).filter((b): b is Decision => !!b);
@@ -101,14 +101,15 @@ export function saveBlocks(dataDir: string, rawBlocks: unknown[]): number {
     updatedAt: new Date().toISOString(),
     blocks: blocks.map(storedBlock),
     answered: readAnswered(prev),
+    ...(seat ? { seat } : {}),
   });
   return blocks.length;
 }
 
-export function saveItems(dataDir: string, rawItems: unknown[]): number {
+export function saveItems(dataDir: string, rawItems: unknown[], seat?: string): number {
   const { book } = loadBook(dataDir);
   const items = rawItems.map((b) => fileItem(b, book)).filter((b): b is BoardItem => !!b);
-  writeJson(hqPaths(dataDir).board, { updatedAt: new Date().toISOString(), items });
+  writeJson(hqPaths(dataDir).board, { updatedAt: new Date().toISOString(), items, ...(seat ? { seat } : {}) });
   return items.length;
 }
 
@@ -127,8 +128,8 @@ export function answerBlock(dataDir: string, id: string, answer: 'yes' | 'no', a
   return hit;
 }
 
-export function markSeen(dataDir: string, at: number) {
-  writeJson(hqPaths(dataDir).visit, { at });
+export function markSeen(dataDir: string, at: number, seat?: string) {
+  writeJson(hqPaths(dataDir).visit, seat ? { at, seat } : { at });
 }
 
 export function readBrief(dataDir: string, workers: readonly LiveWorker[], tasks: readonly LiveTask[], requestedSince: number | undefined, now: number): Brief {
