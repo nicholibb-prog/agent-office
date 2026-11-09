@@ -38,7 +38,8 @@ test('power sequence: ON lights rows bottom to top; OFF darkens top to bottom', 
 
 test('one accent per model, swept bottom to top after a dial change', () => {
   const roles = OKKIN_MODELS.map((m) => m.role);
-  assert.equal(new Set(roles.map((r) => MODEL_ACCENT[r])).size, 5);
+  assert.equal(new Set(roles.map((r) => MODEL_ACCENT[r])).size, roles.length);
+  assert.ok(roles.every((r) => typeof MODEL_ACCENT[r] === 'string' && MODEL_ACCENT[r] !== ''));
   const peak = (e: number) => Array.from({ length: BLADE_ROWS }, (_, r) => sweepBand(e, r)).indexOf(Math.max(...Array.from({ length: BLADE_ROWS }, (_, r) => sweepBand(e, r))));
   assert.ok(peak(0.9) > peak(0.3));
   assert.equal(sweepBand(5, 3), 0);

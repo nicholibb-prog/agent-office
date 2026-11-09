@@ -48,7 +48,7 @@ export function loadLoftConfig(dataDir: string): LoftConfig {
 }
 
 /**
- * What the dial shows: the config's models, or with none configured the five built-in ones. Display
+ * What the dial shows: the config's models, or with none configured the built-in ones. Display
  * only: it does not widen the Okkin allowlist (okkinSettings still reads loadLoftConfig), so a model
  * outside it can be shown but not switched to.
  */

@@ -1,5 +1,5 @@
 // Okkin's loft always has its two controls on the office floor, with no config at all: a power switch
-// (honestly 'Not set up' until the real power config passes) and a model switch over all five models.
+// (honestly 'Not set up' until the real power config passes) and a model switch over the built-in models.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync } from 'node:fs';
@@ -16,14 +16,16 @@ const ctx2d = new Proxy({}, { get: (_t, k) => (k === 'measureText' ? () => ({ wi
 (globalThis as { document?: unknown }).document ??= { createElement: () => ({ getContext: () => ctx2d, width: 0, height: 0 }) };
 
 const empty = () => mkdtempSync(path.join(tmpdir(), 'ao-switches-'));
-const TAGS = ['qwen3.5:4b', 'okkin:latest', 'qwen3.5:9b', 'ornith-1.5:9b', 'hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'];
+const TAGS = ['qwen3.5:4b', 'okkin:latest', 'abliterant/qwen3.5-rana:9b-q4_K_M', 'qwen3.5:9b', 'ornith-1.5:9b', 'hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'];
 
-test('the five models, in dial order', () => {
+test('the built-in models, in dial order, with rana as chat and qwen3.5:9b as rollback', () => {
   assert.deepEqual(OKKIN_MODELS.map((m) => m.tag), TAGS);
-  assert.deepEqual(OKKIN_MODELS.map((m) => m.role), ['quick', 'default', 'chat', 'code', 'big']);
+  assert.deepEqual(OKKIN_MODELS.map((m) => m.role), ['quick', 'default', 'chat', 'rollback', 'code', 'big']);
+  assert.equal(OKKIN_MODELS.find((m) => m.role === 'chat')?.tag, 'abliterant/qwen3.5-rana:9b-q4_K_M');
+  assert.equal(OKKIN_MODELS.find((m) => m.role === 'rollback')?.tag, 'qwen3.5:9b');
 });
 
-test('the office floor plan builds the loft, and the loft has a power switch and a five-stop model dial', async () => {
+test('the office floor plan builds the loft, and the loft has a power switch and a model dial', async () => {
   assert.match(readFileSync(path.join(import.meta.dirname, '../src/client/world/office/build.ts'), 'utf8'), /^\s+okkinLoft,$/m);
   const { buildOkkinLoft } = await import('../src/client/features/okkin-loft/world.js');
   const view = buildOkkinLoft();
@@ -31,7 +33,7 @@ test('the office floor plan builds the loft, and the loft has a power switch and
   const dial = view.group.getObjectByName('okkin-model-dial');
   assert.ok(sw && sw.visible, 'power switch in the scene');
   assert.ok(dial && dial.visible, 'model dial in the scene');
-  for (const role of ['quick', 'default', 'chat', 'code', 'big']) assert.ok(view.group.getObjectByName(`okkin-dial-stop-${role}`), role);
+  for (const role of ['quick', 'default', 'chat', 'rollback', 'code', 'big']) assert.ok(view.group.getObjectByName(`okkin-dial-stop-${role}`), role);
   // No config: a status light says so (amber), no printed plate; can't reach Okkin: red.
   assert.equal(view.group.getObjectByName('okkin-power-not-set-up'), undefined);
   const lamp = view.group.getObjectByName('okkin-status-light') as unknown as { userData: { light?: string }; material: { color: { getHexString(): string } } };
@@ -43,11 +45,11 @@ test('the office floor plan builds the loft, and the loft has a power switch and
   assert.equal(lamp.userData.light, 'off');
 });
 
-test('with no config at all, the API dial lists all five, each marked not installed when /api/tags lacks it', () => {
+test('with no config at all, the API dial lists every built-in, each marked not installed when /api/tags lacks it', () => {
   const dir = empty();
   const stops = dialStops(dialConfig(loadLoftConfig(dir)), ['okkin:latest'], []);
   assert.deepEqual(stops.map((s) => s.tag), TAGS);
-  assert.deepEqual(stops.map((s) => s.installed), [false, true, false, false, false]);
+  assert.deepEqual(stops.map((s) => s.installed), [false, true, false, false, false, false]);
   // Okkin off (tags unreadable): unknown, never 'not installed'.
   assert.ok(dialStops(dialConfig(loadLoftConfig(dir)), null).every((s) => s.installed === null));
   // The display list doesn't widen the allowlist: the file-only config stays empty.
@@ -62,9 +64,9 @@ const noConfig: LoftLike = {
   dial: TAGS.map((tag, i) => ({ tag, role: OKKIN_MODELS[i]!.role, installed: false, ramOk: true, minFreeRamGB: null })),
 };
 
-test('panel: five stops, not installed shown (not hidden), and power says Not set up without config', () => {
+test('panel: every built-in stop, not installed shown (not hidden), and power says Not set up without config', () => {
   const stops = stopsView(noConfig);
-  assert.equal(stops.length, 5);
+  assert.equal(stops.length, TAGS.length);
   assert.ok(stops.every((s) => s.status === 'not installed' && s.note === 'Not installed' && !s.usable));
   assert.equal(stops[chosenIndex(noConfig, stops)]!.role, 'default');
   const sw = switchView(noConfig);
@@ -76,8 +78,8 @@ test('panel: five stops, not installed shown (not hidden), and power says Not se
   assert.equal(loadPowerConfig(empty()).ok, false);
 });
 
-test('panel: even when the loft API fails, both controls still show (five stops, honest Not set up)', () => {
-  assert.equal(stopsView(null).length, 5);
+test('panel: even when the loft API fails, both controls still show (every built-in stop, honest Not set up)', () => {
+  assert.equal(stopsView(null).length, TAGS.length);
   assert.ok(stopsView(null).every((s) => s.status === 'unknown' && !s.usable && s.note === "Can't reach Okkin"));
   const sw = switchView(null, 'The loft API refused (403: host not allowed).');
   assert.equal(sw.works, false);
@@ -110,8 +112,8 @@ test('honesty: tag spelling is normalised, so installed status and benchmarks ag
   assert.equal(normTag('registry.ollama.ai/library/qwen3.5:9b'), 'qwen3.5:9b');
   assert.equal(normTag('huggingface.co/Ornith-AI/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'), 'hf.co/ornith-ai/ornith-1.5-35b-a3b-gguf:q4_k_m');
   const stops = dialStops(dialConfig(loadLoftConfig(empty())), ['OKKIN', 'huggingface.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'], ['okkin:latest']);
-  assert.deepEqual(stops.map((s) => s.installed), [false, true, false, false, true]);
-  assert.deepEqual(stops.map((s) => s.allowed), [false, true, false, false, false]);
+  assert.deepEqual(stops.map((s) => s.installed), [false, true, false, false, false, true]);
+  assert.deepEqual(stops.map((s) => s.allowed), [false, true, false, false, false, false]);
   const { benchByTag, loadedSpeed } = await import('../src/server/hq/okkin-loft.js');
   assert.deepEqual(Object.keys(benchByTag({ Okkin: { tokensPerSec: 41 } })), ['okkin:latest']);
   assert.deepEqual(loadedSpeed([{ name: 'okkin' }], { 'okkin:latest': { tokensPerSec: 41 } }), { tokensPerSec: 41, model: 'okkin' });

@@ -44,7 +44,7 @@ Okkin's chip (`src/server/hq/okkin.ts:8` and `:50-55`) is `offline`, `switching`
 
 ### Okkin models
 
-No model tag is hardcoded. `qwen3.5:9b` appears once, as a doc example on `#10` (`docs/configuration.md:69`). It is not in `#11` source.
+The built-in loft fallback (`OKKIN_MODELS` in `src/shared/okkin-loft.ts`) uses `abliterant/qwen3.5-rana:9b-q4_K_M` as the chat stop (Nick t2262u rollout) and keeps `qwen3.5:9b` as the rollback stop. `docs/configuration.md` uses that chat tag as the `OKKIN_MODEL` example. `OKKIN_MODEL` itself stays unset until configured.
 
 On `#11`, the configured tag is `OKKIN_MODEL`, else `model` in gitignored `ollama.json`, else `hq.okkinModel`, else empty (`src/server/hq/okkin.ts:65-70`, `src/server/ollama.ts:79`). The allowlist is `OKKIN_MODEL_ALLOW`, else `hq.okkinAllow`, split on commas and checked with `modelTagOk` (`okkin.ts:70-74`, `src/shared/hq.ts:279-280`). `modelTagOk` checks length and path characters. It is not a list of tags. The switch list, when the office is running, is that allowlist intersected with names from live `GET /api/tags` (`modelChoices`, `hq.ts:269-276`; applied in `okkin.ts:112`). The allowlist is not a list of installed tags. This audit did not call the host. Installed local model tags stay unverified until a live check on the host.
 

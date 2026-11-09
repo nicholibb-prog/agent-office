@@ -36,7 +36,7 @@ export function seqProgress(kind: 'on' | 'off', elapsed: number, row: number, ro
 }
 
 /** One accent per model (by dial role), swept across the blades when the dial changes. */
-export const MODEL_ACCENT: Record<string, string> = { quick: '#5ac8fa', default: '#e3c25a', chat: '#a78bfa', code: '#34d399', big: '#ff8a5c' };
+export const MODEL_ACCENT: Record<string, string> = { quick: '#5ac8fa', default: '#e3c25a', chat: '#a78bfa', rollback: '#5e5ce6', code: '#34d399', big: '#ff8a5c' };
 export const accentFor = (role: string | undefined) => MODEL_ACCENT[role ?? ''] ?? '#e3c25a';
 
 /** The sweep after a dial change: a bright band crossing the rows bottom to top over SWEEP_S seconds. */

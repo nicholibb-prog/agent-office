@@ -120,7 +120,7 @@ agent-office tunnel [office@address | url] [--port <n>] [--office-port <n>] [--n
 
 ## Local model for the huddle
 
-The meeting room and the three front desks can ask a model on this machine. `OLLAMA_URL` defaults to `http://127.0.0.1:11434`. `OKKIN_MODEL` is unset until you set it (a doc example is `qwen3.5:9b`). The host has to be `http://127.0.0.1`, `http://localhost`, or `http://[::1]`. `https` is refused. `localhost` is rewritten to `127.0.0.1` before any request, so the office does not ask the system resolver for it. Any other host is refused and the seat stays **offline**. The same two fields can live in `.agent-office/ollama.json`; the environment wins. The office only calls `GET /api/tags`, `POST /api/chat`, and `POST /api/generate` on that origin, plus `GET /api/ps` for Okkin's model switch (see Local crew below). It does not install a CLI, take a key, or open a route that proxies the model. The browser is told the configured model name and `ready` or `offline`, never the raw response. When the probe succeeds and a model is set, those seats use it. Otherwise they queue on the bridge outbox for a real crew bot. If that outbox directory cannot be written either, the seat says **no provider — needs owner**. A bridge route that fails answers `The office could not complete that`, not the exception text.
+The meeting room and the three front desks can ask a model on this machine. `OLLAMA_URL` defaults to `http://127.0.0.1:11434`. `OKKIN_MODEL` is unset until you set it (a doc example is `abliterant/qwen3.5-rana:9b-q4_K_M`, the loft dial's built-in chat stop; `qwen3.5:9b` stays on that dial as the rollback stop). The host has to be `http://127.0.0.1`, `http://localhost`, or `http://[::1]`. `https` is refused. `localhost` is rewritten to `127.0.0.1` before any request, so the office does not ask the system resolver for it. Any other host is refused and the seat stays **offline**. The same two fields can live in `.agent-office/ollama.json`; the environment wins. The office only calls `GET /api/tags`, `POST /api/chat`, and `POST /api/generate` on that origin, plus `GET /api/ps` for Okkin's model switch (see Local crew below). It does not install a CLI, take a key, or open a route that proxies the model. The browser is told the configured model name and `ready` or `offline`, never the raw response. When the probe succeeds and a model is set, those seats use it. Otherwise they queue on the bridge outbox for a real crew bot. If that outbox directory cannot be written either, the seat says **no provider — needs owner**. A bridge route that fails answers `The office could not complete that`, not the exception text.
 
 ### Seat tokens (bridge identity)
 
@@ -158,7 +158,7 @@ See [Local HQ](hq.md). The floor's gitignored `.agent-office/hq-local.json` turn
 | Variable | Meaning |
 | --- | --- |
 | `OLLAMA_URL` | Loopback Ollama origin, `http` only. Unset uses `url` in `.agent-office/ollama.json`, then `http://127.0.0.1:11434`. `localhost` is rewritten to `127.0.0.1`. `https` and any other host are refused. |
-| `OKKIN_MODEL` | The tag Okkin talks with. Not set in source. |
+| `OKKIN_MODEL` | The tag Okkin talks with. Not set in source. The loft dial's built-in chat stop is `abliterant/qwen3.5-rana:9b-q4_K_M` (Nick t2262u rollout), with `qwen3.5:9b` kept as the rollback stop. |
 | `OKKIN_MODEL_ALLOW` | Comma-separated tags the desk may switch to. Intersected with the tags Ollama has installed. |
 
 `OLLAMA_URL` wins over `ollama.json`. `hq-local.json` does not set the URL. A request cannot set the URL or add a tag.

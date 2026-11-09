@@ -1,11 +1,11 @@
 // A stand-in Ollama for the power switch's end-to-end test: listens on 127.0.0.1 on an ephemeral port
 // (never 11434; the port goes in <pidFile>.port and the test points Okkin's fetch at it), knows the
-// five loft models, and keeps a loaded list that /api/generate fills (and keep_alive 0 empties).
+// loft models, and keeps a loaded list that /api/generate fills (and keep_alive 0 empties).
 // Writes its pid next to argv[2] so the stub OFF script can stop it.
 import { createServer } from 'node:http';
 import { appendFileSync, writeFileSync } from 'node:fs';
 const pidFile = process.argv[2];
-const TAGS = ['qwen3.5:4b', 'okkin:latest', 'qwen3.5:9b', 'ornith-1.5:9b', 'hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'];
+const TAGS = ['qwen3.5:4b', 'okkin:latest', 'abliterant/qwen3.5-rana:9b-q4_K_M', 'qwen3.5:9b', 'ornith-1.5:9b', 'hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'];
 const loaded = new Set();
 const json = (res, body) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
 const srv = createServer((req, res) => {

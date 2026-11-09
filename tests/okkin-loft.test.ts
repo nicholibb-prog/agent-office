@@ -224,6 +224,7 @@ test('best-model pick prefers measured models and says when it picks an unmeasur
 test('long Hugging Face model ids get a short name; plain tags stay', async () => {
   const { modelShortName } = await import('../src/shared/okkin-loft.js');
   assert.equal(modelShortName('hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M'), 'Ornith 35B Q4');
+  assert.equal(modelShortName('abliterant/qwen3.5-rana:9b-q4_K_M'), 'qwen3.5');
   assert.equal(modelShortName('qwen3.5:9b'), 'qwen3.5:9b');
   assert.equal(modelShortName('okkin:latest'), 'okkin:latest');
 });

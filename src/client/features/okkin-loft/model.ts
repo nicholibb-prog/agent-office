@@ -53,7 +53,7 @@ export const OWNER_ONLY = 'Owner only';
 export const OWNER_NOT_SET_UP = 'Owner not set up — run npm run owner:set on the ProArt';
 export const OWNER_FILE_CHANGED = 'Owner file changed — restart the office after a deliberate owner:set';
 
-/** Every dial stop, never hidden: the API's list, or the five built-ins (status unknown) when it didn't answer. */
+/** Every dial stop, never hidden: the API's list, or the built-ins (status unknown) when it didn't answer. */
 export function stopsView(d: LoftLike | null): StopView[] {
   const src: LoftStop[] = d?.dial.length ? d.dial : OKKIN_MODELS.map((m) => ({ tag: m.tag, role: m.role, ramOk: true, minFreeRamGB: 'minFreeRamGB' in m ? m.minFreeRamGB : null }));
   const on = d?.power === 'on';
