@@ -34,7 +34,7 @@ interface Shown {
 const SHOW: Record<string, () => Shown> = {
   jev: () => {
     const board = buildJevLeaderboard();
-    board.show(boardFrom(seedAgents()));
+    board.show({ ...boardFrom(seedAgents()), rankedOn: '2026-10-06' });
     return { object: board.group };
   },
   jukebox: () => {

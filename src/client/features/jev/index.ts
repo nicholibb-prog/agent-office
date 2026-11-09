@@ -24,7 +24,8 @@ export function installJev(ctx: Ctx) {
     reach: 6,
     hint: () => {
       const top = store.jev.rows[0];
-      return { k: top ? `${top.name}|${top.score}` : 'empty', parts: [hintTitle('🏆 Jev'), aside(top ? `${top.name} leads · ${top.score}` : 'local rankings, on this machine')] };
+      const when = store.jev.rankedOn ? `as of ${store.jev.rankedOn}` : 'updates at midnight';
+      return { k: top ? `${top.name}|${top.score}|${store.jev.rankedOn ?? ''}` : 'empty', parts: [hintTitle('🏆 Jev'), aside(top ? `${top.name} leads · ${top.score} · ${when}` : `every agent · ${when}`)] };
     },
     use: () => undefined,
   });

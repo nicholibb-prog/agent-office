@@ -17,6 +17,12 @@ export const jev: Slice = {
   init(s) {
     s.jev = EMPTY;
   },
+  on: {
+    jev(s, m) {
+      s.jev = m.board ?? EMPTY;
+      return ['jev'];
+    },
+  },
   enter(s, v) {
     s.jev = v.jev ?? EMPTY;
     return ['jev'];

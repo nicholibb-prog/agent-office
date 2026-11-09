@@ -9,6 +9,7 @@ import type { ChangesClientMsg, ChangesServerMsg } from './protocol/changes.js';
 import type { FloorClientMsg, FloorServerMsg, PlanClientMsg } from './protocol/floors.js';
 import type { GitHubClientMsg, GitHubServerMsg } from './protocol/github.js';
 import type { HuddleClientMsg, HuddleServerMsg } from './protocol/huddle.js';
+import type { JevServerMsg } from './protocol/jev.js';
 import type { MeetingClientMsg, MeetingServerMsg } from './protocol/meetings.js';
 import type { PresenceClientMsg, PresenceServerMsg } from './protocol/presence.js';
 import type { PoolServerMsg } from './protocol/pool.js';
@@ -25,6 +26,7 @@ export * from './protocol/changes.js';
 export * from './protocol/floors.js';
 export * from './protocol/github.js';
 export * from './protocol/huddle.js';
+export * from './protocol/jev.js';
 export * from './protocol/meetings.js';
 export * from './protocol/presence.js';
 export * from './protocol/pool.js';
@@ -64,6 +66,7 @@ export type ServerMsg =
   | RooftopServerMsg
   | WorkerServerMsg
   | GitHubServerMsg
+  | JevServerMsg
   | QueueServerMsg
   | PoolServerMsg
   | MeetingServerMsg
