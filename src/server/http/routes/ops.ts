@@ -30,7 +30,7 @@ export const opsRoutes = {
   api: {
     method: 'GET' as const,
     path: '/api/ops',
-    auth: 'public' as const,
+    auth: 'session' as const,
     handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
       const who = guard(ctx, req, res, 'GET /api/ops');
       if (!who || who === 'off') return;
@@ -53,7 +53,7 @@ export const opsRoutes = {
   history: {
     method: 'GET' as const,
     path: '/api/ops/history',
-    auth: 'public' as const,
+    auth: 'session' as const,
     handle(ctx: Ctx, { req, res, url }: { req: http.IncomingMessage; res: http.ServerResponse; url: URL }) {
       const who = guard(ctx, req, res, 'GET /api/ops/history');
       if (!who || who === 'off') return;

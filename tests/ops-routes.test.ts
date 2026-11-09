@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { requestHandler } from '../src/server/http/router.js';
 import { opsRoutes } from '../src/server/http/routes/ops.js';
+import { routes } from '../src/server/http/routes/index.js';
 import { OKKIN_REFUSALS_LOG } from '../src/server/hq/okkin-owner.js';
 import { opsTick, startOpsSampler } from '../src/server/ops/sampler.js';
 import type { OpsAdapter } from '../src/server/ops/adapters.js';
@@ -53,6 +54,17 @@ async function listen(handler: (req: import('node:http').IncomingMessage, res: i
   });
   return { srv, hit };
 }
+
+test('the ops registry marks the API and the page as session routes', () => {
+  assert.equal(opsRoutes.api.auth, 'session');
+  assert.equal(opsRoutes.history.auth, 'session');
+  assert.equal(opsRoutes.page.auth, 'session');
+  const session = routes.filter((route) => route.auth === 'session');
+  const apiAt = session.indexOf(opsRoutes.api);
+  assert.ok(apiAt >= 0);
+  assert.equal(session[apiAt + 1], opsRoutes.history);
+  assert.equal(session[apiAt + 2], opsRoutes.page);
+});
 
 test('a bridge token is a logged 403 and a missing session is 401', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'ao-ops-gate-'));
