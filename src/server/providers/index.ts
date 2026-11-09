@@ -33,6 +33,7 @@ export function providerHook(route: string): SomeAdapter['hook'] {
 
 /** A terminal title that's only an agent's own name ("Claude Code"): not worth showing, whichever agent the worker runs. */
 export function titleNoise(title: string): boolean {
+  if (/cmd\.exe|powershell|Windows\\\\System32/i.test(title)) return true;
   return Object.values(PROVIDERS).some((p) => p.titleNoise?.test(title));
 }
 

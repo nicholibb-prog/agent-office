@@ -1,0 +1,531 @@
+import type http from 'node:http';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { appendOutboxItem } from '../../outbox.js';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
+import path from 'node:path';
+import type { Ctx } from '../../office/context.js';
+import type { ChatLine } from '../../../shared/protocol.js';
+import { activeSeatMap, isSeatId } from '../../../shared/hq.js';
+import { send } from '../util.js';
+import { seatForToken } from '../../seat-tokens.js';
+import { BodyTooLarge, closeTooLarge, readJsonBody } from '../read-body.js';
+import { readKaviDesk } from '../../kavi-desk.js';
+import type { Route } from '../router.js';
+import { appendInbox, ingestInbox } from '../../hq/relay.js';
+import { loadHqLocal, writeCrewPush } from '../../workers/crew.js';
+import { meritCrewAttachment } from '../../router/merit-crew.js';
+import { writePrivate } from '../../private-file.js';
+import { logOkkinRefusal, okkinCaller } from '../../hq/okkin-owner.js';
+
+const OFFICE_ERROR = 'The office could not complete that';
+
+function dataDirs(ctx: Ctx): string[] {
+  const dirs = new Set<string>([ctx.cfg.dataDir]);
+  for (const floor of ctx.floors.values()) dirs.add(path.join(floor.dir, '.agent-office'));
+  return [...dirs];
+}
+
+/** Writes the push where the office keeps data and on every floor, with the seen time the lease uses. */
+export function pushCrew(ctx: Ctx, patch: Record<string, string>, source: string) {
+  const now = Date.now();
+  let file = writeCrewPush(ctx.cfg.dataDir, patch, source, now);
+  for (const dir of dataDirs(ctx)) if (dir !== ctx.cfg.dataDir) file = writeCrewPush(dir, patch, source, now);
+  return file;
+}
+
+async function readJson<T extends object>(req: http.IncomingMessage, res: http.ServerResponse): Promise<T | undefined> {
+  try {
+    const value = JSON.parse(await readJsonBody(req)) as T;
+    if (!value || typeof value !== 'object') {
+      send(res, 400, { error: 'bad json' });
+      return undefined;
+    }
+    return value;
+  } catch (err) {
+    if (err instanceof BodyTooLarge) {
+      closeTooLarge(req, res);
+      return undefined;
+    }
+    else send(res, 400, { error: 'bad json' });
+    return undefined;
+  }
+}
+
+/** Letters and digits that fold toward o, k, i, or n. Applied after NFKD and mark stripping. */
+const LOOKALIKE: Record<string, string> = {
+  '0': 'o',
+  '1': 'i',
+  l: 'i',
+  L: 'i',
+  '\u0131': 'i',
+  '\u00a1': 'i',
+  '\u0138': 'k',
+  '\u03bf': 'o',
+  '\u039f': 'o',
+  '\u03ba': 'k',
+  '\u039a': 'k',
+  '\u03b9': 'i',
+  '\u0399': 'i',
+  '\u03bd': 'n',
+  '\u039d': 'n',
+  '\u1d0f': 'o',
+  '\u1d0b': 'k',
+  '\u026a': 'i',
+  '\u0274': 'n',
+  '\u04c0': 'i',
+  '\u0456': 'i',
+  '\u0406': 'i',
+  '\u043e': 'o',
+  '\u041e': 'o',
+  '\u043a': 'k',
+  '\u041a': 'k',
+  '\u043d': 'n',
+  '\u041d': 'n',
+};
+
+/** True when the name folds to something that contains okkin. */
+export function refusesOkkinName(raw: string): boolean {
+  const folded = String(raw).normalize('NFKD').replace(/\p{Cf}/gu, '').replace(/\p{M}/gu, '');
+  let mapped = '';
+  for (const ch of folded) mapped += LOOKALIKE[ch] ?? ch;
+  return mapped.toLowerCase().replace(/[^a-z0-9]/g, '').includes('okkin');
+}
+
+const ALLOWED_HOSTS = new Set([
+  '127.0.0.1:4600',
+  '127.0.0.1:5173',
+  'localhost:4600',
+  'localhost:5173',
+]);
+
+const ALLOWED_ORIGINS = new Set([
+  'http://127.0.0.1:4600',
+  'http://127.0.0.1:5173',
+  'http://localhost:4600',
+  'http://localhost:5173',
+]);
+
+export function hostOk(req: http.IncomingMessage): boolean {
+  const host = (req.headers.host || '').toLowerCase();
+  return ALLOWED_HOSTS.has(host);
+}
+
+export function originOk(req: http.IncomingMessage): boolean {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  return ALLOWED_ORIGINS.has(String(origin).toLowerCase());
+}
+
+function contentTypeOk(req: http.IncomingMessage): boolean {
+  if (req.method !== 'POST') return true;
+  const ct = String(req.headers['content-type'] || '').toLowerCase();
+  return ct.startsWith('application/json');
+}
+
+function safeTokenEq(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ba.length !== bb.length) return false;
+  try {
+    return timingSafeEqual(ba, bb);
+  } catch {
+    return false;
+  }
+}
+
+function bridgeToken(dataDir: string): string {
+  const file = path.join(dataDir, 'bridge-token');
+  try {
+    if (existsSync(file)) {
+      const t = readFileSync(file, 'utf8').trim();
+      if (t.length >= 32) return t;
+    }
+  } catch {
+    /* regenerate below */
+  }
+  mkdirSync(dataDir, { recursive: true });
+  const t = randomBytes(32).toString('hex');
+  writeFileSync(file, t + '\n', { mode: 0o600 });
+  return t;
+}
+
+function tokenFromReq(req: http.IncomingMessage): string {
+  const hdr = req.headers['x-bridge-token'];
+  if (typeof hdr === 'string' && hdr.trim()) return hdr.trim();
+  const auth = req.headers.authorization;
+  if (typeof auth === 'string' && /^Bearer\s+/i.test(auth)) return auth.replace(/^Bearer\s+/i, '').trim();
+  return '';
+}
+
+/**
+ * Host allowlist, Origin, and JSON Content-Type. Does not look at a bridge token or a session.
+ * Shared by the token gate and the session-only routes; approval routes use this and then
+ * require a signed-in office session on their own.
+ */
+export function bridgeShape(req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  if (!hostOk(req)) {
+    send(res, 403, { error: 'host not allowed' });
+    return false;
+  }
+  if (!originOk(req)) {
+    send(res, 403, { error: 'origin not allowed' });
+    return false;
+  }
+  if (!contentTypeOk(req)) {
+    send(res, 415, { error: 'Content-Type must be application/json' });
+    return false;
+  }
+  return true;
+}
+
+/** Whether the request carries a bridge credential (x-bridge-token or Bearer). */
+export function bridgeCredentialPresent(req: http.IncomingMessage): boolean {
+  const hdr = req.headers['x-bridge-token'];
+  if (typeof hdr === 'string' && hdr.trim()) return true;
+  const auth = req.headers.authorization;
+  return typeof auth === 'string' && /^Bearer\s+\S+/i.test(auth);
+}
+
+/** Host, Origin, and JSON shape only (no credential check). Used by the pool's session routes. */
+export function officeRequestShape(req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  return bridgeShape(req, res);
+}
+
+export type BridgeCaller = { kind: 'seat'; seat: string } | { kind: 'shared' } | { kind: 'session' };
+
+/**
+ * Who is calling the bridge. A per-seat token names its seat; that is the only bridge identity.
+ * The old shared bridge-token is read-only (GET). A presented token that matches nothing is 401
+ * even when a session cookie is also present. Sends the error response and returns null on failure.
+ */
+export function bridgeCaller(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): BridgeCaller | null {
+  if (!bridgeShape(req, res)) return null;
+  const got = tokenFromReq(req);
+  if (got) {
+    const seat = seatForToken(ctx.cfg.dataDir, got);
+    if (seat) return { kind: 'seat', seat };
+    if (safeTokenEq(got, bridgeToken(ctx.cfg.dataDir))) {
+      if ((req.method || 'GET') === 'GET') return { kind: 'shared' };
+      send(res, 403, { error: 'shared bridge token is read-only; use a seat token' });
+      return null;
+    }
+    send(res, 401, { error: 'bridge token not recognised' });
+    return null;
+  }
+  if (ctx.auth.fromRequest(req) || ctx.auth.fromAnyCookie(req)) return { kind: 'session' };
+  send(res, 401, { error: 'bridge token or office session required' });
+  return null;
+}
+
+export type SeatPrivateCaller = { kind: 'seat'; seat: string } | { kind: 'owner' } | { kind: 'session' };
+
+/**
+ * Reads of a seat's private text (thread, outbox). A seat token is that seat only; the shared
+ * bridge token and x-pool-caller get a logged 403; a session is 'owner' or plain 'session'.
+ * Logs carry the route and caller kind only, never a token. Sends the error and returns null on failure.
+ */
+export function seatPrivateCaller(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse, route: string): SeatPrivateCaller | null {
+  if (!bridgeShape(req, res)) return null;
+  // Any Authorization header is a bot credential here (as botCredential): refused and logged.
+  const auth = req.headers.authorization;
+  if (typeof auth === 'string' && auth.trim()) {
+    logOkkinRefusal(ctx.cfg.dataDir, { route, caller: 'bearer' });
+    send(res, 403, { error: 'Authorization header not accepted; use x-bridge-token' });
+    return null;
+  }
+  const got = tokenFromReq(req);
+  if (got) {
+    const seat = seatForToken(ctx.cfg.dataDir, got);
+    if (seat) return { kind: 'seat', seat };
+    if (safeTokenEq(got, bridgeToken(ctx.cfg.dataDir))) {
+      logOkkinRefusal(ctx.cfg.dataDir, { route, caller: 'shared-bridge-token' });
+      send(res, 403, { error: 'shared bridge token cannot read seat text; use a seat token' });
+      return null;
+    }
+    send(res, 401, { error: 'bridge token not recognised' });
+    return null;
+  }
+  const pool = req.headers['x-pool-caller'];
+  if (typeof pool === 'string' && pool.trim()) {
+    logOkkinRefusal(ctx.cfg.dataDir, { route, caller: 'pool-caller' });
+    send(res, 403, { error: 'owner only' });
+    return null;
+  }
+  if (!(ctx.auth.fromRequest(req) || ctx.auth.fromAnyCookie(req))) {
+    send(res, 401, { error: 'bridge token or office session required' });
+    return null;
+  }
+  return okkinCaller(req, { touch: false }).kind === 'owner' ? { kind: 'owner' } : { kind: 'session' };
+}
+
+/** Bridge auth: Host allowlist + Origin check + (seat token, read-only shared token, or office session). */
+export function bridgeGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  return bridgeCaller(ctx, req, res) !== null;
+}
+
+/** Routes that speak or set presence: a seat token only. Returns the caller's seat. */
+export function seatGate(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): string | null {
+  const c = bridgeCaller(ctx, req, res);
+  if (!c) return null;
+  if (c.kind !== 'seat') {
+    send(res, 403, { error: 'seat token required' });
+    return null;
+  }
+  return c.seat;
+}
+
+/** Office session only. A bridge token or Bearer header is refused even when a cookie is also present. */
+export function sessionOnly(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  if (!bridgeShape(req, res)) return false;
+  if (tokenFromReq(req)) {
+    send(res, 403, { error: 'session required' });
+    return false;
+  }
+  if (ctx.auth.sessionFromAnyCookie(req)) return true;
+  send(res, 401, { error: 'office session required' });
+  return false;
+}
+
+/** Local HQ bridge: crew bots to office T-chat / presence / feed. */
+export const bridgeRoutes = {
+  chatRecent: {
+    method: 'GET' as const,
+    // /bridge/chat is the DeepSeek seat MCP alias (CREW_BRIDGE_URL). Same handler and bridgeGate.
+    path: ['/api/bridge/chat', '/bridge/chat'],
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res, url }: { req: http.IncomingMessage; res: http.ServerResponse; url: URL }) {
+      if (!bridgeGate(ctx, req, res)) return;
+      const n = Math.min(50, Math.max(1, Number(url.searchParams.get('n') || 20) || 20));
+      return send(res, 200, { lines: ctx.chat.recent(n) });
+    },
+  },
+  say: {
+    method: 'POST' as const,
+    // /say is the DeepSeek seat MCP alias (CREW_BRIDGE_URL). Same handler and seatGate.
+    path: ['/api/bridge/say', '/say'],
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
+      const body = await readJson<{ name?: string; text?: string; color?: string }>(req, res);
+      if (!body) return;
+      // Identity is the token's seat. A body name is allowed only when it is that seat.
+      if (body.name !== undefined && String(body.name).trim().toLowerCase() !== seat) {
+        return send(res, 403, { error: 'name does not match seat token' });
+      }
+      const name = seat;
+      const text = String(body.text || '').slice(0, 500).trim();
+      if (refusesOkkinName(name)) return send(res, 400, { error: 'Okkin speaks only through the local model' });
+      if (!text) return send(res, 400, { error: 'empty text' });
+      const line: ChatLine = {
+        from: 'bridge',
+        name,
+        color: typeof body.color === 'string' ? body.color.slice(0, 16) : '#8d99ae',
+        text,
+        at: Date.now(),
+        account: true,
+      };
+      ctx.chat.add(line);
+      ctx.broadcast({ t: 'chat', ...line });
+      for (const floor of ctx.floors.values()) {
+        floor.workers.chatWorking(name, text);
+      }
+      return send(res, 200, { ok: true, name, text });
+    },
+  },
+  inbox: {
+    method: 'POST' as const,
+    path: '/api/bridge/inbox',
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      // The seat is the token's seat (see #20). A body seat is allowed only when it is that seat.
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
+      const body = await readJson<{ seat?: string; text?: string }>(req, res);
+      if (!body) return;
+      if (body.seat !== undefined && String(body.seat).trim().toLowerCase() !== seat) {
+        return send(res, 403, { error: 'seat does not match seat token' });
+      }
+      const text = String(body.text || '');
+      if (!isSeatId(seat) || seat === 'okkin') return send(res, 400, { error: 'inbox is for a generic seat' });
+      const at = Date.now();
+      let wrote = false;
+      for (const dir of dataDirs(ctx)) {
+        if (appendInbox(dir, { seat, text, at })) wrote = true;
+        ingestInbox(dir);
+      }
+      if (!wrote) return send(res, 400, { error: 'empty text' });
+      return send(res, 200, { ok: true, seat, text: text.trim().slice(0, 500) });
+    },
+  },
+  crewStatus: {
+    method: 'POST' as const,
+    path: '/api/bridge/crew-status',
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
+      const body = await readJson<{ crew?: Record<string, string> }>(req, res);
+      if (!body) return;
+      const crew = body.crew || {};
+      if (Object.keys(crew).some((k) => k.trim().toLowerCase() !== seat)) {
+        return send(res, 403, { error: 'a seat can only set its own status' });
+      }
+      let file;
+      try {
+        file = pushCrew(ctx, crew, 'bridge');
+      } catch {
+        return send(res, 500, { error: OFFICE_ERROR });
+      }
+      const results: { floor: string; applied: string[] }[] = [];
+      for (const floor of ctx.floors.values()) {
+        const hq = loadHqLocal(path.join(floor.dir, '.agent-office', 'workers.json'));
+        const r = floor.workers.applyCrewPresence(file.crew, { seen: file.seen, seats: activeSeatMap(hq) });
+        results.push({ floor: floor.id, applied: r.applied });
+      }
+      return send(res, 200, { ok: true, updatedAt: file.updatedAt, crew: file.crew, seen: file.seen, source: file.source, results });
+    },
+  },
+  crewStatusGet: {
+    method: 'GET' as const,
+    path: '/api/bridge/crew-status',
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!bridgeGate(ctx, req, res)) return;
+      try {
+        const file = path.join(ctx.cfg.dataDir, 'crew-status.json');
+        const parsed = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown> : { crew: {}, updatedAt: null };
+        const merit = meritCrewAttachment(ctx);
+        return send(res, 200, merit ? { ...parsed, merit } : parsed);
+      } catch {
+        return send(res, 500, { error: OFFICE_ERROR });
+      }
+    },
+  },
+  status: {
+    method: 'POST' as const,
+    path: '/api/bridge/status',
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
+      const body = await readJson<{ name?: string; status?: string }>(req, res);
+      if (!body) return;
+      const st = String(body.status || '').toLowerCase();
+      if (body.name !== undefined && String(body.name).trim().toLowerCase() !== seat) {
+        return send(res, 403, { error: 'a seat can only set its own status' });
+      }
+      const name = seat;
+      if (st !== 'working' && st !== 'idle') return send(res, 400, { error: 'status working|idle' });
+      let file;
+      try {
+        file = pushCrew(ctx, { [name]: st }, 'bridge-status');
+      } catch {
+        return send(res, 500, { error: OFFICE_ERROR });
+      }
+      const results: { floor: string; applied: string[] }[] = [];
+      for (const floor of ctx.floors.values()) {
+        const hq = loadHqLocal(path.join(floor.dir, '.agent-office', 'workers.json'));
+        results.push({ floor: floor.id, applied: floor.workers.applyCrewPresence(file.crew, { seen: file.seen, seats: activeSeatMap(hq) }).applied });
+      }
+      return send(res, 200, { ok: true, name, status: st, results });
+    },
+  },
+  kaviFeed: {
+    method: 'POST' as const,
+    path: '/api/bridge/kavi-feed',
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
+      const body = await readJson<{ titles?: { name?: string; id?: string; modifiedTime?: string }[] }>(req, res);
+      if (!body) return;
+      const titles = (body.titles || [])
+        .map((t) => ({
+          name: String(t.name || '').slice(0, 120).trim(),
+          id: t.id ? String(t.id).slice(0, 80) : undefined,
+          modifiedTime: t.modifiedTime ? String(t.modifiedTime).slice(0, 40) : undefined,
+        }))
+        .filter((t) => t.name);
+      const payload = {
+        updatedAt: new Date().toISOString(),
+        source: 'bridge',
+        seat,
+        allowlist: 'local bridge feed',
+        titles,
+      };
+      try {
+        writePrivate(path.join(ctx.cfg.dataDir, 'kavi-feed.json'), JSON.stringify(payload, null, 2) + '\n');
+      } catch {
+        return send(res, 500, { error: OFFICE_ERROR });
+      }
+      return send(res, 200, { ok: true, count: titles.length, seat });
+    },
+  },
+  kaviFeedGet: {
+    method: 'GET' as const,
+    path: '/api/bridge/kavi-feed',
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!bridgeGate(ctx, req, res)) return;
+      try {
+        const file = path.join(ctx.cfg.dataDir, 'kavi-feed.json');
+        if (!existsSync(file)) return send(res, 200, { titles: [], updatedAt: null });
+        return send(res, 200, JSON.parse(readFileSync(file, 'utf8')));
+      } catch {
+        return send(res, 500, { error: OFFICE_ERROR });
+      }
+    },
+  },
+  kaviOutbox: {
+    method: 'POST' as const,
+    path: '/api/bridge/kavi-outbox',
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      const seat = seatGate(ctx, req, res);
+      if (!seat) return;
+      const body = await readJson<{ title?: string; text?: string }>(req, res);
+      if (!body) return;
+      const title = String(body.title || 'office-chat').slice(0, 80).trim() || 'office-chat';
+      const text = String(body.text || '').slice(0, 4000);
+      const file = path.join(ctx.cfg.dataDir, 'kavi-outbox.json');
+      try {
+        const items = appendOutboxItem(file, { title, text, at: new Date().toISOString(), seat });
+        return send(res, 200, { ok: true, queued: items.length, seat });
+      } catch {
+        return send(res, 500, { error: OFFICE_ERROR });
+      }
+    },
+  },
+  kaviOutboxGet: {
+    method: 'GET' as const,
+    path: '/api/bridge/kavi-outbox',
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      const caller = seatPrivateCaller(ctx, req, res, 'GET /api/bridge/kavi-outbox');
+      if (!caller) return;
+      try {
+        const file = path.join(ctx.cfg.dataDir, 'kavi-outbox.json');
+        if (caller.kind === 'session') return send(res, 200, { items: [], private: true });
+        if (!existsSync(file)) return send(res, 200, { items: [], private: false });
+        const raw = JSON.parse(readFileSync(file, 'utf8')) as { items?: { seat?: string }[]; [k: string]: unknown };
+        const all = Array.isArray(raw.items) ? raw.items : [];
+        // A seat token sees only items stamped with exactly its crew seat. null/missing = owner-only.
+        const items = caller.kind === 'owner' ? all : all.filter((it) => !!it && typeof it.seat === 'string' && it.seat !== '' && it.seat === caller.seat);
+        return send(res, 200, { ...raw, items, private: false });
+      } catch {
+        return send(res, 500, { error: OFFICE_ERROR });
+      }
+    },
+  },
+  kaviDesk: {
+    method: 'GET' as const,
+    path: '/api/bridge/kavi-desk',
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!bridgeGate(ctx, req, res)) return;
+      // Read-only folder twin. Path comes from the local env only, never from the request.
+      return send(res, 200, readKaviDesk(process.env.AGENT_OFFICE_KAVI_BRIDGE_DIR || undefined));
+    },
+  },
+} satisfies Record<string, Route>;

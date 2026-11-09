@@ -4,7 +4,7 @@
  * and the meeting room's two. What E does at each is defined with it.
  */
 import type * as THREE from 'three';
-import type { GhIssue } from '../../../shared/protocol';
+import { ghListsBlock, type GhIssue } from '../../../shared/protocol';
 import type { Ctx } from '../../core/context';
 import { aside, boardHint, hintTitle, key, onE } from '../../core/hint';
 import { store, type Topic } from '../../state';
@@ -98,8 +98,8 @@ export function installBoards(ctx: Ctx, deps: BoardsDeps) {
   const renderServicesBoard = () => servicesTex.render(store.services.items, store.workers);
   mountBoard(office.boardMeshes.services, servicesTex.texture, renderServicesBoard, ['services', 'workers']);
   const queueTex = new QueueBoardTexture();
-  const renderQueueBoard = () => queueTex.render(store.queue, store.workers);
-  mountBoard(office.boardMeshes.queue, queueTex.texture, renderQueueBoard, ['queue', 'workers']);
+  const renderQueueBoard = () => queueTex.render(store.queue, store.workers, ghListsBlock(store.issues, store.pulls));
+  mountBoard(office.boardMeshes.queue, queueTex.texture, renderQueueBoard, ['queue', 'workers', 'issues', 'pulls']);
   ctx.interactions.define('issues', {
     reach: 9,
     hint: () => {

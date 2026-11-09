@@ -1,10 +1,12 @@
 // The picture on a desk laptop. The terminal mirror only repaints when a row changes, so a worker
 // that sits on one screen looks frozen. This draws a small desktop instead, and keeps redrawing it
 // from the worker's own status (setStatus / mid-turn) and from lastInput, with no capture of
-// anyone's real desktop. Press E at the desk for the real terminal.
+// anyone's real desktop. Click the laptop to see the same picture large. Press E at the desk for
+// the real terminal.
 import type { WorkerStatus } from '../../../shared/protocol';
 import { isAsleep } from '../../../shared/status';
 import type { ScreenState } from '../../state/store';
+import { liveFor, type LiveImage } from './live-feed';
 
 /** Working (blink, scroll, bars) or sitting still. `attention` blinks for a worker that needs you. */
 export type DeskPace = 'working' | 'attention' | 'calm';
@@ -24,19 +26,36 @@ export interface DeskFace {
   lines: string[];
   /** prefers-reduced-motion: one pose, so working and idle still read differently. */
   still?: boolean;
+  /**
+   * WORKING only: the bot's own pushed VM-desktop frame, or 'none' when it sends none ("no live
+   * feed"). Undefined leaves the painted desktop exactly as before.
+   */
+  live?: LiveImage | 'none';
 }
 
-/** What the laptop should do, from the office's worker state. `typedAt` is lastInput.at (wall clock). */
-export function deskFace(status: WorkerStatus, typedAt: number | undefined, wallNow: number): { pace: DeskPace; chip: string } {
+/**
+ * What the laptop should do, from the office's worker state. Presence honesty: the chip says
+ * WORKING and the live desktop animation runs only when status is truly `working`. A recent
+ * keystroke or `starting` must not paint a fake busy desktop. `typedAt` is kept for callers that
+ * still pass lastInput.at; it no longer forces a WORKING chip.
+ */
+export function deskFace(status: WorkerStatus, _typedAt: number | undefined, _wallNow: number): { pace: DeskPace; chip: string } {
   if (status === 'working') return { pace: 'working', chip: 'WORKING' };
-  if (status === 'starting') return { pace: 'working', chip: 'STARTING' };
+  if (status === 'starting') return { pace: 'calm', chip: 'STARTING' };
   if (status === 'needs_input') return { pace: 'attention', chip: 'NEEDS YOU' };
-  if (typedAt !== undefined && wallNow - typedAt >= 0 && wallNow - typedAt < KEYSTROKE_MS && !isAsleep(status)) {
-    return { pace: 'working', chip: 'WORKING' };
-  }
   if (status === 'done') return { pace: 'calm', chip: 'done' };
   if (isAsleep(status)) return { pace: 'calm', chip: 'asleep' };
   return { pace: 'calm', chip: 'idle' };
+}
+
+/** Honest empty desk: no worker, no fake busy desktop. */
+export function emptyDeskFace(now: number): DeskFace {
+  return { pace: 'calm', chip: 'empty', now, name: '', lines: [], activity: undefined };
+}
+
+/** True only when the status itself is working — never for idle/starting/keystroke. */
+export function deskStatusIsWorking(status: WorkerStatus): boolean {
+  return status === 'working';
 }
 
 /** The last non-empty rows of a terminal mirror, for the desktop's terminal window. */
@@ -68,6 +87,14 @@ function chipColor(pace: DeskPace): string {
 
 /** One frame of the desk desktop. A calm face keeps its windows still; the clock on the bar can still tick. */
 export function paintDesk(ctx: CanvasRenderingContext2D, w: number, h: number, face: DeskFace) {
+  if (face.chip === 'empty') {
+    paintEmptyDesk(ctx, w, h);
+    return;
+  }
+  if (face.pace === 'working' && face.live && face.live !== 'none') {
+    paintLiveFrame(ctx, w, h, face, face.live);
+    return;
+  }
   const t = face.still ? 0 : face.now;
   const live = face.pace === 'working' && !face.still;
   ctx.save();
@@ -108,6 +135,99 @@ export function paintDesk(ctx: CanvasRenderingContext2D, w: number, h: number, f
     ctx, sideX, top + filesH + gap, sideW, h - (top + filesH + gap) - gap, 'activity', face, t,
     (x, y, ww, hh) => paintActivity(ctx, x, y, ww, hh, face, t, live),
   );
+  if (face.pace === 'working' && face.live === 'none') {
+    const label = 'no live feed';
+    ctx.font = `700 ${Math.round(h / 30)}px ${FONT}`;
+    const lw = label.length * Math.round(h / 52) + 24;
+    ctx.fillStyle = 'rgba(14,16,24,0.9)';
+    ctx.fillRect(w - lw - 16, h - 44, lw, 30);
+    ctx.fillStyle = '#9aa0b8';
+    ctx.fillText(label, w - lw - 4, h - 38);
+  }
+  ctx.restore();
+}
+
+/** How long a new desk frame takes to fade in over the last one. */
+export const CROSSFADE_MS = 450;
+
+/** Opacity of the newest frame `elapsed` ms after it arrived. Reduced motion: no fade, straight on. */
+export function fadeAlpha(elapsed: number, still: boolean): number {
+  if (still || elapsed >= CROSSFADE_MS) return 1;
+  const k = Math.max(0, elapsed) / CROSSFADE_MS;
+  return k * k * (3 - 2 * k); // smoothstep
+}
+
+/**
+ * Two frames per canvas (double buffer): the one on screen and the one fading in over it. A new
+ * frame is drawn on top of the old one, so the screen never shows blank between frames.
+ */
+type Buffers = { cur: LiveImage; prev?: LiveImage; swapAt: number };
+const buffers = new WeakMap<object, Buffers>();
+
+/** Which frames to draw, and how opaque the top one is. Exported for tests. */
+export function liveLayers(key: object, f: LiveImage, now: number, still: boolean): { under?: LiveImage; top: LiveImage; alpha: number } {
+  let b = buffers.get(key);
+  if (!b) {
+    b = { cur: f, swapAt: now - CROSSFADE_MS };
+    buffers.set(key, b);
+  } else if (b.cur.img !== f.img) {
+    b.prev = b.cur;
+    b.cur = f;
+    b.swapAt = now;
+  } else b.cur = f;
+  const alpha = fadeAlpha(now - b.swapAt, still);
+  if (alpha >= 1) b.prev = undefined;
+  return { under: b.prev, top: b.cur, alpha };
+}
+
+function drawFit(ctx: CanvasRenderingContext2D, w: number, h: number, f: LiveImage) {
+  const k = Math.min(w / f.w, h / f.h);
+  const dw = f.w * k;
+  const dh = f.h * k;
+  ctx.drawImage(f.img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+}
+
+/** The bot's real desktop, aspect kept, crossfaded from the last frame, with its LIVE / near-live badge. */
+export function paintLiveFrame(ctx: CanvasRenderingContext2D, w: number, h: number, face: DeskFace, f: LiveImage) {
+  ctx.save();
+  const layers = liveLayers(ctx, f, typeof performance !== 'undefined' ? performance.now() : Date.now(), !!face.still);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+  if (layers.under) drawFit(ctx, w, h, layers.under);
+  ctx.globalAlpha = layers.alpha;
+  drawFit(ctx, w, h, layers.top);
+  ctx.globalAlpha = 1;
+  f = layers.top;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.font = `800 ${Math.round(h / 30)}px ${FONT}`;
+  const ago = Math.max(0, Math.round((Date.now() - f.at) / 1000));
+  const tag = f.near ? `near-live · updated ${ago}s ago  ${face.name.slice(0, 14)}` : `● LIVE  ${face.name.slice(0, 18)}`;
+  const tw = tag.length * Math.round(h / 50) + 20;
+  ctx.fillStyle = f.near ? 'rgba(40,90,170,0.92)' : 'rgba(200,30,50,0.92)';
+  ctx.fillRect(10, 10, tw, 30);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(tag, 20, 16);
+  ctx.restore();
+}
+
+/** Honest empty state when nobody is at the desk — plain text, no live-work animation. */
+export function paintEmptyDesk(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#12141c';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#1b1e2b';
+  ctx.fillRect(0, 0, w, 44);
+  ctx.fillStyle = '#6c7086';
+  ctx.font = `700 ${Math.round(h / 28)}px ${FONT}`;
+  ctx.fillText('empty', w / 2, 22);
+  ctx.fillStyle = '#c8c9d8';
+  ctx.font = `600 ${Math.round(h / 16)}px ${FONT}`;
+  ctx.fillText('No one at this desk', w / 2, h / 2);
   ctx.restore();
 }
 
@@ -205,4 +325,42 @@ function paintActivity(
   ctx.font = `600 ${Math.max(12, Math.round(h / 10))}px ${FONT}`;
   ctx.fillStyle = '#c8c9d8';
   ctx.fillText(note, x - (live ? (t / 40) % Math.max(80, note.length * 8) : 0), y + base + 10);
+}
+
+/** What the laptop shows before its terminal has printed a line. */
+export interface DeskWorker {
+  id?: string;
+  status: WorkerStatus;
+  name: string;
+  activity?: string;
+  lastInput?: { at: number };
+  kind?: 'agent' | 'shell' | 'crew';
+  lost?: unknown;
+}
+
+/** The stand-in line on an empty laptop, for a shell or an agent. */
+export function laptopPlaceholder(w: DeskWorker): string {
+  const again = w.kind === 'shell' ? 'restart' : 'resume';
+  if (w.lost) return `🌿 ${w.name}'s worktree was deleted — press E to fix it`;
+  if (w.status === 'offline' && w.kind === 'crew') return `💤 ${w.name} is offline`;
+  if (w.status === 'offline') return `💤 ${w.name} is asleep — press R to ${again}`;
+  if (w.status === 'exited') return `${w.name} exited`;
+  return 'booting…';
+}
+
+/**
+ * The desktop both the laptop lid and the enlarged overlay paint. `animNow` drives the blink and
+ * the scroll (and the clock on the bar). `wallNow` is only for how recently someone typed.
+ */
+export function workerDesktop(w: DeskWorker, screen: ScreenState | undefined, animNow: number, wallNow: number, still = false): DeskFace {
+  const lines = screenLines(screen);
+  return {
+    ...deskFace(w.status, w.lastInput?.at, wallNow),
+    now: animNow,
+    name: w.name,
+    activity: w.activity,
+    lines: lines.length ? lines : [laptopPlaceholder(w)],
+    still,
+    live: liveFor(w.name, w.status === 'working', Date.now(), w.id),
+  };
 }

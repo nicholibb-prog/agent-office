@@ -70,11 +70,23 @@ export interface Worker {
   lastLines: string[];
   leftNeedsInputAt: number;
   keyframeAt: number;
-  hookToken: string;
+  /**
+   * sha256 (hex) of the hook token its terminal was launched with. Only this is ever persisted; a
+   * fresh token is minted on every launch or relaunch, so older ones stop verifying.
+   */
+  hookTokenHash: string;
+  /** The raw token, in memory only, for the launch's environment. Never saved. */
+  hookToken?: string;
   /** Claude never reported SessionStart: it's stuck on a trust/login/onboarding screen. */
   bootBlocked?: boolean;
   /** When a shell last printed (ms). Silence after that sends it back to idle (see presence.ts). */
   outputAt?: number;
+  /**
+   * Sticky WORKING from the bridge / Grok crew sync: set on a real "working" push, cleared only by a
+   * real idle/done (any setStatus away from working) or by the working timeout. While set, shell
+   * quiet-detection and the snapshot settle never knock the desk back to idle (see crew.ts).
+   */
+  sticky?: { since: number; at: number };
   /** Its provider's own state on it (see ProviderAdapter.createState). */
   state: unknown;
   /** What its provider's adapter is handed of it (see WorkerHandle), once asked for. */

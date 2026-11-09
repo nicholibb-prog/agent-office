@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual, randomBytes, scrypt } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Account, Accounts } from './accounts.js';
+import { OWNER_COOKIE } from './hq/okkin-owner.js';
 
 export const COOKIE_NAME = 'ao_session';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 14;
@@ -119,14 +120,27 @@ export class Auth {
   }
 
   /**
+   * The verified session from this host's office cookie, including one issued on another port.
+   * A cookie whose name is not an office session cookie does not count. Undefined when none verify.
+   */
+  sessionFromAnyCookie(req: IncomingMessage): Session | undefined {
+    const cookies = parseCookies(req.headers.cookie);
+    const named = this.verify(cookies[cookieName(req)]);
+    if (named) return named;
+    for (const [name, value] of Object.entries(cookies)) {
+      if (!OFFICE_COOKIE.test(name)) continue;
+      const session = this.verify(value);
+      if (session) return session;
+    }
+    return undefined;
+  }
+
+  /**
    * Signed in to this office on any port of this host. A service tunnel (localhost:5173) carries
    * the cookie you got on the office's own tunnel (localhost:4600), since cookies ignore ports.
    */
   fromAnyCookie(req: IncomingMessage): boolean {
-    for (const [name, value] of Object.entries(parseCookies(req.headers.cookie))) {
-      if (OFFICE_COOKIE.test(name) && this.verify(value)) return true;
-    }
-    return false;
+    return !!this.sessionFromAnyCookie(req);
   }
 
   cookie(req: IncomingMessage, token: string, secure: boolean): string {
@@ -152,12 +166,15 @@ function cookieName(req: IncomingMessage): string {
 
 const OFFICE_COOKIE = new RegExp(`^${COOKIE_NAME}(?:_\\d+)?$`);
 
-/** The Cookie header without the office's session cookies, for passing on to someone else's server. */
+/** The Cookie header without the office's session cookies or the owner cookie, for passing on to someone else's server. */
 export function withoutOfficeCookies(header: string | undefined): string | undefined {
   if (!header) return header;
   const kept = header
     .split(';')
-    .filter((part) => !OFFICE_COOKIE.test(part.split('=', 1)[0].trim()))
+    .filter((part) => {
+      const name = part.split('=', 1)[0].trim();
+      return !OFFICE_COOKIE.test(name) && name !== OWNER_COOKIE;
+    })
     .join(';')
     .trim();
   return kept || undefined;

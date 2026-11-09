@@ -9,13 +9,14 @@ import type { GhIssue } from '../../shared/protocol';
 import type { Ctx } from '../core/context';
 import type { CoreState } from '../core/ctx';
 import type { Parts } from '../core/parts';
+import { deskClick, viewScreenId } from '../features/workers/screenhit';
 import { interactionAvailable, type DeskKey } from '../interaction';
 import { EYE_HEIGHT } from '../player';
 import { store } from '../state';
 import { modalOpen, toast } from '../ui/dom';
 import type { Interactable } from '../world/types';
 
-export type PointerParts = Pick<Parts, 'worlds' | 'rooftop' | 'place' | 'you' | 'boards' | 'cards' | 'seating' | 'hoops' | 'emotes' | 'hanging' | 'telescope' | 'hintbar'>;
+export type PointerParts = Pick<Parts, 'worlds' | 'rooftop' | 'place' | 'you' | 'boards' | 'cards' | 'seating' | 'hoops' | 'emotes' | 'hanging' | 'telescope' | 'hintbar' | 'screen'>;
 
 /** Listens for the mouse over the canvas, registers the aim tick ('aim'), and takes the player's clicks. */
 export function installPointer(ctx: Ctx, core: CoreState, parts: PointerParts) {
@@ -24,6 +25,8 @@ export function installPointer(ctx: Ctx, core: CoreState, parts: PointerParts) {
   const reach = () => parts.you.reach();
 
   let target: Interactable | null = null;
+  /** The worker whose laptop the crosshair is on, when you are close enough to use it. Clicks enlarge it; E does not. */
+  let aimedScreen: string | null = null;
   /** The note on the issues board under the crosshair (or, in third person, the mouse), which E takes. */
   let aimedNote: GhIssue | null = null;
   /** Where the mouse is over the scene, for pointing at notes in third person; null when it's off it. */
@@ -84,7 +87,7 @@ export function installPointer(ctx: Ctx, core: CoreState, parts: PointerParts) {
   const eye = new THREE.Vector3();
 
   /** What the ray through `ndc` lands on first, whether it is within reach (plus `slack` meters), and where it hit. */
-  function aimedAt(ndc: THREE.Vector2, slack = 0): { it: Interactable; near: boolean; hit: THREE.Intersection } | null {
+  function aimedAt(ndc: THREE.Vector2, slack = 0): { it: Interactable; near: boolean; hit: THREE.Intersection; screenId: string | null } | null {
     raycaster.setFromCamera(ndc, camera);
     eye.set(player.pos.x, player.pos.y + EYE_HEIGHT, player.pos.z);
     // (Workers standing in line in the castle carry their spot's interactable: see Court.)
@@ -99,7 +102,7 @@ export function installPointer(ctx: Ctx, core: CoreState, parts: PointerParts) {
       if (!shown) continue;
       if (!it || it.off) return null; // a wall, the floor, a plant… is in the way
       // How close you must be to use it is each kind's own (see ctx.interactions).
-      return { it, near: hit.point.distanceTo(eye) <= ctx.interactions.reach(it.kind) + slack, hit };
+      return { it, near: hit.point.distanceTo(eye) <= ctx.interactions.reach(it.kind) + slack, hit, screenId: viewScreenId(hit.object) };
     }
     return null;
   }
@@ -132,11 +135,15 @@ export function installPointer(ctx: Ctx, core: CoreState, parts: PointerParts) {
     const { seating, hoops } = parts;
     const firstPerson = player.view === 'first';
     aimedNote = null;
+    aimedScreen = null;
     if (modalOpen() || parts.telescope.active || ctx.activities.busy()) target = null;
     else if (firstPerson) {
       const aim = aimedAt(CROSSHAIR);
       target = aim?.near ? aim.it : (throneTarget() ?? seating.mySeat() ?? (inOffice() ? hoops.ballAtFeet() : null));
-      if (aim?.near) aimedNote = noteUnder(aim);
+      if (aim?.near) {
+        aimedNote = noteUnder(aim);
+        aimedScreen = aim.screenId;
+      }
     } else {
       target = throneTarget() ?? seating.mySeat() ?? pickTarget();
       // By the issues board, the mouse points at the note you'd take.
@@ -171,6 +178,11 @@ export function installPointer(ctx: Ctx, core: CoreState, parts: PointerParts) {
     if (player.view === 'first') {
       // Reach out even at nothing, like poking the air.
       reach();
+      // The laptop enlarges. E, and a click on the rest of the desk, still use the desk.
+      if (!core.carrying && deskClick(aimedScreen, true) === 'enlarge' && aimedScreen) {
+        parts.screen.open(aimedScreen);
+        return;
+      }
       if (target) interact(target, 'E');
       return;
     }
@@ -178,6 +190,10 @@ export function installPointer(ctx: Ctx, core: CoreState, parts: PointerParts) {
     if (!aim) return;
     if (!aim.near) {
       toast('Walk closer to that first');
+      return;
+    }
+    if (!core.carrying && deskClick(aim.screenId, true) === 'enlarge' && aim.screenId) {
+      parts.screen.open(aim.screenId);
       return;
     }
     use(aim.it, 'E', noteUnder(aim));

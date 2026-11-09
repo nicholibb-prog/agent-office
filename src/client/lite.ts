@@ -11,7 +11,7 @@ import { cloneLabel } from '../shared/floors';
 import { ROOF } from '../shared/rooftop';
 import { DESK_BY_ID, nextFreeSeat } from '../shared/layout';
 import { isAsleep } from '../shared/status';
-import type { AgentEffort, AgentProvider, FloorInfo, WorkerInfo } from '../shared/protocol';
+import { ghListsBlock, type AgentEffort, type AgentProvider, type FloorInfo, type WorkerInfo } from '../shared/protocol';
 import { $, clip, closeAllModals, doingNow, h, onDoingChange, onModalChange, openModal, readingNow, STATUS_LABEL, timeAgo, toast } from './ui/dom';
 import { openTerminal, openTerminalFor, routeTerminalMessage } from './ui/terminal';
 import { openChanges, openChangesFor, routeChangesMessage } from './ui/changes';
@@ -323,7 +323,13 @@ $('btn-queue').addEventListener('click', () => openQueue(net, { openTerminal: op
 $('btn-new').addEventListener('click', () => sendToWorker('✨ New task'));
 
 function renderNav() {
-  const count = (id: string, n: number) => ($(id).querySelector('.n')!.textContent = n ? String(n) : '');
+  const block = ghListsBlock(store.issues, store.pulls);
+  const count = (id: string, n: number) => {
+    const el = $(id);
+    el.querySelector('.n')!.textContent = block || !n ? '' : String(n);
+    if (block && (id === 'btn-issues' || id === 'btn-pulls' || id === 'btn-queue')) el.title = block;
+    else el.removeAttribute('title');
+  };
   count('btn-issues', store.issues.items.filter((i) => i.state === 'OPEN').length);
   count('btn-pulls', store.pulls.items.filter((p) => p.state === 'OPEN').length);
   count('btn-queue', store.queue.tasks.filter((t) => t.status !== 'done').length);

@@ -37,15 +37,30 @@ export function floorPalette(i: number): FloorPalette {
 
 /**
  * `owner/repo` from what someone typed or pasted: owner/repo, a github.com URL (https, ssh or
- * git@), with or without .git. Undefined for anything else, so it can never become a CLI option,
- * a path or another host.
+ * git@), with or without .git. Userinfo in the URL (a token before the host) is ignored, so a
+ * checkout whose remote was rewritten still matches. Undefined for anything else, so it can never
+ * become a CLI option, a path or another host.
  */
 export function normalizeRepo(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   let s = value.trim();
-  if (s.length > 200) return undefined;
-  s = s.replace(/^(?:https?:\/\/|ssh:\/\/)?(?:[\w.-]+@)?github\.com[/:]/i, '');
-  s = s.replace(/[?#].*$/, '').replace(/\/+$/, '').replace(/\.git$/i, '');
+  if (!s || s.length > 2000) return undefined;
+  if (/^https?:\/\//i.test(s)) {
+    let parsed: URL;
+    try {
+      parsed = new URL(s);
+    } catch {
+      return undefined;
+    }
+    if (parsed.hostname.toLowerCase() !== 'github.com') return undefined;
+    s = parsed.pathname;
+  } else {
+    // A token in an ssh or scp URL can make the raw string long; the name that remains is short.
+    s = s.replace(/^(ssh:\/\/)?[^@\s/]+@/i, '$1');
+    if (s.length > 200) return undefined;
+    s = s.replace(/^(?:ssh:\/\/)?github\.com[:/]/i, '');
+  }
+  s = s.replace(/[?#].*$/, '').replace(/^\/+|\/+$/g, '').replace(/\.git$/i, '');
   const parts = s.split('/');
   // A URL may go on past the repository (…/owner/repo/issues/12).
   if (parts.length < 2) return undefined;

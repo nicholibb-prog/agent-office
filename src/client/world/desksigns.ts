@@ -12,7 +12,7 @@ import { mergeByMaterial, mesh, roundedBox, toon } from './toon';
 // the sign says the same on its back.
 
 /** How big a sign is, how high its middle hangs, and how far apart its two cords are. */
-export const SIGN = { width: 1.9, height: 0.62, depth: 0.04, y: 3.35, cords: 1.3 } as const;
+export const SIGN = { width: 1.9, height: 0.62, depth: 0.04, y: 2.55, cords: 1.3 } as const;
 
 const PX = 1024;
 
@@ -24,10 +24,10 @@ for (const d of [...DESKS, ...WING_DESKS]) {
 }
 const FONT = (size: number) => `800 ${size}px Nunito, ui-rounded, system-ui, sans-serif`;
 
-/** The text, as large as fits on one line, else on two. */
-function fit(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxH: number): { lines: string[]; size: number } {
+/** The text, as large as fits on one line, else on two; never wider or taller than the face (it shrinks to fit). */
+export function fit(ctx: Pick<CanvasRenderingContext2D, 'font' | 'measureText'>, text: string, maxW: number, maxH: number): { lines: string[]; size: number } {
   const words = text.split(' ');
-  for (let size = 200; size >= 64; size -= 6) {
+  for (let size = 200; size >= 24; size -= 4) {
     ctx.font = FONT(size);
     if (size * 1.05 <= maxH && ctx.measureText(text).width <= maxW) return { lines: [text], size };
     if (words.length < 2 || size * 2.1 > maxH) continue;
@@ -44,7 +44,11 @@ function fit(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxH: nu
     }
     if (best && bestW <= maxW) return { lines: best, size };
   }
-  return { lines: [text], size: 64 };
+  // Nothing fit (one very long word): the smallest size, cut short with an ellipsis rather than spill off the sign.
+  ctx.font = FONT(24);
+  let cut = text;
+  while (cut.length > 1 && ctx.measureText(`${cut}…`).width > maxW) cut = cut.slice(0, -1);
+  return { lines: [cut === text ? text : `${cut}…`], size: 24 };
 }
 
 /** The sign's face: its paint, a line round the edge, and the text in the middle. */

@@ -1,14 +1,15 @@
 import './style.css';
+import { randomLook } from '../shared/avatar';
 import { Net } from './net';
 import { DesktopNotifier } from './notify';
-import { store, loadProfile, loadSettings } from './state';
+import { store, hasSavedCharacter, loadProfile, loadSettings } from './state';
 import { PlayerController, groundAt } from './player';
 import { Hands } from './world/hands';
 import { Confetti } from './world/confetti';
 import { djFrame } from './dnb';
 import { Voice } from './voice';
 import { $ } from './ui/dom';
-import { openCharacter } from './ui/character';
+import { mountChangeCharacter, openCharacter } from './ui/character';
 import { elevatorPanelOpen } from './ui/elevator';
 import { onModelsProgress, preloadModels } from './world/models';
 import { loadingScreen } from './ui/loading';
@@ -27,6 +28,7 @@ import { installHintBar } from './core/hintbar';
 import { installKeyboard, installKeyGuards } from './input/keyboard';
 import { installFocus } from './input/focus';
 import { installPointer } from './input/pointer';
+import { installAisles } from './features/aisles';
 import { installArcade } from './features/arcade';
 import { installBar } from './features/bar';
 import { installBarGames } from './features/bargames';
@@ -48,9 +50,17 @@ import { installGallery, installHanging } from './features/hanging';
 import { installHerald } from './features/herald';
 import { installHud } from './features/hud';
 import { installJev } from './features/jev';
+import { installHq } from './features/hq';
+import { installKaviBoard } from './features/kavi-board';
+import { installWorkPool } from './features/work-pool';
+import { installOkkinLoft } from './features/okkin-loft';
 import { installJukebox } from './features/jukebox';
 import { installMeeting } from './features/meeting';
+import { installHuddle } from './features/huddle';
 import { installNeedsYou } from './features/needsyou';
+import { installHqBrief } from './features/hq-brief';
+import { installRouterBoard } from './features/router-board';
+import { installMorningGlance } from './features/morning-glance';
 import { installPalette } from './features/palette';
 import { installPeers } from './features/peers';
 import { installRooftop } from './features/rooftop';
@@ -64,6 +74,7 @@ import { installWaiting } from './features/waiting';
 import { installWalking } from './features/walking';
 import { installWhiteboard } from './features/whiteboard';
 import { installWorkerActions } from './features/workers/actions';
+import { installDeskScreen } from './features/workers/screenview';
 import { installWorkerViews } from './features/workers/views';
 
 // The loading screen stays up until there's an office to see (see boot and whoami at the end).
@@ -120,6 +131,9 @@ parts.player.view = parts.settings.view;
 parts.hands = new Hands(store.profile.color, parts.me.skinColor);
 parts.you = installYou(ctx);
 parts.reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+parts.hands.reduceMotion = parts.reduceMotion.matches;
+parts.reduceMotion.addEventListener?.('change', (e) => { parts.hands.reduceMotion = e.matches; });
+for (const ev of ['keydown', 'pointerdown', 'wheel', 'touchstart'] as const) window.addEventListener(ev, () => parts.hands.poke(), { passive: true });
 ({ smoke: parts.smoke, puff: parts.puff } = makeSmoke(ctx));
 parts.sound = makeSound(parts.settings);
 
@@ -142,12 +156,19 @@ parts.arrival = installArrival(ctx, core, parts);
 parts.maps = installMaps(ctx, core, parts);
 parts.peers = installPeers(ctx, core, parts);
 parts.walking = installWalking(ctx, core, parts);
+// Before the views: a worker strolling the aisles is back in its seat before they hear it has work.
+installAisles(ctx, parts);
 parts.views = installWorkerViews(ctx, core, parts);
+parts.screen = installDeskScreen(ctx);
 parts.actions = installWorkerActions(ctx, core, parts);
 parts.waiting = installWaiting(ctx, core, parts);
 parts.needsYou = installNeedsYou(ctx, parts);
+installHqBrief(ctx, { openTalk: (id) => parts.waiting.openWorkerTerminal(id) });
+installRouterBoard(ctx);
+installMorningGlance(ctx);
 installPalette(ctx, parts);
 parts.meeting = installMeeting(ctx, parts);
+parts.huddle = installHuddle(ctx, parts);
 parts.bookshelf = installBookshelf(ctx);
 installHerald(ctx, parts);
 
@@ -171,6 +192,9 @@ parts.cards = installCarrying(ctx, {
 parts.seating = installSeating(ctx, { shares: () => parts.talk.currentShares(), watchShare: () => parts.talk.watchShare(), arcade: parts.arcade, showBar: parts.bar.showBar, usable: () => parts.pointer.usable() });
 installGong(ctx, { burstOver: parts.views.burstOver, workerViews: parts.views.workerViews, court: () => parts.worlds.court(), idleAgents: () => parts.worlds.idleAgents() });
 installJev(ctx);
+installKaviBoard(ctx);
+installWorkPool(ctx);
+installOkkinLoft(ctx);
 
 parts.hintbar = installHintBar(ctx, core, parts);
 parts.emotes = installEmotes(ctx, { personOf });
@@ -181,6 +205,7 @@ installChat(ctx);
 parts.talk = installVoice(ctx, { tv: parts.tv });
 installDictation(ctx);
 parts.hud = installHud(ctx, core, parts);
+installHq(ctx, { workerViews: parts.views.workerViews, walkThen: parts.walking.walkThen });
 
 // ---- Main loop ---------------------------------------------------------------------------------------
 fitWindow(ctx);
@@ -204,14 +229,21 @@ async function whoami() {
   }
 }
 
+function showChangeCharacter() {
+  mountChangeCharacter(() => parts.hud.editProfile());
+}
+
 void whoami().then(() => {
-  const saved = loadProfile();
+  const user = store.me.account?.name ?? null;
+  const saved = loadProfile(user);
   if (saved && store.me.account) saved.name = store.me.account.name;
   if (store.me.account) store.profile.name = store.me.account.name;
   store.emit('me');
-  if (saved?.look) {
-    store.profile = { ...saved, look: saved.look };
+  if (hasSavedCharacter(user) && saved) {
+    const look = saved.look ?? randomLook();
+    store.profile = { name: saved.name, color: saved.color, look };
     parts.you.showMyProfile(store.profile);
+    showChangeCharacter();
     boot();
     // In as soon as the floor you're on is here with its dog, so the dog doesn't pop in after.
     const welcomed = new Promise<void>((resolve) => {
@@ -231,6 +263,7 @@ void whoami().then(() => {
     requestAnimationFrame(frame);
     openCharacter(true, (p) => {
       parts.you.showMyProfile(p);
+      showChangeCharacter();
       parts.net.connect();
     });
     // No floor comes before you pick, so only the office behind the character select is waited for.

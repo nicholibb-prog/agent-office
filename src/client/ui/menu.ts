@@ -137,7 +137,10 @@ export function mountHud(actions: HudAction[], settings: Settings, save: () => v
     items.push(panelChip('workers', '🤖', 'Workers', hired, workersTitle));
     // Redrawn only when it looks different, so a busy worker's updates don't swap a button out from under a click.
     const next = h('div', {}, ...items);
-    if (next.innerHTML !== [...dock.children].filter((c) => c !== menuBtn).map((c) => c.outerHTML).join('')) dock.replaceChildren(...items, menuBtn);
+    // The character control lives on this bar and is not one of the menu's own buttons.
+    const extras = [...dock.children].filter((c) => c.id === 'change-character');
+    const current = [...dock.children].filter((c) => c !== menuBtn && c.id !== 'change-character').map((c) => c.outerHTML).join('');
+    if (next.innerHTML !== current) dock.replaceChildren(...items, ...extras, menuBtn);
     else if (!menuBtn.isConnected) dock.append(menuBtn);
   }
 

@@ -1,0 +1,159 @@
+// Owner -> Kavi sends. Office session only: a bridge, shared or seat token is refused outright.
+import type http from 'node:http';
+import type { Ctx } from '../../office/context.js';
+import { send } from '../util.js';
+import { hostOk, originOk, sessionOnly } from './bridge.js';
+import { botCredential, logOkkinRefusal, okkinCaller } from '../../hq/okkin-owner.js';
+import { BodyTooLarge, closeTooLarge, readJsonBody } from '../read-body.js';
+import { KaviSendError, MAX_FILE_BYTES, readBack, sendFile, sendMessage } from '../../kavi-send.js';
+import { readThread } from '../../kavi-thread.js';
+import type { Route } from '../router.js';
+
+const bridgeDir = () => process.env.AGENT_OFFICE_KAVI_BRIDGE_DIR || undefined;
+
+/** Loopback Host, same-origin, and no bridge/seat token at all: sends are the owner's own session. */
+export function kaviSessionGate(req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  if (!hostOk(req)) return send(res, 403, { error: 'host not allowed' }), false;
+  if (!originOk(req)) return send(res, 403, { error: 'origin not allowed' }), false;
+  if (req.headers['x-bridge-token'] || req.headers.authorization) {
+    return send(res, 403, { error: 'only an office session can send to Kavi' }), false;
+  }
+  return true;
+}
+
+/**
+ * Owner-only writes (same gate as GET /api/kavi/thread, #60): any bot credential is refused and
+ * logged, even alongside an owner cookie; then loopback/same-origin, an office session, and a live
+ * owner unlock. Anything else is a logged 403 'owner only'. Log lines carry the route and caller
+ * kind only, never a token, cookie or body.
+ */
+export function ownerWriteGate(ctx: Ctx, route: string, req: http.IncomingMessage, res: http.ServerResponse, sessionGate: (req: http.IncomingMessage, res: http.ServerResponse) => boolean = kaviSessionGate): boolean {
+  const bot = botCredential(req);
+  if (bot) {
+    logOkkinRefusal(ctx.cfg.dataDir, { route, caller: bot });
+    return send(res, 403, { error: 'owner only' }), false;
+  }
+  if (!sessionGate(req, res)) return false;
+  // sessionOnly without its JSON-only shape check (file uploads are octet-stream); every token
+  // was already refused above, and Host/Origin by the session gate.
+  if (!ctx.auth.sessionFromAnyCookie(req)) return send(res, 401, { error: 'office session required' }), false;
+  if (okkinCaller(req, { touch: false }).kind !== 'owner') {
+    logOkkinRefusal(ctx.cfg.dataDir, { route, caller: 'not-owner' });
+    return send(res, 403, { error: 'owner only' }), false;
+  }
+  return true;
+}
+
+function fail(res: http.ServerResponse, err: unknown) {
+  if (err instanceof KaviSendError) return send(res, err.status, { error: err.message });
+  return send(res, 500, { error: 'The office could not complete that' });
+}
+
+function readRaw(req: http.IncomingMessage, cap: number): Promise<Buffer> {
+  const declared = Number(req.headers['content-length'] || 0);
+  if (Number.isFinite(declared) && declared > cap) return Promise.reject(new BodyTooLarge());
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let done = false;
+    req.on('data', (c: Buffer) => {
+      if (done) return;
+      total += c.length;
+      if (total > cap) {
+        done = true;
+        req.pause();
+        return reject(new BodyTooLarge());
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => !done && resolve(Buffer.concat(chunks)));
+    req.on('error', (e) => !done && reject(e));
+  });
+}
+
+export const kaviSendRoutes = {
+  bridge: {
+    method: 'GET' as const,
+    path: '/api/kavi/bridge',
+    auth: 'session' as const,
+    handle(_ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!kaviSessionGate(req, res)) return;
+      return send(res, 200, readBack(bridgeDir()));
+    },
+  },
+  thread: {
+    method: 'GET' as const,
+    path: '/api/kavi/thread',
+    auth: 'public' as const,
+    handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      // The Kavi thread is the owner's private conversation (same gate as Okkin's Ask, #58).
+      // Any bot credential is refused and logged, even alongside an owner cookie.
+      const bot = botCredential(req);
+      if (bot) {
+        logOkkinRefusal(ctx.cfg.dataDir, { route: 'GET /api/kavi/thread', caller: bot });
+        return send(res, 403, { error: 'owner only' });
+      }
+      if (!kaviSessionGate(req, res)) return;
+      if (!sessionOnly(ctx, req, res)) return;
+      const owner = okkinCaller(req, { touch: false }).kind === 'owner';
+      if (!owner) {
+        // Never read the bridge files for a non-owner: state only, no text.
+        const { items: _items, ...rest } = readThread(undefined);
+        return send(res, 200, { ...rest, state: 'private', items: [], messages: [], private: true });
+      }
+      return send(res, 200, { ...readThread(bridgeDir()), private: false });
+    },
+  },
+  message: {
+    method: 'POST' as const,
+    path: '/api/kavi/message',
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!ownerWriteGate(ctx, 'POST /api/kavi/message', req, res)) return;
+      if (!String(req.headers['content-type'] || '').toLowerCase().startsWith('application/json')) {
+        return send(res, 415, { error: 'Content-Type must be application/json' });
+      }
+      let text = '';
+      try {
+        text = String((JSON.parse(await readJsonBody(req)) as { text?: unknown })?.text ?? '');
+      } catch (err) {
+        if (err instanceof BodyTooLarge) return closeTooLarge(req, res);
+        return send(res, 400, { error: 'bad json' });
+      }
+      try {
+        return send(res, 200, sendMessage(bridgeDir(), text));
+      } catch (err) {
+        return fail(res, err);
+      }
+    },
+  },
+  file: {
+    method: 'POST' as const,
+    path: '/api/kavi/file',
+    auth: 'public' as const,
+    async handle(ctx: Ctx, { req, res }: { req: http.IncomingMessage; res: http.ServerResponse }) {
+      if (!ownerWriteGate(ctx, 'POST /api/kavi/file', req, res)) return;
+      if (!String(req.headers['content-type'] || '').toLowerCase().startsWith('application/octet-stream')) {
+        return send(res, 415, { error: 'Content-Type must be application/octet-stream' });
+      }
+      let name = '';
+      try {
+        name = decodeURIComponent(String(req.headers['x-file-name'] || ''));
+      } catch {
+        return send(res, 400, { error: 'bad file name' });
+      }
+      let data: Buffer;
+      try {
+        data = await readRaw(req, MAX_FILE_BYTES);
+      } catch (err) {
+        if (err instanceof BodyTooLarge) return closeTooLarge(req, res);
+        return send(res, 400, { error: 'bad upload' });
+      }
+      try {
+        return send(res, 200, sendFile(bridgeDir(), name, data));
+      } catch (err) {
+        return fail(res, err);
+      }
+    },
+  },
+} satisfies Record<string, Route>;

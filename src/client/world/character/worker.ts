@@ -7,7 +7,7 @@ import type { WorkerRig } from './rig';
 import { ease, popIn } from './curves';
 import { undress } from './props';
 import { ACT_MIN, DESPAIR_MIN, TWIRL_TIME, WAIT_CYCLE, WAIT_HOPS, blendStance, type Act, type Stance } from './worker-stance';
-import { STATUS_BULB, bubbleFor } from './worker-badges';
+import { NAME_TAG_Y, STATUS_BULB, bubbleFor } from './worker-badges';
 import { globe, papers } from './worker-props';
 import { DANCE, groove, type Dancing, type Stage } from './worker-dance';
 import { DEAD, STARVED, bones, crossedEyes, slump } from './worker-jail';
@@ -244,8 +244,8 @@ export class Worker {
       this.root.remove(this.nameTag);
       disposeSprite(this.nameTag);
     }
-    this.nameTag = textSprite(name, { bg: '#2b2d42', color: '#fffaf3', size: 36, border: '#fffaf3' });
-    this.nameTag.position.y = 1.55;
+    this.nameTag = textSprite(name, { bg: '#2b2d42', color: '#fffaf3', size: 28, border: '#fffaf3' });
+    this.nameTag.position.y = NAME_TAG_Y.seated;
     this.root.add(this.nameTag);
   }
 
@@ -428,7 +428,7 @@ export class Worker {
         this.bubble = null;
       }
     }
-    if (this.nameTag) this.nameTag.position.y = dead ? 0.95 : 1.4;
+    if (this.nameTag) this.nameTag.position.y = dead ? 0.95 : NAME_TAG_Y.seated;
   }
 
   update(dt: number, t: number) {
@@ -501,7 +501,7 @@ export class Worker {
     this.blink(dt, s.lid);
     this.bulbMesh.scale.setScalar(this.status === 'needs_input' ? 1 + Math.abs(Math.sin(t * 8)) * 0.5 : 1);
     if (this.bubble) this.bubble.position.y = (this.bubbleIsCard ? 1.74 : 1.95) + (hopping ? this.body.position.y : 0) + Math.sin(t * 3) * 0.03;
-    if (this.nameTag) this.nameTag.position.y = 1.55 + (hopping ? this.body.position.y : 0);
+    if (this.nameTag) this.nameTag.position.y = (this.walking || this.stride ? NAME_TAG_Y.standing : NAME_TAG_Y.seated) + (hopping ? this.body.position.y : 0);
     // Walking in to a meeting: the same waddle as on the way out, without the box.
     if (this.walking || this.stride) {
       this.stride = this.walking ? this.stride + dt * 9 * this.pace * this.gait : 0;
@@ -548,7 +548,7 @@ export class Worker {
     waddle(this.rig, l, this.walking, dt);
     this.blink(dt);
     if (this.bubble) this.bubble.position.y = 1.95 + Math.sin(t * 3) * 0.03;
-    if (this.nameTag) this.nameTag.position.y = 1.55;
+    if (this.nameTag) this.nameTag.position.y = NAME_TAG_Y.standing;
   }
 
   /** Up on the desk dancing: hop up, groove side to side, twirl, jump twice, hop back down. */
@@ -563,7 +563,7 @@ export class Worker {
     const lift = groove(this.rig, d, dt, t);
     this.blink(dt);
     if (this.bubble) this.bubble.position.y = (this.bubbleIsCard ? 1.74 : 1.95) + lift + Math.sin(t * 3) * 0.03;
-    if (this.nameTag) this.nameTag.position.y = 1.55 + lift;
+    if (this.nameTag) this.nameTag.position.y = NAME_TAG_Y.standing + lift;
   }
 
   /** Back in its seat, standing straight, its light showing its status again. */

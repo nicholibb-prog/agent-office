@@ -3,9 +3,10 @@ import { accessSync, constants, existsSync, mkdirSync, readFileSync, readdirSync
 import os from 'node:os';
 import path from 'node:path';
 import { FLOOR_PALETTES, MAX_FLOORS, normalizeRepo, sameRepo } from '../shared/floors.js';
-import type { CloneProgress, ProjectsDirState, RepoChoice } from '../shared/protocol.js';
+import { GH_FAILED, type CloneProgress, type ProjectsDirState, type RepoChoice } from '../shared/protocol.js';
 import { CloneRun, dropLog, whyCloneFailed, type CloneEnd, type CloneRunOptions } from './clone.js';
-import { gh } from './github.js';
+import { originRepo } from './git/remote-url.js';
+import { gh, resolveGhBinary } from './github.js';
 
 /** A floor as floors.json keeps it. */
 export interface FloorDef {
@@ -510,16 +511,6 @@ function unwritable(dir: string): string | undefined {
   return undefined;
 }
 
-/** The GitHub repository a checkout's origin points at. */
-export function originRepo(dir: string): string | undefined {
-  try {
-    const url = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 }).trim();
-    return /github\.com[/:]/i.test(url) ? normalizeRepo(url) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * What's at `dest`: nothing yet ('none'), a checkout of `repo` ('ok'), or why it's in the way. A
  * clone that was cut off has its origin but no commit checked out; an `empty` repository has none to.
@@ -544,9 +535,11 @@ function hasCommit(dir: string): boolean {
 
 /** Clones `repo` to `dest` in this terminal: git shows its progress, and ssh or git can ask here. Resolves to an error, if any. */
 function cloneHere(repo: string, dest: string): Promise<string | undefined> {
+  const bin = resolveGhBinary();
+  if (!bin) return Promise.resolve("The GitHub CLI (gh) isn't installed on this machine");
   return new Promise((resolve) => {
-    const child = spawn('gh', ['repo', 'clone', repo, dest], { cwd: path.dirname(dest), stdio: 'inherit' });
-    child.once('error', (err: NodeJS.ErrnoException) => resolve(err.code === 'ENOENT' ? "The GitHub CLI (gh) isn't installed on this machine" : `Couldn't run gh: ${err.message}`));
+    const child = spawn(bin, ['repo', 'clone', repo, dest], { cwd: path.dirname(dest), stdio: 'inherit' });
+    child.once('error', (err: NodeJS.ErrnoException) => resolve(err.code === 'ENOENT' ? "The GitHub CLI (gh) isn't installed on this machine" : GH_FAILED));
     child.once('exit', (code, signal) => resolve(code === 0 ? undefined : `Couldn't clone ${repo}: gh ${signal ? `stopped (${signal})` : `failed (exit ${code})`}`));
   });
 }

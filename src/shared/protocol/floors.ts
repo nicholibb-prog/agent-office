@@ -7,10 +7,12 @@ import type { FloorPlan } from '../floorplan.js';
 import type { CarState } from '../garage.js';
 import type { BallState } from '../hoop.js';
 import type { JevBoard } from '../jev.js';
+import type { PoolBoard } from '../pool.js';
 import type { JukeboxState } from '../jukebox.js';
 import type { WhiteboardView } from '../whiteboard.js';
 import type { AgentProvider } from './agents.js';
 import type { GhIssue, GhPull, GhState } from './github.js';
+import type { HuddleFloorState } from './huddle.js';
 import type { MeetingState } from './meetings.js';
 import type { PeerInfo } from './presence.js';
 import type { QueueState } from './queue.js';
@@ -21,6 +23,7 @@ export interface ProjectInfo {
   name: string;
   dir: string;
   branch?: string;
+  /** GitHub `owner/repo`, or `host/path` for another remote. Never a URL with userinfo. */
   remote?: string;
   agentCmd: string;
   defaultProvider: AgentProvider;
@@ -119,6 +122,8 @@ export interface FloorView {
   whiteboard: WhiteboardView;
   /** The meeting room: who's meeting about what, and the meetings before. */
   meeting: MeetingState;
+  /** The huddle in the meeting room, and which provider the front desks are on. */
+  huddle: HuddleFloorState;
   /** The basketball by the hoop: who has it, or how it was last thrown. */
   ball: BallState;
   /** The cars in the garage (see CARS in shared/garage.ts): where each one is, and who's in it. */
@@ -127,6 +132,8 @@ export interface FloorView {
   jail: JailState;
   /** Local Jev rankings on the center-room board. Names and counts only. */
   jev: JevBoard;
+  /** Community work pool on this floor: open, claimed, needs approval, done. */
+  pool: PoolBoard;
 }
 
 export type FloorClientMsg =

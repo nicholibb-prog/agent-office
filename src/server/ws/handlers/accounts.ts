@@ -7,7 +7,7 @@ import type { HandlerMap } from './types.js';
 
 /** Whether `c` may manage accounts; if not, they're told so. */
 const admin = (ctx: Ctx, c: Client): boolean => {
-  if (ctx.meOf(c.accountId).admin) return true;
+  if (ctx.officeAdmin(c.accountId)) return true;
   ctx.warn(c, 'Only admins can manage accounts');
   return false;
 };

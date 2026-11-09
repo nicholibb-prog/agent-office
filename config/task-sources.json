@@ -1,0 +1,5 @@
+{
+  "_comment": "Funnel #24/#25: self-sourced tasks come only from sources the owner approved, at most dailyCap a day. Empty = no self-sourcing.",
+  "dailyCap": 60,
+  "sources": []
+}

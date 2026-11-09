@@ -16,6 +16,7 @@ import { requestHandler } from './http/router.js';
 import { routes } from './http/routes/index.js';
 import { startHookServer } from './hooks/server.js';
 import { acceptWebSockets } from './ws/upgrade.js';
+import { pinOwnerIntegrity } from './hq/okkin-owner.js';
 
 /** What a test can set about how the office starts: the client bundle it serves, instead of the built one. */
 export interface StartOptions {
@@ -24,6 +25,8 @@ export interface StartOptions {
 
 export async function startServer(cfg: Config, opts: StartOptions = {}) {
   const publicDir = opts.publicDir ?? findPublicDir();
+  // Okkin's owner file: pin its sha256 now, re-checked every minute (see hq/okkin-owner.ts).
+  pinOwnerIntegrity(cfg.dataDir);
   // Everything the office's parts share (see office/context.ts), filled in a stage at a time in the
   // order the office has always started up in: the hook server already answers the workers still
   // running from the last office while the floors open.
@@ -53,6 +56,8 @@ export async function startServer(cfg: Config, opts: StartOptions = {}) {
 
   /** With `keep` (a restart), workers' terminals keep running for the next office to pick up. */
   const shutdown = (keep = false) => {
+    // Ctrl+C / owner close: mark the office closed. SIGTERM restart keeps it open for the next process.
+    if (!keep) ctx.officeState.close('owner');
     stopTimers();
     ctx.cancelFloorsChanged();
     ctx.arcade.flush();

@@ -1,0 +1,17 @@
+/* Model use today: a passive, read-only HUD card, bottom-right above the dock line. */
+.router-board {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  max-width: 320px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(14, 22, 44, 0.86);
+  color: #f3e7c4;
+  font: 12px/1.4 system-ui, sans-serif;
+  z-index: 5;
+  pointer-events: none;
+}
+.router-board[hidden] { display: none; }
+.router-board__title { font-weight: 600; margin-bottom: 2px; }
+.router-board__note { color: #9aa0a6; }

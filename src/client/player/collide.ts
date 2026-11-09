@@ -64,6 +64,32 @@ export function stepTo(b: Body, x: number, z: number) {
   b.pos.z += dz * free;
 }
 
+/** The longest single move stepToward makes, under a body's width, so no step hops over a thin wall. */
+const STRIDE = RADIUS * 0.75;
+
+/**
+ * Someone the office walks about (the Bridge NPC, a worker strolling the aisles) taking one step of
+ * at most `max` toward (x, z): along x, then along z, each through stepTo, so it slides along a
+ * desk or a wall rather than through it. A long step is taken in strides short enough that it
+ * can't jump clean over something thin. How far it really got. Nothing is allocated.
+ */
+export function stepToward(b: Body, x: number, z: number, max: number): number {
+  const ox = b.pos.x;
+  const oz = b.pos.z;
+  const dist = Math.hypot(x - ox, z - oz);
+  if (dist < 1e-6 || max <= 0) return 0;
+  const step = Math.min(dist, max);
+  const ux = (x - ox) / dist;
+  const uz = (z - oz) / dist;
+  const n = Math.ceil(step / STRIDE);
+  for (let i = 0; i < n; i++) {
+    const s = step / n;
+    stepTo(b, b.pos.x + ux * s, b.pos.z);
+    stepTo(b, b.pos.x, b.pos.z + uz * s);
+  }
+  return Math.hypot(b.pos.x - ox, b.pos.z - oz);
+}
+
 /** Whether the whole axis step moves out of an existing overlap. */
 function escapes(c: Collider, fromX: number, fromZ: number, x: number, z: number): boolean {
   if (penetration(c, x, z) >= penetration(c, fromX, fromZ) - 1e-8) return false;

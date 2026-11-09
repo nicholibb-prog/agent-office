@@ -267,7 +267,7 @@ test('welcomes a browser and dispatches what it sends', async () => {
   assert.equal(ada?.name, 'Ada');
   assert.equal(ada?.color, '#ff8a5b');
   assert.equal(ada?.floor, floor.id);
-  assert.deepEqual(Object.keys(welcome).slice(-18), ['floor', 'project', 'workers', 'issues', 'pulls', 'queue', 'decor', 'plan', 'services', 'dog', 'ball', 'cars', 'jail', 'jukebox', 'whiteboard', 'meeting', 'cabinet', 'jev']);
+  assert.deepEqual(Object.keys(welcome).slice(-20), ['floor', 'project', 'workers', 'issues', 'pulls', 'queue', 'decor', 'plan', 'services', 'dog', 'ball', 'cars', 'jail', 'jukebox', 'whiteboard', 'meeting', 'huddle', 'cabinet', 'jev', 'pool']);
 
   a.send({ t: 'ping', at: 42 });
   const pong = await a.take('pong');
@@ -391,6 +391,9 @@ test('settings, accounts, sign-ins and the boards answer as before', async () =>
   const told = async (start: string) => (await a.take('toast', (m) => m.level === 'info' && m.text.startsWith(start))).text;
 
   a.send({ t: 'theme.set', pick: 'nope' });
+  a.send({ t: 'theme.set', pick: 'halloween' });
+  assert.equal((await a.take('theme')).state.pick, 'halloween');
+  assert.equal(await told('🎃 Eve'), '🎃 Eve dressed the office up for Halloween');
   a.send({ t: 'theme.set', pick: 'off' });
   assert.equal((await a.take('theme')).state.pick, 'off');
   assert.equal(await told('Eve took'), 'Eve took the holiday decorations down');

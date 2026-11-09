@@ -9,6 +9,15 @@ import { githubRoutes } from './github.js';
 import { pageRoutes } from './pages.js';
 import { searchRoutes } from './search.js';
 import { serviceRoutes } from './services.js';
+import { bridgeRoutes } from './bridge.js';
+import { kaviSendRoutes } from './kavi-send.js';
+import { hqBriefRoutes } from './hq-brief.js';
+import { officeRoutes } from './office.js';
+import { hqRoutes } from './hq.js';
+import { poolRoutes } from './pool.js';
+import { liveRoutes } from './live.js';
+import { routerBoardRoutes } from './router-board.js';
+import { routerMeritRoutes } from './router-merit.js';
 
 export const routes: readonly Route[] = [
   // Anyone.
@@ -20,13 +29,66 @@ export const routes: readonly Route[] = [
   authRoutes.link,
   authRoutes.logout,
   pageRoutes.health,
+  bridgeRoutes.chatRecent,
+  bridgeRoutes.say,
+  bridgeRoutes.inbox,
+  bridgeRoutes.crewStatus,
+  bridgeRoutes.crewStatusGet,
+  bridgeRoutes.status,
+  hqRoutes.roster,
+  hqRoutes.talk,
+  hqRoutes.talkGet,
+  routerBoardRoutes.board,
+  routerMeritRoutes.seat,
+  routerMeritRoutes.assign,
+  hqRoutes.desk,
+  hqRoutes.deskGet,
+  hqRoutes.okkinModel,
+  hqRoutes.okkinLoft,
+  hqRoutes.okkinPower,
+  hqRoutes.okkinOwnerUnlock,
+  hqRoutes.okkinOwnerLock,
+  hqRoutes.status,
+  bridgeRoutes.kaviFeed,
+  bridgeRoutes.kaviFeedGet,
+  bridgeRoutes.kaviOutbox,
+  bridgeRoutes.kaviOutboxGet,
+  liveRoutes.push,
+  liveRoutes.seats,
+  liveRoutes.toggle,
+  liveRoutes.frame,
+  bridgeRoutes.kaviDesk,
+  kaviSendRoutes.bridge,
+  kaviSendRoutes.thread,
+  kaviSendRoutes.message,
+  kaviSendRoutes.file,
+  hqBriefRoutes.brief,
+  hqBriefRoutes.seen,
+  hqBriefRoutes.needs,
+  hqBriefRoutes.board,
+  poolRoutes.list,
+  poolRoutes.post,
+  poolRoutes.claim,
+  poolRoutes.heartbeat,
+  poolRoutes.release,
+  poolRoutes.complete,
+  poolRoutes.pull,
+  poolRoutes.danPass,
+  poolRoutes.job,
   pageRoutes.assets,
   pageRoutes.login,
   pageRoutes.claim,
   pageRoutes.join,
   pageRoutes.favicon,
-  // Signed in.
+  // Signed in. The unblock answer is a person at the office, never a bridge token.
+  hqBriefRoutes.answer,
   authRoutes.whoami,
+  officeRoutes.state,
+  officeRoutes.sinceClose,
+  officeRoutes.dismiss,
+  officeRoutes.close,
+  poolRoutes.callers,
+  poolRoutes.ownerApproval,
   agentRoutes.models,
   fileRoutes.image,
   fileRoutes.whiteboardFile,

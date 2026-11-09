@@ -46,7 +46,7 @@ export function sameOrigin(req: http.IncomingMessage, cfg: Config): boolean {
   }
 }
 
-export function send(res: http.ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) {
+export function send(res: http.ServerResponse, status: number, body: unknown, headers: Record<string, string | string[]> = {}) {
   const json = JSON.stringify(body);
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers });
   res.end(json);

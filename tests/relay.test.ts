@@ -88,3 +88,28 @@ test('from the tailnet, the worker\'s server gets a localhost Host and no office
     upstream.close();
   }
 });
+
+test('the relay never forwards the office Authorization or Proxy-Authorization to a tunneled service', async () => {
+  let seen: http.IncomingHttpHeaders = {};
+  const upstream = http.createServer((r, res) => {
+    seen = r.headers;
+    res.end('hi');
+  });
+  await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+  const svc = { port: (upstream.address() as AddressInfo).port, host: '127.0.0.1' } as ServiceInfo;
+  const office = http.createServer((r, res) => relayRequest(r, res, svc));
+  await new Promise<void>((resolve) => office.listen(0, '127.0.0.1', resolve));
+  try {
+    const officePort = (office.address() as AddressInfo).port;
+    await new Promise<void>((resolve, reject) => {
+      const headers = { host: `127.0.0.1:${svc.port}`, authorization: 'Bearer placeholder-office-token', 'proxy-authorization': 'Basic cGxhY2Vob2xkZXI=', 'x-theirs': '1' };
+      http.get({ port: officePort, host: '127.0.0.1', path: '/x', headers }, (res) => res.resume().on('end', () => resolve())).on('error', reject);
+    });
+    assert.equal(seen.authorization, undefined);
+    assert.equal(seen['proxy-authorization'], undefined);
+    assert.equal(seen['x-theirs'], '1');
+  } finally {
+    office.close();
+    upstream.close();
+  }
+});

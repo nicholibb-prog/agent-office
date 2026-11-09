@@ -14,7 +14,7 @@ import { landedWork, notLeaving } from './leave-on-merge.js';
 export interface WorkerRow {
   id: string;
   name: string;
-  kind: 'agent' | 'shell';
+  kind: 'agent' | 'shell' | 'crew';
   provider?: AgentProvider;
   model?: string;
   desk: string;
