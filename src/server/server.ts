@@ -11,6 +11,7 @@ import { people } from './office/people.js';
 import { navigation } from './office/navigation.js';
 import { gates } from './office/gates.js';
 import { startTimers } from './office/timers.js';
+import { startOpsSampler } from './ops/sampler.js';
 import { findPublicDir } from './http/static.js';
 import { requestHandler } from './http/router.js';
 import { routes } from './http/routes/index.js';
@@ -45,6 +46,7 @@ export async function startServer(cfg: Config, opts: StartOptions = {}) {
   // --- WebSocket -------------------------------------------------------------------------------
   acceptWebSockets(ctx, server);
   const stopTimers = startTimers(ctx);
+  const stopOps = startOpsSampler(ctx);
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
@@ -59,6 +61,7 @@ export async function startServer(cfg: Config, opts: StartOptions = {}) {
     // Ctrl+C / owner close: mark the office closed. SIGTERM restart keeps it open for the next process.
     if (!keep) ctx.officeState.close('owner');
     stopTimers();
+    stopOps();
     ctx.cancelFloorsChanged();
     ctx.arcade.flush();
     ctx.upgrader.stop();

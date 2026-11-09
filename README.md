@@ -106,6 +106,20 @@ agent-office
 
 > Only your computer can reach the office: it listens on `127.0.0.1`. `--host 0.0.0.0` lets your network in, but over plain http, where voice and screen sharing don't work. To share the office with a team, put it on a server: [AWS](#deploy-to-aws-ec2), [Azure](#deploy-to-azure), [Railway](#deploy-to-railway), [Fly.io](#deploy-to-flyio), [Dokploy](#deploy-to-dokploy), [Coolify](#deploy-to-coolify) or [any Ubuntu or Debian machine](#deploy-to-any-ubuntu-or-debian-server).
 
+## Ops dashboard
+
+`/ops` is a read-only page for a signed-in office session. It stays off unless `OPS_ON=1`. A source that is missing or refused shows **not wired** and no invented numbers. Dollar fields are included only for an owner unlock. The page does not load a seasonal theme. The office still listens on `127.0.0.1` unless you pass `--host`.
+
+| Env | Meaning |
+| --- | --- |
+| `OPS_ON=1` | Turn on `/ops`, `/api/ops`, and the sampler. Unset, those routes answer `{ "on": false }` and nothing is sampled. |
+| `OPS_CREW_ROUTER_HOME` | crew-router home, the folder that contains `data/`. |
+| `OPS_NOTION_LOOP_LOG` | Absolute path of notion-loop's `loop-log.jsonl`, if you keep one. |
+| `OPS_SAMPLE_SEC` | Sampler period in seconds. Default 60, clamped to 15–900. |
+| `OPS_HISTORY_DAYS` | How many daily history files to keep. Default 30, maximum 180. |
+
+The sampler is the only writer. It appends JSONL under `<dataDir>/ops/history/` (directory mode `0700`, files `0600`). Details are in [docs/configuration.md](docs/configuration.md#ops-dashboard).
+
 ## Crew home open
 
 After the ProArt and the Mac have been off, the human steps are only the two power-ons in [docs/HOME-OPEN-CHECKLIST.md](docs/HOME-OPEN-CHECKLIST.md). What has to stay true is [docs/STABLE-6-12MO-PLAN.md](docs/STABLE-6-12MO-PLAN.md). What was removed from the Notion front desk is [docs/FRONT-DESK-CLEANUP.md](docs/FRONT-DESK-CLEANUP.md). The phone HQ views, the life-admin hook, and the kill switches are [docs/KAVI-NOTION-MODULES.md](docs/KAVI-NOTION-MODULES.md). When george's usage is empty, Kavi covers routing through the bridge and Cursor writes Notion ([docs/KAVI-COVERS-GEORGE.md](docs/KAVI-COVERS-GEORGE.md)). Tailscale joins the Mac and the ProArt without moving the office off `127.0.0.1` ([docs/TAILSCALE-CREW.md](docs/TAILSCALE-CREW.md)). The office still binds `127.0.0.1` unless `--host` is passed. `HOST` in the environment is ignored.

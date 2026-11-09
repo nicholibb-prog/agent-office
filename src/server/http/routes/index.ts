@@ -17,6 +17,7 @@ import { hqRoutes } from './hq.js';
 import { poolRoutes } from './pool.js';
 import { liveRoutes } from './live.js';
 import { routerBoardRoutes } from './router-board.js';
+import { opsRoutes } from './ops.js';
 import { routerMeritRoutes } from './router-merit.js';
 
 export const routes: readonly Route[] = [
@@ -39,6 +40,8 @@ export const routes: readonly Route[] = [
   hqRoutes.talk,
   hqRoutes.talkGet,
   routerBoardRoutes.board,
+  opsRoutes.api,
+  opsRoutes.history,
   routerMeritRoutes.seat,
   routerMeritRoutes.assign,
   hqRoutes.desk,
@@ -98,6 +101,7 @@ export const routes: readonly Route[] = [
   searchRoutes.search,
   serviceRoutes.forwards,
   githubRoutes.github,
+  opsRoutes.page,
   pageRoutes.office,
   pageRoutes.lite,
   pageRoutes.bundle,

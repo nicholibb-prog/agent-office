@@ -60,6 +60,20 @@ With the flag on, the seat comes from `crew-status.json` plus gitignored display
 
 Do not merge a change that turns this on, and do not set it in production, without Nick's own Yes. Bind stays `127.0.0.1`. This flag does not spend and does not open Okkin, DeepSeek, or Jev.
 
+## Ops dashboard
+
+`/ops` is off until `OPS_ON=1`. The office does not open a new port for it and does not add CORS. Adapters only read. The sampler writes `<dataDir>/ops/history/YYYY-MM-DD.jsonl` and nothing else. Tokens, keys, cookies, and card numbers are not stored: a string that looks like one is replaced with `[redacted]` and never rendered. A missing, refused, or malformed source shows **not wired**. The page styling is the neutral dark palette with the holiday theme left untouched.
+
+| Env | Meaning |
+| --- | --- |
+| `OPS_ON=1` | Enable `/ops`, `/api/ops`, `/api/ops/history`, and the one shared sampler. |
+| `OPS_CREW_ROUTER_HOME` | Same folder as crew-router's home (the parent of `data/`). The dashboard reads files there. It does not call port 4317. |
+| `OPS_NOTION_LOOP_LOG` | Absolute path of an optional notion-loop `loop-log.jsonl`. The office never holds a Notion token. |
+| `OPS_SAMPLE_SEC` | Seconds between samples. Default 60. Values below 15 become 15, values above 900 become 900. |
+| `OPS_HISTORY_DAYS` | Daily files to keep. Default 30, maximum 180. |
+
+`GET /api/ops` returns the last sample. It does not run the adapters again. Several signed-in tabs can poll it. A session that is not an owner unlock still sees the tiles, with dollar fields removed.
+
 ## Command line
 
 ```
