@@ -40,4 +40,9 @@ test('the ops page does not load a seasonal theme', () => {
   assert.match(html, /theme-color" content="#14161a"/);
   assert.match(ts, /textContent/);
   assert.equal(ts.includes('innerHTML'), false);
+  assert.match(ts, /RAM_WARN_PCT/);
+  assert.match(ts, /RAM_STOP_PCT/);
+  assert.match(ts, /kind: 'warn'/);
+  assert.match(ts, /kind: 'stop'/);
+  assert.doesNotMatch(ts, /mark:\s*70|ram > 70|ramLimitPct/);
 });

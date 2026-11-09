@@ -72,7 +72,7 @@ Do not merge a change that turns this on, and do not set it in production, witho
 | `OPS_SAMPLE_SEC` | Seconds between samples. Default 60. Values below 15 become 15, values above 900 become 900. |
 | `OPS_HISTORY_DAYS` | Daily files to keep. Default 30, maximum 180. |
 
-`GET /api/ops` returns the last sample. It does not run the adapters again. Several signed-in tabs can poll it. A session that is not an owner unlock still sees the tiles, with dollar fields removed.
+`GET /api/ops` returns the last sample. It does not run the adapters again. Several signed-in tabs can poll it. A session that is not an owner unlock still sees the tiles, with dollar fields removed. The ProArt RAM tile and its trend use 85% as the long-run warning and 90% as the hard stop, and turn red only above 90. 72% is the idle target, not a limit line.
 
 ## Command line
 

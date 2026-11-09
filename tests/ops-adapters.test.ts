@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { tileById, type OpsEnv } from '../src/server/ops/adapters.js';
 import { safeRead } from '../src/server/ops/safe-path.js';
+import { RAM_IDLE_PCT, RAM_STOP_PCT, RAM_WARN_PCT, ramBand } from '../src/shared/ops.js';
 
 const NOW = Date.parse('2026-11-09T16:32:00Z');
 
@@ -206,6 +207,30 @@ test('okkin.json alone is a partial ok tile, and both sources missing is not wir
     const none = await tileById('okkin', env(dir, { ps: async () => [] }));
     assert.equal(none.state, 'not-wired');
     assert.equal(none.reason, 'missing');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ProArt RAM warns at 85 and is red only above 90; 72 is idle and not a limit', async () => {
+  assert.equal(RAM_IDLE_PCT, 72);
+  assert.equal(RAM_WARN_PCT, 85);
+  assert.equal(RAM_STOP_PCT, 90);
+  assert.equal(ramBand(72), 'ok');
+  assert.equal(ramBand(84.9), 'ok');
+  assert.equal(ramBand(85), 'warn');
+  assert.equal(ramBand(90), 'warn');
+  assert.equal(ramBand(90.1), 'stop');
+  const dir = tmp('ao-ops-ram-');
+  try {
+    const tile = await tileById('proart.host', env(dir, { mem: { total: 1000, free: 80, load: [0, 0, 0], rss: 100 * 1048576 } }));
+    const data = tile.data as { ramPct: number; ramWarnPct: number; ramStopPct: number };
+    assert.equal(tile.state, 'ok');
+    assert.equal(data.ramPct, 92);
+    assert.equal(data.ramWarnPct, 85);
+    assert.equal(data.ramStopPct, 90);
+    assert.equal(ramBand(data.ramPct), 'stop');
+    assert.equal('ramLimitPct' in (tile.data as object), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

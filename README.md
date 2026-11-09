@@ -108,7 +108,7 @@ agent-office
 
 ## Ops dashboard
 
-`/ops` is a read-only page for a signed-in office session. It stays off unless `OPS_ON=1`. A source that is missing or refused shows **not wired** and no invented numbers. Dollar fields are included only for an owner unlock. The page does not load a seasonal theme. The office still listens on `127.0.0.1` unless you pass `--host`.
+`/ops` is a read-only page for a signed-in office session. It stays off unless `OPS_ON=1`. A source that is missing or refused shows **not wired** and no invented numbers. Dollar fields are included only for an owner unlock. ProArt RAM draws a warn line at 85% and a hard-stop line at 90% (red above 90). 72% is the idle target only. The page does not load a seasonal theme. The office still listens on `127.0.0.1` unless you pass `--host`.
 
 | Env | Meaning |
 | --- | --- |

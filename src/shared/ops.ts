@@ -120,9 +120,27 @@ export interface OkkinData {
   loaded: { name: string; vramMB: number | null }[];
 }
 
+/** Idle target only. It is not a warn line and not a stop. */
+export const RAM_IDLE_PCT = 72;
+/** Long-run warning. Replaces the old 70% mark. */
+export const RAM_WARN_PCT = 85;
+/** Hard stop. The tile and the trend turn red only above this. */
+export const RAM_STOP_PCT = 90;
+
+export type RamBand = 'ok' | 'warn' | 'stop';
+
+/** 72 stays ok. 85 through 90 is a warning. Red only once RAM is above 90. */
+export function ramBand(pct: number): RamBand {
+  if (!Number.isFinite(pct)) return 'ok';
+  if (pct > RAM_STOP_PCT) return 'stop';
+  if (pct >= RAM_WARN_PCT) return 'warn';
+  return 'ok';
+}
+
 export interface HostData {
   ramPct: number;
-  ramLimitPct: 70;
+  ramWarnPct: typeof RAM_WARN_PCT;
+  ramStopPct: typeof RAM_STOP_PCT;
   officeRssMB: number;
   rssBudgetMB: 150;
   /** Omitted when every sample is 0 (Windows). */

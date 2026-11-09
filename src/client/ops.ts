@@ -1,5 +1,5 @@
 // Read-only ops page. Text is set with textContent. No seasonal theme and no 3D office.
-import { NOTION_URL, mtStamp, scaleY, sparkPath } from '../shared/ops';
+import { NOTION_URL, RAM_IDLE_PCT, RAM_STOP_PCT, RAM_WARN_PCT, mtStamp, ramBand, scaleY, sparkPath } from '../shared/ops';
 
 const OPS_MS = 15_000;
 const SLOW_MS = 60_000;
@@ -32,11 +32,11 @@ interface Series {
   private?: boolean;
 }
 
-const CHARTS: { title: string; metrics: { name: string; color: string }[]; mark?: number }[] = [
+const CHARTS: { title: string; metrics: { name: string; color: string }[]; marks?: { y: number; kind: 'warn' | 'stop' }[] }[] = [
   { title: 'Grok weekly %', metrics: [{ name: 'grokWeeklyPct', color: '#3fb950' }] },
   { title: 'DeepSeek turns / $', metrics: [{ name: 'dsTurnsToday', color: '#3fb950' }, { name: 'dsUsdToday', color: '#d29922' }] },
   { title: 'Okkin jobs / VRAM', metrics: [{ name: 'okkinJobs', color: '#3fb950' }, { name: 'okkinVramMB', color: '#d29922' }] },
-  { title: 'RAM %', metrics: [{ name: 'ramPct', color: '#3fb950' }], mark: 70 },
+  { title: 'RAM %', metrics: [{ name: 'ramPct', color: '#3fb950' }], marks: [{ y: RAM_WARN_PCT, kind: 'warn' }, { y: RAM_STOP_PCT, kind: 'stop' }] },
 ];
 
 let range: Range = '7d';
@@ -114,12 +114,18 @@ function card(title: string, tile: Tile | undefined, body: (data: Record<string,
   return node;
 }
 
-function meter(pct: number, over: boolean): HTMLElement {
-  const track = el('div', 'meter');
+function meter(pct: number, tone: 'ok' | 'warn' | 'stop' | 'over', marks: { at: number; kind: 'warn' | 'stop' }[] = []): HTMLElement {
+  const track = el('div', marks.length ? 'meter marks' : 'meter');
   const fill = el('span');
   fill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
-  if (over) fill.className = 'over';
+  if (tone === 'stop' || tone === 'over') fill.className = 'over';
+  else if (tone === 'warn') fill.className = 'warn';
   track.append(fill);
+  for (const mark of marks) {
+    const tick = el('i', `tick ${mark.kind}`);
+    tick.style.left = `${mark.at}%`;
+    track.append(tick);
+  }
   return track;
 }
 
@@ -170,7 +176,7 @@ function usage(root: HTMLElement) {
       }
       const line = el('p', '', `${money(used)} / ${money(limit)}`);
       if (data.over === true) line.append(el('span', 'pill', 'over limit'));
-      node.append(line, meter(limit > 0 ? (used / limit) * 100 : 0, data.over === true), el('p', 'muted', `resets ${when(data.onDemandResetsAt)}`));
+      node.append(line, meter(limit > 0 ? (used / limit) * 100 : 0, data.over === true ? 'over' : 'ok'), el('p', 'muted', `resets ${when(data.onDemandResetsAt)}`));
     }),
     card('DeepSeek', deepseek, (data, node) => {
       const turns = num(data.turnsToday);
@@ -186,7 +192,11 @@ function usage(root: HTMLElement) {
     card('ProArt', host, (data, node) => {
       const ram = num(data.ramPct);
       const rss = num(data.officeRssMB);
-      if (ram !== null) node.append(el('p', '', `RAM ${ram}%`), meter(ram, ram > 70));
+      if (ram !== null) {
+        const band = ramBand(ram);
+        node.append(el('p', '', `RAM ${ram}%`), meter(ram, band, [{ at: RAM_WARN_PCT, kind: 'warn' }, { at: RAM_STOP_PCT, kind: 'stop' }]));
+        node.append(el('p', 'muted', `idle target ${RAM_IDLE_PCT} · warn ${RAM_WARN_PCT} · stop ${RAM_STOP_PCT}`));
+      }
       if (rss !== null) node.append(el('p', '', `office RSS ${rss} / 150 MB`));
       node.append(el('p', 'muted', gpu?.state === 'not-wired' ? `GPU: not wired` : 'GPU'));
       if (gpu?.state === 'not-wired' && gpu.reason) node.append(el('p', 'why', gpu.reason));
@@ -319,7 +329,7 @@ function issues(root: HTMLElement) {
   root.append(list);
 }
 
-function chart(title: string, series: Series[], mark?: number): HTMLElement {
+function chart(title: string, series: Series[], marks: { y: number; kind: 'warn' | 'stop' }[] = []): HTMLElement {
   const node = el('article', 'chart');
   node.append(el('h2', '', title));
   const usable = series.filter((item) => !item.private && item.points.length);
@@ -334,29 +344,31 @@ function chart(title: string, series: Series[], mark?: number): HTMLElement {
   const values = usable.flatMap((item) => item.points.map((point) => point[1]));
   let min = Math.min(...values);
   let max = Math.max(...values);
-  if (mark !== undefined) {
-    min = Math.min(min, mark);
-    max = Math.max(max, mark);
+  for (const mark of marks) {
+    min = Math.min(min, mark.y);
+    max = Math.max(max, mark.y);
   }
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', '0 0 320 80');
   for (const item of usable) {
     const path = document.createElementNS(NS, 'path');
+    const last = item.points[item.points.length - 1]?.[1];
+    const band = item.name === 'ramPct' && typeof last === 'number' ? ramBand(last) : 'ok';
     path.setAttribute('d', sparkPath(item.points.map((point) => point[1]), 320, 80, min, max));
-    path.setAttribute('stroke', item.color);
+    path.setAttribute('stroke', band === 'stop' ? '#f85149' : band === 'warn' ? '#d29922' : item.color);
     const titleNode = document.createElementNS(NS, 'title');
     titleNode.textContent = item.name;
     path.append(titleNode);
     svg.append(path);
   }
-  if (mark !== undefined) {
-    const y = scaleY(mark, min, max, 80);
+  for (const mark of marks) {
+    const y = scaleY(mark.y, min, max, 80);
     const line = document.createElementNS(NS, 'line');
     line.setAttribute('x1', '0');
     line.setAttribute('x2', '320');
     line.setAttribute('y1', String(Math.round(y * 100) / 100));
     line.setAttribute('y2', String(Math.round(y * 100) / 100));
-    line.setAttribute('class', 'mark-line');
+    line.setAttribute('class', mark.kind === 'stop' ? 'mark-line stop' : 'mark-line warn');
     svg.append(line);
   }
   node.append(svg, el('p', 'muted', `${min} – ${max}`));
@@ -380,7 +392,7 @@ async function history() {
         series.push({ name: metric.name, color: metric.color, points: [] });
       }
     }
-    return chart(item.title, series, item.mark);
+    return chart(item.title, series, item.marks ?? []);
   }));
   root.replaceChildren(...charts);
 }

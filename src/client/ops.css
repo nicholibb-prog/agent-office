@@ -137,15 +137,29 @@ button.on { border-color: var(--ok); }
   overflow: hidden;
 }
 
+.meter.marks { overflow: visible; }
+
 .meter > span, .track > span {
   display: block;
   height: 100%;
   background: var(--ok);
 }
 
+.meter > span.warn { background: var(--warn); }
 .meter > span.over, .track > span.bad { background: var(--bad); }
 
+.tick {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 14px;
+  background: var(--warn);
+}
+
+.tick.stop { background: var(--bad); }
+
 .mark-line { stroke: var(--warn); stroke-dasharray: 3 3; }
+.mark-line.stop { stroke: var(--bad); }
 
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }

@@ -6,6 +6,8 @@ import {
   NOTION_URL,
   PROJECT_STATUSES,
   PROJECTS_STALE_MS,
+  RAM_STOP_PCT,
+  RAM_WARN_PCT,
   SEAT_QUIET_MS,
   USAGE_STALE_MS,
   mtDate,
@@ -433,7 +435,7 @@ function readHost(env: OpsEnv): OpsTile<HostData> {
   const { total, free, rss, load } = env.mem;
   const ramPct = total > 0 ? Math.round(((total - free) / total) * 1000) / 10 : 0;
   const officeRssMB = Math.round((rss / 1048576) * 10) / 10;
-  const data: HostData = { ramPct, ramLimitPct: 70, officeRssMB, rssBudgetMB: 150 };
+  const data: HostData = { ramPct, ramWarnPct: RAM_WARN_PCT, ramStopPct: RAM_STOP_PCT, officeRssMB, rssBudgetMB: 150 };
   if (load.length >= 3 && load.some((n) => n !== 0)) data.loadavg = [load[0] ?? 0, load[1] ?? 0, load[2] ?? 0];
   return { id: 'proart.host', state: 'ok', data };
 }
