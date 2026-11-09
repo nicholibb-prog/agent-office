@@ -13,7 +13,7 @@ const EXCALIDRAW_ASSETS = `/assets/excalidraw-${excalidrawVersion}/`;
 
 function htmlPageAliases(): Plugin {
   // Vite multi-page entries are *.html; the server and client use /login /claim /join without the suffix.
-  const pages = new Set(['/login', '/claim', '/join', '/lite']);
+  const pages = new Set(['/login', '/claim', '/join', '/lite', '/ops']);
   return {
     name: 'html-page-aliases',
     configureServer(server) {
@@ -72,6 +72,7 @@ export default defineConfig({
       input: {
         main: resolve(import.meta.dirname, 'src/client/index.html'),
         lite: resolve(import.meta.dirname, 'src/client/lite.html'),
+        ops: resolve(import.meta.dirname, 'src/client/ops.html'),
         login: resolve(import.meta.dirname, 'src/client/login.html'),
         claim: resolve(import.meta.dirname, 'src/client/claim.html'),
         join: resolve(import.meta.dirname, 'src/client/join.html'),

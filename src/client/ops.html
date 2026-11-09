@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#14161a" />
+    <title>Ops</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="./ops.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <h1>OPS <span id="sampled"></span> <span id="live" class="live"></span></h1>
+      <nav>
+        <a href="/">Office</a>
+        <a href="/lite">Lite</a>
+      </nav>
+    </header>
+    <p id="banner" class="banner" hidden></p>
+    <section id="usage" class="row" aria-label="Usage"></section>
+    <section id="crew" class="panel" aria-label="Crew"></section>
+    <section class="split">
+      <div id="projects" class="panel" aria-label="Projects"></div>
+      <div id="issues" class="panel" aria-label="Issues"></div>
+    </section>
+    <section id="trends" class="panel" aria-label="Trends">
+      <div class="ranges">
+        <h2>Trends</h2>
+        <button type="button" data-range="24h">24h</button>
+        <button type="button" data-range="7d" class="on">7d</button>
+        <button type="button" data-range="30d">30d</button>
+      </div>
+      <div id="charts" class="charts"></div>
+    </section>
+    <footer id="sources"></footer>
+    <script type="module" src="./ops.ts"></script>
+  </body>
+</html>
